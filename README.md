@@ -1,3 +1,4 @@
+[![Download Tern Markdown Editor](https://a.fsdn.com/con/app/sf-download-button)](https://sourceforge.net/projects/tern/files/latest/download)
 # Tern
 
 Tern is a local-first Markdown editor for Windows with a source editor, native reading preview, workspace search and PDF, HTML and plain-text export.
