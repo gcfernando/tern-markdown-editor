@@ -6,4 +6,8 @@
     <ProjectReference Include="..\Tern.Markdown\Tern.Markdown.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tern.Workspaces.Tests" />
+  </ItemGroup>
+
 </Project>

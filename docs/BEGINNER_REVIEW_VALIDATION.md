@@ -1,6 +1,6 @@
 # Feature inventory and validation
 
-This is the current review scope for Tern's tracked checkout, not a certificate of stable-release acceptance. Application version remains **1.0.0**. Historical changelog counts describe earlier reviews and must not be reused as results for a new source/package snapshot.
+This is the current review scope for Tern's tracked checkout, not a certificate of stable-release acceptance. Application version remains **1.0.1**. Historical changelog counts describe earlier reviews and must not be reused as results for a new source/package snapshot.
 
 ## Source understanding
 

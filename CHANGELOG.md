@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — October 31 2026
+
+- Make linked images and download badges receive clicks, and make the entire visible text link clickable, including its final character.
+- Retain cross-document heading targets until the destination preview is ready, and keep queued source scrolling from overriding link navigation.
+- Report missing heading targets in the status bar.
+- Recheck workspace watcher deadlines before flushing queued timer callbacks, and keep the native burst test independent of thread-pool scheduling.
+- Update application, Windows manifest, displayed version, MCP client metadata and package inventory to 1.0.1.
+
 ## October 31 2026 rebuild verification
 
 - Make the temporary Windows file-reader test release its handle on a dedicated thread, independently of the test runner's thread pool. Keep the atomic-save retries and success assertions unchanged.

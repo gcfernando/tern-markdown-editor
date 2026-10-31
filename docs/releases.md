@@ -1,6 +1,6 @@
 # Downloads and releases
 
-Tern's distribution target is **Windows x64**. Application version metadata remains **1.0.0**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
+Tern's distribution target is **Windows x64**. Application version metadata remains **1.0.1**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
 
 ## Download and verify
 

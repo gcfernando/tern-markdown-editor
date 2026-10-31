@@ -215,6 +215,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         public double ScrollY { get; set; }
         public int ReadingLine { get; set; } = 1;
+        public string? PendingAnchor { get; set; }
         public FileChangeMonitor? Monitor { get; set; }
         public string? MonitoredPath { get; set; }
     }
@@ -615,7 +616,10 @@ public sealed partial class MainWindow : Window, IDisposable
             _renderedPreviewTab = tab;
             _renderedPreviewRevision = snapshot.Revision;
             context.ReadingLine = Math.Max(1, restoreLine);
-            ScrollPreviewTo(Math.Max(1, restoreLine));
+            if (context.PendingAnchor is { } anchor)
+                GoToAnchor(anchor);
+            else
+                ScrollPreviewTo(Math.Max(1, restoreLine));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         {
@@ -653,7 +657,12 @@ public sealed partial class MainWindow : Window, IDisposable
                 _shell.StatusMessage = message;
             }
         };
-        Preview.AnchorRequested += (_, e) => e.Handled = Preview.ScrollToAnchor(e.Fragment);
+        Preview.AnchorRequested += (_, e) =>
+        {
+            if (!Preview.ScrollToAnchor(e.Fragment))
+                _shell.StatusMessage = "The linked heading or anchor was not found: #" + e.Fragment;
+            e.Handled = true;
+        };
         Preview.SourceLineActivated += (_, e) => GoToLine(e.Line, 0);
         Preview.TopSourceLineChanged += (_, e) =>
         {
@@ -694,6 +703,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     internal void GoToLine(int line, int column)
     {
+        if (_shown is { } tab) ContextFor(tab).PendingAnchor = null;
         var document = Editor.Document;
         var clamped = Math.Clamp(line, 1, Math.Max(1, document.LineCount));
         var docLine = document.GetLineByNumber(clamped);
@@ -719,12 +729,27 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void GoToAnchor(string anchor)
     {
-        var heading = _shown?.Analysis?.Headings.FirstOrDefault(h => string.Equals(h.Anchor, anchor, StringComparison.OrdinalIgnoreCase));
-        if (heading is not null)
+        if (_shown is not { } tab) return;
+        var context = ContextFor(tab);
+        // Opening a linked document schedules its preview asynchronously. Keep the
+        // fragment with that tab until its current model can resolve the target.
+        context.PendingAnchor = anchor;
+        if (!ReferenceEquals(_renderedPreviewTab, tab) || !tab.Session.IsCurrent(_renderedPreviewRevision)) return;
+        context.PendingAnchor = null;
+        if (!Preview.ScrollToAnchor(anchor))
         {
-            GoToLine(heading.Line, 1);
+            _shell.StatusMessage = "The linked heading or anchor was not found: #" + anchor.TrimStart('#');
+            return;
         }
 
+        var wanted = anchor.TrimStart('#');
+        try { wanted = Uri.UnescapeDataString(wanted); }
+        catch (UriFormatException) { }
+        var line = Preview.Document!.FindAnchorSourceLine(wanted)
+            ?? Preview.Document.Outline.First(o => string.Equals(o.Anchor, wanted, StringComparison.OrdinalIgnoreCase)).Line;
+        context.ReadingLine = Math.Max(1, line);
+        GoToLine(line, 1);
+        ScrollEditorTo(line);
         Preview.ScrollToAnchor(anchor);
     }
 

@@ -43,7 +43,13 @@ internal sealed class ScriptedDialogs : IShellDialogs
 
     public Task<bool> ConfirmOverwriteAsync(string path) => Task.FromResult(Overwrite);
 
-    public Task<bool> ConfirmOpenExternalAsync(Uri uri) => Task.FromResult(false);
+    public bool AllowExternal { get; set; }
+    public List<Uri> ExternalAsked { get; } = [];
+    public Task<bool> ConfirmOpenExternalAsync(Uri uri)
+    {
+        ExternalAsked.Add(uri);
+        return Task.FromResult(AllowExternal);
+    }
 
     public void ShowMessage(string title, string message)
     {
@@ -52,12 +58,16 @@ internal sealed class ScriptedDialogs : IShellDialogs
 
 internal sealed class NullLauncher : IExternalLauncher
 {
+    public List<Uri> Opened { get; } = [];
+    public List<string> Revealed { get; } = [];
     public void OpenUri(Uri uri)
     {
+        Opened.Add(uri);
     }
 
     public void RevealInFileManager(string path)
     {
+        Revealed.Add(path);
     }
 }
 
@@ -71,7 +81,8 @@ internal sealed class DesktopFixture : IDisposable
         Docs = Path.Combine(_root, "docs");
         Directory.CreateDirectory(Docs);
         Dialogs = new ScriptedDialogs();
-        Shell = new ShellViewModel(AppPaths.Under(Path.Combine(_root, "appdata")), Dialogs, new NullLauncher());
+        Launcher = new NullLauncher();
+        Shell = new ShellViewModel(AppPaths.Under(Path.Combine(_root, "appdata")), Dialogs, Launcher);
         Window = new MainWindow(Shell, aiWorkspace: createAI?.Invoke(Shell.Paths.SettingsDirectory))
         {
             TableDimensionsPicker = () => Task.FromResult<TableDimensions?>(new(3, 3)),
@@ -87,6 +98,8 @@ internal sealed class DesktopFixture : IDisposable
     public string AppData => Path.Combine(_root, "appdata");
 
     public ScriptedDialogs Dialogs { get; }
+
+    public NullLauncher Launcher { get; }
 
     public ShellViewModel Shell { get; }
 

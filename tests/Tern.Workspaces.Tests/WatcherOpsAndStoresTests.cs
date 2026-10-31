@@ -133,11 +133,13 @@ public sealed class WorkspaceWatcherTests : IDisposable
         var path = _dir.Write("a.md", "0");
         Start(TimeSpan.FromMilliseconds(400));
 
-        for (var i = 1; i <= 20; i++)
+        // Keep the writer independent of the test runner's thread pool. Awaiting
+        // between writes can stretch the burst beyond the maximum batch latency
+        // on a busy runner, where multiple batches are then the correct behavior.
+        await Task.Factory.StartNew(() =>
         {
-            File.WriteAllText(path, new string('x', i));
-            await Task.Delay(10);
-        }
+            for (var i = 1; i <= 20; i++) File.WriteAllText(path, new string('x', i));
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         Assert.True(await WaitForAsync(() => All.Any()));
         await Task.Delay(800);

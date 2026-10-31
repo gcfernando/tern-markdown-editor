@@ -37,7 +37,7 @@ public partial class MainWindow
             var tab = _sourceScrollTab;
             var revision = _sourceScrollRevision;
             _sourceScrollTab = null;
-            if (tab is null || _windowClosed || _switchingDocument || !ReferenceEquals(tab, _shown)
+            if (tab is null || _windowClosed || _switchingDocument || _syncingScroll || !ReferenceEquals(tab, _shown)
                 || !tab.Session.IsCurrent(revision) || !ReferenceEquals(_renderedPreviewTab, tab)
                 || _renderedPreviewRevision != revision || !_shell.Settings.SyncScroll
                 || _shell.ViewMode != Tern.App.Settings.ViewMode.Split || _scrollDragOwner == ScrollDragOwner.Preview) return;

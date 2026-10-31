@@ -60,6 +60,9 @@ internal sealed class RichTextBlock : SelectableTextBlock
     public RichTextBlock()
     {
         TextWrapping = TextWrapping.Wrap;
+        // Linked inline images defer input to this block. Give their containing
+        // text surface a hit-testable background even when it has no text runs.
+        Background = Brushes.Transparent;
         BindBrush(this, ForegroundProperty, PreviewKeys.Foreground);
         BindBrush(this, SelectionBrushProperty, PreviewKeys.Selection);
     }
@@ -91,16 +94,13 @@ internal sealed class RichTextBlock : SelectableTextBlock
             return -1;
         }
 
-        var hit = TextLayout.HitTestPoint(point - new Point(Padding.Left, Padding.Top));
-        if (!hit.IsInside)
-        {
-            return -1;
-        }
-
-        var position = hit.TextPosition;
+        var textPoint = point - new Point(Padding.Left, Padding.Top);
+        // HitTestPoint returns a caret position: the right half of a final glyph (or
+        // an embedded image) can point just past the link. Use the painted ranges
+        // instead, including each line of a wrapped link and inline image bounds.
         for (var i = 0; i < _links.Count; i++)
         {
-            if (position >= _links[i].Start && position < _links[i].Start + _links[i].Length)
+            if (TextLayout.HitTestTextRange(_links[i].Start, _links[i].Length).Any(rect => rect.Contains(textPoint)))
             {
                 return i;
             }

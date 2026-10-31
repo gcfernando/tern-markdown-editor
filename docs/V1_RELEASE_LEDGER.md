@@ -1,6 +1,6 @@
 # Version 1 release acceptance ledger
 
-Tern's application metadata is **1.0.0**. This ledger restores the path referenced by the historical changelog and records current acceptance boundaries. It does not retroactively verify historical builds or mark a pending candidate stable.
+Tern's application metadata is **1.0.1**. This ledger restores the path referenced by the historical changelog and records current acceptance boundaries. It does not retroactively verify historical builds or mark a pending candidate stable.
 
 | Gate | Current evidence requirement |
 | --- | --- |

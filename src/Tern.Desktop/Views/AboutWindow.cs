@@ -26,7 +26,7 @@ public sealed class AboutWindow : Window
     {
         DialogParts.Setup(this, "About Tern", 560, 560);
         MinHeight = 360;
-        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "1.0.0";
+        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "1.0.1";
         var close = new Button { Content = "Close", IsDefault = true, IsCancel = true };
         close.Classes.Add("accent");
         AutomationProperties.SetName(close, "Close about");

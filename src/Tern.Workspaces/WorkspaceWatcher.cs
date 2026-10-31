@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Tern.Workspaces;
 
 /// <summary>
@@ -9,20 +11,18 @@ public sealed class WorkspaceWatcher : IDisposable
 {
     private readonly FileSystemWatcher _watcher;
     private readonly WorkspaceFilter _filter;
-    private readonly TimeSpan _debounce;
-    private readonly TimeSpan _maxLatency;
+    private readonly WorkspaceDebounce _debounce;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly Timer _timer;
     private readonly Lock _gate = new();
     private readonly ChangeCoalescer _coalescer = new();
-    private DateTime _firstEventUtc;
     private bool _disposed;
 
     public WorkspaceWatcher(string root, WorkspaceFilter? filter = null, TimeSpan? debounce = null, TimeSpan? maxLatency = null)
     {
         Root = WorkspacePaths.Normalize(root);
         _filter = filter ?? new WorkspaceFilter(Root);
-        _debounce = debounce ?? TimeSpan.FromMilliseconds(300);
-        _maxLatency = maxLatency ?? TimeSpan.FromSeconds(2);
+        _debounce = new WorkspaceDebounce(debounce ?? TimeSpan.FromMilliseconds(300), maxLatency ?? TimeSpan.FromSeconds(2));
         _timer = new Timer(_ => Flush(), null, Timeout.Infinite, Timeout.Infinite);
 
         _watcher = new FileSystemWatcher(Root)
@@ -144,15 +144,8 @@ public sealed class WorkspaceWatcher : IDisposable
             return;
         }
 
-        var now = DateTime.UtcNow;
-        if (_firstEventUtc == default)
-        {
-            _firstEventUtc = now;
-        }
-
-        var untilMax = _firstEventUtc + _maxLatency - now;
-        var due = untilMax < _debounce ? (untilMax < TimeSpan.Zero ? TimeSpan.Zero : untilMax) : _debounce;
-        _timer.Change(due, Timeout.InfiniteTimeSpan);
+        _debounce.Record(_clock.Elapsed);
+        _timer.Change(_debounce.Remaining(_clock.Elapsed), Timeout.InfiniteTimeSpan);
     }
 
     private void Flush()
@@ -162,12 +155,21 @@ public sealed class WorkspaceWatcher : IDisposable
         {
             if (_disposed || _coalescer.IsEmpty)
             {
-                _firstEventUtc = default;
+                _debounce.Reset();
+                return;
+            }
+
+            // Timer.Change cannot retract a callback already queued on the thread
+            // pool. Recheck the current batch's deadlines before draining it.
+            var remaining = _debounce.Remaining(_clock.Elapsed);
+            if (remaining > TimeSpan.Zero)
+            {
+                _timer.Change(remaining, Timeout.InfiniteTimeSpan);
                 return;
             }
 
             set = _coalescer.Drain();
-            _firstEventUtc = default;
+            _debounce.Reset();
         }
 
         if (set.Changes.Count == 0 && !set.RescanRequired)

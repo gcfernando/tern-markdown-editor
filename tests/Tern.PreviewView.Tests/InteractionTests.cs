@@ -83,6 +83,108 @@ public class InteractionTests
     }
 
     [AvaloniaFact]
+    public async Task A_loaded_image_only_link_receives_clicks()
+    {
+        using var bitmap = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(300, 50), new Vector(96, 96),
+            Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+        using var encoded = new MemoryStream();
+        bitmap.Save(encoded, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        var view = new PreviewView
+        {
+            RemoteImageLoader = (_, _) => Task.FromResult<byte[]?>(encoded.ToArray()),
+            Document = Harness.Build("[![Download](https://example.com/button.png)](https://example.com/file.zip)"),
+        };
+        var window = new Window { Width = 700, Height = 400, Content = view };
+        window.Show();
+        Harness.Pump(window);
+        var image = Assert.Single(Harness.All<ImageView>(view));
+        await image.LoadingCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+        Harness.Pump(window);
+        Assert.Equal(ImageState.Loaded, image.State);
+        var activated = new List<LinkActivatedEventArgs>();
+        view.LinkActivated += (_, e) => activated.Add(e);
+        var paragraph = Assert.Single(Harness.All<RichTextBlock>(view));
+        Click(window, LinkCenter(window, paragraph, 0));
+        Assert.Equal("https://example.com/file.zip", Assert.Single(activated).Destination);
+        window.Close();
+        await view.ImageCleanupCompletion;
+    }
+
+    [AvaloniaTheory]
+    [InlineData("[Download](https://example.com/file.zip?download=1)", "https://example.com/file.zip?download=1")]
+    [InlineData("<https://example.com/page>", "https://example.com/page")]
+    [InlineData("https://example.com/page", "https://example.com/page")]
+    [InlineData("[Email](mailto:reader@example.com)", "mailto:reader@example.com")]
+    [InlineData("[Reference][page]\n\n[page]: https://example.com/page", "https://example.com/page")]
+    [InlineData("<a href=\"https://example.com/page\"><strong>HTML link</strong></a>", "https://example.com/page")]
+    [InlineData("[**Formatted** link](https://example.com/page)", "https://example.com/page")]
+    [InlineData("| Link |\n| --- |\n| [Table link](https://example.com/page) |", "https://example.com/page")]
+    [InlineData("> [Quoted link](https://example.com/page)", "https://example.com/page")]
+    public void Different_link_forms_activate_their_destination(string markdown, string destination)
+    {
+        var (window, view) = Harness.Show(Harness.Build(markdown));
+        var paragraph = Assert.Single(Harness.All<RichTextBlock>(view), b => b.Links.Count > 0);
+        var activated = new List<LinkActivatedEventArgs>();
+        view.LinkActivated += (_, e) => activated.Add(e);
+        Click(window, LinkCenter(window, paragraph, 0));
+        Assert.Equal(destination, Assert.Single(activated).Destination);
+        Assert.IsType<ExternalLink>(activated[0].Resolution);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Repository_readme_download_and_navigation_links_are_clickable()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
+        Assert.NotNull(root);
+        var path = Path.Combine(root.FullName, "README.md");
+        var source = File.ReadAllText(path);
+        var document = Harness.Build(source, new Tern.Rendering.Preview.PreviewOptions { DocumentPath = path, WorkspaceRoot = root.FullName });
+        var (window, view) = Harness.Show(document, 900, 700);
+        var activated = new List<LinkActivatedEventArgs>();
+        view.LinkActivated += (_, e) => activated.Add(e);
+        foreach (var destination in new[]
+        {
+            "https://sourceforge.net/projects/tern/files/latest/download",
+            "https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml",
+            "docs/privacy.md", "docs/user-guide.md",
+            "https://github.com/gcfernando/tern-markdown-editor/releases",
+            "docs/user-guide.md#known-limits",
+        })
+        {
+            var sourceLine = source[..source.IndexOf("](" + destination + ")", StringComparison.Ordinal)].Count(c => c == '\n') + 1;
+            view.ScrollToSourceLine(sourceLine);
+            Harness.Pump(window);
+            var block = Harness.All<RichTextBlock>(view).First(b => b.Links.Any(link => link.Target.Destination == destination));
+            var index = block.Links.ToList().FindIndex(link => link.Target.Destination == destination);
+            Assert.Equal(index, block.LinkIndexAt(block.TextLayout.HitTestTextRange(block.Links[index].Start, block.Links[index].Length).First().Center));
+            Click(window, LinkCenter(window, block, index));
+            Assert.True(activated.Count == 1, $"Expected activation for {destination}; received {activated.Count} events. Block bounds: {block.Bounds}; point: {LinkCenter(window, block, index)}");
+            Assert.Equal(destination, Assert.Single(activated).Destination);
+            if (destination.StartsWith("docs/", StringComparison.Ordinal)) Assert.True(Assert.IsType<LocalFile>(activated[0].Resolution).Exists);
+            else Assert.IsType<ExternalLink>(activated[0].Resolution);
+            activated.Clear();
+        }
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void The_entire_visible_link_range_is_clickable_including_the_last_character()
+    {
+        var (window, view) = Harness.Show(Harness.Build("Before [web](https://example.com/file.zip) after."));
+        var paragraph = Assert.Single(Harness.All<RichTextBlock>(view));
+        var span = Assert.Single(paragraph.Links);
+        var rect = Assert.Single(paragraph.TextLayout.HitTestTextRange(span.Start, span.Length));
+        foreach (var fraction in new[] { 0.1, 0.5, 0.9, 0.99 })
+        {
+            var point = new Point(rect.Left + rect.Width * fraction, rect.Center.Y);
+            Assert.Equal(0, paragraph.LinkIndexAt(point));
+        }
+        window.Close();
+    }
+
+    [AvaloniaFact]
     public void BrokenLocalLink_UsesTheBrokenBrush()
     {
         var dir = Path.Combine(Path.GetTempPath(), "tern-pv-" + Guid.NewGuid().ToString("N"));
