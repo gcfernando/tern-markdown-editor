@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\tern.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AssemblyName>Tern</AssemblyName>
+    <RootNamespace>Tern.Desktop</RootNamespace>
+    <!-- The window is built with the shell it presents, so it has no parameterless constructor for the runtime loader. -->
+    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tern.Domain\Tern.Domain.csproj" />
+    <ProjectReference Include="..\Tern.Filesystem\Tern.Filesystem.csproj" />
+    <ProjectReference Include="..\Tern.Recovery\Tern.Recovery.csproj" />
+    <ProjectReference Include="..\Tern.Markdown\Tern.Markdown.csproj" />
+    <ProjectReference Include="..\Tern.App\Tern.App.csproj" />
+    <ProjectReference Include="..\Tern.PreviewView\Tern.PreviewView.csproj" />
+    <ProjectReference Include="..\Tern.Workspaces\Tern.Workspaces.csproj" />
+    <ProjectReference Include="..\Tern.Search\Tern.Search.csproj" />
+    <ProjectReference Include="..\Tern.Rendering\Tern.Rendering.csproj" />
+    <ProjectReference Include="..\Tern.Export\Tern.Export.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tern.Desktop.Tests" />
+  </ItemGroup>
+
+</Project>
+

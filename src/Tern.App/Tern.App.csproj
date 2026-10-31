@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tern.Domain\Tern.Domain.csproj" />
+    <ProjectReference Include="..\Tern.Filesystem\Tern.Filesystem.csproj" />
+    <ProjectReference Include="..\Tern.Recovery\Tern.Recovery.csproj" />
+    <ProjectReference Include="..\Tern.Markdown\Tern.Markdown.csproj" />
+    <ProjectReference Include="..\Tern.Workspaces\Tern.Workspaces.csproj" />
+    <ProjectReference Include="..\Tern.Search\Tern.Search.csproj" />
+    <ProjectReference Include="..\Tern.Rendering\Tern.Rendering.csproj" />
+    <ProjectReference Include="..\Tern.Export\Tern.Export.csproj" />
+  </ItemGroup>
+
+</Project>

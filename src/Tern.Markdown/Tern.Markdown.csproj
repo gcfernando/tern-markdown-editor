@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tern.Domain\Tern.Domain.csproj" />
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+</Project>

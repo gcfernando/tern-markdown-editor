@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420" role="img" aria-labelledby="title desc">
+<title id="title">LED series circuit</title><desc id="desc">Five volt source in series with a 330 ohm resistor and LED, returning to ground.</desc>
+<rect width="800" height="420" fill="white"/><style>text{font-family:Arial,sans-serif;font-size:20px;fill:#152238}.wire{fill:none;stroke:#152238;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}</style>
+<text x="35" y="40" font-weight="bold">LED with a series resistor</text>
+<g class="wire"><path d="M150 190 V100 H300 M400 100 H600 V190 M600 250 V330 H150 V250"/>
+<circle cx="150" cy="220" r="30"/><path d="M140 207 H160 M150 197 V217 M140 233 H160"/>
+<rect x="300" y="87" width="100" height="26"/>
+<path d="M580 190 H620 L600 230 Z M580 236 H620 M600 236 V250"/>
+<path d="M630 205 L655 180 M644 182 L655 180 L653 191 M638 227 L663 202 M652 204 L663 202 L661 213"/>
+<path d="M150 330 V350 M130 350 H170 M136 358 H164 M142 366 H158"/>
+</g><text x="75" y="225">5 V</text><text x="304" y="76">R1 330 Ω</text><text x="665" y="250">D1 LED</text>
+<text x="245" y="390">Approximate current: 9.1 mA at V<tspan baseline-shift="sub" font-size="14">F</tspan> = 2.0 V</text></svg>

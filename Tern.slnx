@@ -1,0 +1,28 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Tern.Desktop/Tern.Desktop.csproj" />
+    <Project Path="src/Tern.Domain/Tern.Domain.csproj" />
+    <Project Path="src/Tern.Export/Tern.Export.csproj" />
+    <Project Path="src/Tern.Filesystem/Tern.Filesystem.csproj" />
+    <Project Path="src/Tern.Markdown/Tern.Markdown.csproj" />
+    <Project Path="src/Tern.PreviewView/Tern.PreviewView.csproj" />
+    <Project Path="src/Tern.Recovery/Tern.Recovery.csproj" />
+    <Project Path="src/Tern.Rendering/Tern.Rendering.csproj" />
+    <Project Path="src/Tern.Search/Tern.Search.csproj" />
+    <Project Path="src/Tern.Workspaces/Tern.Workspaces.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tern.Benchmarks/Tern.Benchmarks.csproj" />
+    <Project Path="tests/Tern.Desktop.Tests/Tern.Desktop.Tests.csproj" />
+    <Project Path="tests/Tern.Export.Tests/Tern.Export.Tests.csproj" />
+    <Project Path="tests/Tern.PreviewView.Tests/Tern.PreviewView.Tests.csproj" />
+    <Project Path="tests/Tern.Rendering.Tests/Tern.Rendering.Tests.csproj" />
+    <Project Path="tests/Tern.Security.Tests/Tern.Security.Tests.csproj" />
+    <Project Path="tests/Tern.UnitTests/Tern.UnitTests.csproj" />
+    <Project Path="tests/Tern.Workspaces.Tests/Tern.Workspaces.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Application/">
+    <Project Path="src/Tern.App/Tern.App.csproj" />
+    <Project Path="tests/Tern.App.Tests/Tern.App.Tests.csproj" />
+  </Folder>
+</Solution>

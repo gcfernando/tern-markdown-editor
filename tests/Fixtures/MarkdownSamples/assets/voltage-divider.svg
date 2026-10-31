@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="440" viewBox="0 0 800 440" role="img" aria-labelledby="title desc">
+<title id="title">Unloaded voltage divider</title><desc id="desc">Five volts across two ten kiloohm resistors. Their midpoint is the unloaded two point five volt output.</desc>
+<rect width="800" height="440" fill="white"/><style>text{font-family:Arial,sans-serif;font-size:20px;fill:#152238}.wire{fill:none;stroke:#152238;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}</style>
+<text x="35" y="40" font-weight="bold">Unloaded voltage divider</text>
+<g class="wire"><path d="M160 200 V90 H400 V125 M400 185 V220 M400 220 V255 M400 315 V350 H160 V260"/>
+<circle cx="160" cy="230" r="30"/><path d="M150 217 H170 M160 207 V227 M150 243 H170"/>
+<rect x="387" y="125" width="26" height="60"/><rect x="387" y="255" width="26" height="60"/>
+<path d="M400 220 H630 M400 350 V370 M380 370 H420 M386 378 H414 M392 386 H408"/>
+<circle cx="630" cy="220" r="5" fill="white"/>
+</g><circle cx="400" cy="220" r="5" fill="#152238"/>
+<text x="86" y="235">5 V</text><text x="440" y="160">R1 10 kΩ</text><text x="440" y="295">R2 10 kΩ</text>
+<text x="520" y="205">Vout = 2.5 V</text><text x="495" y="250">No output load</text>
+<text x="175" y="420">Equal resistances divide the input voltage in half.</text></svg>

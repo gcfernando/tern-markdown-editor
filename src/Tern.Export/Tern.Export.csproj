@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="PDFsharp" />
+    <!-- PDFsharp 6.5.0 depends on Pkcs 8.0.1, which has known vulnerabilities; this direct reference overrides it. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tern.Domain\Tern.Domain.csproj" />
+    <ProjectReference Include="..\Tern.Filesystem\Tern.Filesystem.csproj" />
+    <ProjectReference Include="..\Tern.Markdown\Tern.Markdown.csproj" />
+    <ProjectReference Include="..\Tern.Rendering\Tern.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

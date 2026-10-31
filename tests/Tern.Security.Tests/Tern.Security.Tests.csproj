@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- Every shipped assembly, so the offline audit scans exactly what the product contains. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tern.Domain\Tern.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Filesystem\Tern.Filesystem.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Recovery\Tern.Recovery.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Markdown\Tern.Markdown.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Rendering\Tern.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Export\Tern.Export.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Workspaces\Tern.Workspaces.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Search\Tern.Search.csproj" />
+    <ProjectReference Include="..\..\src\Tern.App\Tern.App.csproj" />
+    <ProjectReference Include="..\..\src\Tern.PreviewView\Tern.PreviewView.csproj" />
+    <ProjectReference Include="..\..\src\Tern.Desktop\Tern.Desktop.csproj" />
+  </ItemGroup>
+
+</Project>
