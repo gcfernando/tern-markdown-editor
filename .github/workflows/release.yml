@@ -1,0 +1,90 @@
+name: Build and release Tern
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+# Every main push has independent evidence and release identity; never cancel it.
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: '3.12'
+      - name: Repository, publisher and packaging policy checks
+        shell: pwsh
+        run: |
+          python .github/scripts/check_repository.py
+          if ($LASTEXITCODE -ne 0) { throw 'Repository standards failed.' }
+          python -m unittest discover -s .github/scripts -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Release policy tests failed.' }
+      - name: Restore locked dependencies with vulnerability auditing
+        run: dotnet restore Tern.slnx --locked-mode -m:1
+      - name: Build complete solution with warnings as errors
+        run: dotnet build Tern.slnx -c Release --no-restore -m:1 -p:UseSharedCompilation=false
+      - name: Eight test projects with explicit external acceptance exclusions
+        # Eight cases need untracked original corpora/samples or an interactive Explorer recycle bin.
+        # The synthetic scrollbar case stays in CI; external cases remain unchanged for manual acceptance.
+        shell: pwsh
+        run: |
+          $filter = (Get-Content -LiteralPath tools/automated-test-filter.txt -Raw).Trim()
+          dotnet test Tern.slnx -c Release --no-build --no-restore -m:1 --filter $filter --logger trx --results-directory artifacts/test-results --blame-hang-timeout 5m
+          if ($LASTEXITCODE -ne 0) { throw 'Repeatable test suite failed.' }
+      - name: Publish fresh self-contained package and smoke the extracted application
+        shell: pwsh
+        run: ./tools/BuildRelease.ps1
+      - name: Retain test and extracted-application evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Tern-verification-evidence
+          path: |
+            artifacts/test-results/**/*.trx
+            artifacts/release-build/smoke/*.json
+            artifacts/release-build/smoke/*.log
+          if-no-files-found: warn
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Tern-win-x64
+          path: |
+            artifacts/release/Tern-win-x64.zip
+            artifacts/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+  publish-main:
+    needs: windows
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Tern-win-x64
+          path: artifacts/main-download
+      - name: Publish complete verified preview for this main push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python -c "import xml.etree.ElementTree as E; print(E.parse('Directory.Build.props').findtext('.//Version'))")
+          python .github/scripts/publish_main_release.py --project Tern --version "$version" artifacts/main-download/Tern-win-x64.zip

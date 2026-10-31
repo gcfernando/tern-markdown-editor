@@ -1,0 +1,63 @@
+# GitHub Pages documentation; application preferences stay inside Tern.
+url: "https://gcfernando.github.io"
+baseurl: "/tern-markdown-editor"
+repository: gcfernando/tern-markdown-editor
+title: "Tern Markdown Editor"
+description: "A local-first Markdown editor for Windows with native preview, workspace search, Mermaid diagrams, math and PDF, HTML and text export."
+lang: en
+theme: jekyll-theme-primer
+plugins:
+  - jekyll-sitemap
+  - jekyll-seo-tag
+  - jekyll-relative-links
+projects_hub: https://gcfernando.github.io/gcfernando/projects/
+project_category: "Desktop & utilities"
+exclude:
+  - src
+  - tests
+  - scripts
+  - tools
+  - bin
+  - obj
+  - artifacts
+  - TestResults
+  - packages
+  - node_modules
+  - vendor
+  - .vs
+  - .local
+  - .agents
+  - .codex
+  - licenses
+  - Tern.slnx
+  - Directory.Build.props
+  - Directory.Packages.props
+  - global.json
+defaults:
+  - scope:
+      path: "documentation.md"
+    values:
+      permalink: /documentation/
+      title: "Tern Documentation and Guides"
+      description: "Find Tern's beginner lessons, Markdown user guide, development instructions and release information."
+  - scope:
+      path: "README.md"
+    values:
+      title: "Tern — Markdown Editor for Windows"
+      description: "Write and organize Markdown locally with native live preview, Mermaid diagrams, math, workspace search, recovery and PDF or HTML export."
+      image: /Images/main.png
+  - scope:
+      path: "docs/user-guide.md"
+    values:
+      title: "Tern Markdown Editor User Guide"
+      description: "Open, write, preview, organize, recover and export Markdown files in Tern on Windows."
+  - scope:
+      path: "docs/development.md"
+    values:
+      title: "Build and Test Tern with .NET 10 and Avalonia"
+      description: "Set up the pinned SDK, restore locked dependencies and run Tern's application and headless UI checks."
+  - scope:
+      path: "docs/releases.md"
+    values:
+      title: "Tern Downloads, Packaging and Releases"
+      description: "Download Tern for Windows x64, verify checksums and understand package contents, automation and signing status."

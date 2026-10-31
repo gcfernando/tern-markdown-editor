@@ -1,98 +1,105 @@
 # Tern
 
-**Start here:** [Beginner guide](docs/BEGINNER_GUIDE.md) · [Practice note](docs/practice/practice-note.md) · [Feature inventory and validation](docs/BEGINNER_REVIEW_VALIDATION.md).
+Tern is a local-first Markdown editor for Windows with a source editor, native reading preview, workspace search and PDF, HTML and plain-text export.
 
-**Current review:** [October 30 issue matrix](docs/review/oct30/ISSUE_MATRIX.md). The Release development executable is built at `src/Tern.Desktop/bin/Release/net10.0/Tern.exe`; keep its bundled files together and install the matching .NET runtime. See the validation record for checks actually completed on this source snapshot.
+[![Repository standards](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/repository-standards.yml/badge.svg)](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/repository-standards.yml) [![Build and release](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml/badge.svg)](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml)
 
-Tern is a local-first Markdown editor for Windows built with .NET 10 and Avalonia 12. It opens ordinary `.md` files with no conversion and uses local files and bundled assets for document processing. No account or telemetry service is required. Installed offline operation remains a release acceptance gate.
+Write notes, maintain project documentation and organize folders of ordinary Markdown files. Local editing needs no account, subscription or activation key. Tern is written in C# with .NET 10 and Avalonia 12; optional URL import, remote images and AI/MCP connections have separate [network and privacy boundaries](docs/privacy.md).
 
-Open from URL downloads Markdown and its directly referenced supported images/files to a managed cache and rewrites their references. Complete cached bundles reopen offline; Download and Open and Save As keep portable assets beside the local note. Partial downloads identify missing assets and retry on reopening. Ordinary remote image links in other local notes still use the bounded live image loader. Scripts and active web content are not executed.
+## Features
 
-**Version metadata:** 1.0.0. This working-tree review build is not release-certified. Current usability work, evidence and outstanding acceptance checks are recorded in the [review validation](docs/BEGINNER_REVIEW_VALIDATION.md).
+- Source, Split and Reading modes, document tabs, a reference pane, themes and focus mode.
+- Native preview without a browser engine: tables, task lists, footnotes, code, images, front matter, bounded math and supported Mermaid diagrams.
+- Library folders and workspaces, outline, backlinks, broken-link repair, statistics, Quick Open and SQLite full-text workspace search.
+- Encoding and line-ending preservation, atomic saves, external-change comparison and merge, local saved-text history and recovery checkpoints.
+- HTML, PDF and text export, Windows text printing, image insertion and portable local attachment copies on Save As.
+- Fifteen beginner lessons and optional, explicitly reviewed AI writing and MCP tool requests.
 
-## Highlights
+![Tern in Split view with Markdown source, native reading preview, Library and Outline inspector](Images/main.png)
 
-- Source editor (AvaloniaEdit) with Markdown highlighting; Source / Split / Reading modes; tabs.
-- GFM preview rendered natively (no web view): tables, task lists, footnotes, code, images, front matter, LaTeX-style math, Mermaid flowcharts and sequence diagrams.
-- Workspace explorer, outline, backlinks and broken-link lists, document statistics, quick open, command palette, find/replace, SQLite full-text workspace search.
-- Safe saving: atomic replace, encoding/BOM preservation, selectable LF/CRLF/CR line endings, external-change detection with a three-way merge dialog, and crash recovery checkpoints. New documents default to CRLF; opening a file preserves its text and attributes.
-- Export to HTML (self-contained), PDF (bundled PDFsharp, offline) and plain text.
-- Library with explicit Add destinations, expandable folder/workspace roots, document tabs, resizable writing canvas and optional inspector.
-- Themes (light/dark), focus mode, a read-only reference pane, local saved-text history, keyboard shortcuts and settings.
-- Visible File/Edit/Format/View/Help menus, undoable broken-link repair and Windows text printing.
-- Library Files × closes the associated tabs and removes the reference after save decisions; Cancel preserves both. Recent and Quick Open reference removal keeps open tabs. Neither operation deletes saved files.
-- HTTP/HTTPS Markdown import through File or + Add → Open from URL…, with public GitHub file-link conversion and explicit localhost support. Online references persist in Recent for deliberate reload; imports open editable unsaved copies.
-- Fifteen beginner lessons, including pictures, printing, recovery and a practice note, in a guide that stays open while you practise.
-- Shared HTML/PDF/Print readiness, safe first-open replacement of the startup draft, ordinary image paste, source-area file drops and a complete Format menu.
-- Save and Ctrl+S support empty drafts. Adding a picture to a new note opens Save, then continues insertion. An explicit draft filename takes priority over its first heading.
-- Save As copies referenced local files and their Markdown dependencies inside the document folder, preserving their current bytes. Conflicting attachments are kept and the save is refused. Bundles are limited to 512 files, 64 MiB per file and 256 MiB total. Existing references outside that folder require keeping the copy in its original folder or moving those attachments inside first.
-- Encoding-protected documents can be saved as a separate UTF-8 copy after confirming that the displayed text may contain replacement characters. The original bytes remain protected.
-- Dropping, selecting or pasting an image file beside the Markdown file links it immediately without a dialog. Images from other folders ask Link original / Copy image / Cancel. Link uses the original location; Copy asks for a destination and links the saved copy. Paste Image as Attachment uses the same rules for copied files; clipboard pixels without a source file need a copy destination. Selected external image files retain their preview permission per note when reopened; other files in their folders remain outside that permission.
-- Insert Local Image uses copied image files from the clipboard before opening a source picker. Their locations determine whether to link immediately or offer Link/Copy. When the clipboard has no image files, the regular file picker remains available.
+The screenshot shows an existing note in Split view. See the [user guide](docs/user-guide.md) for interface details and supported rendering limits.
 
-## Build, test, run
+## Download and run
+
+Open [GitHub Releases](https://github.com/gcfernando/tern-markdown-editor/releases) and select a complete release containing **Tern-win-x64.zip** and **SHA256SUMS.txt**. GitHub's source-code ZIP and tarball are source archives, not the packaged application. If those assets are absent, use the [source build instructions](docs/development.md) or a complete earlier release.
+
+1. Download the application ZIP and checksum file from the same release.
+2. Compare its SHA-256 with the matching manifest entry:
+
+   ```powershell
+   Get-FileHash .\Tern-win-x64.zip -Algorithm SHA256
+   ```
+
+3. Extract the entire ZIP to a writable folder and run `Tern.exe`. Keep all companion files together.
+
+The Windows x64 release package is self-contained and bundles its .NET runtime. A development executable under `bin` is a different build and may need an installed matching runtime. The current packaging route is **unsigned**, so Windows may show **Unknown publisher** or a SmartScreen warning. A checksum does not establish a trusted publisher. Read the [release guide](docs/releases.md) for updates, removal and acceptance limits.
+
+## Use Tern
+
+Press `Ctrl+N`, write a heading and a few sentences, then press `Ctrl+S` to choose a Markdown filename. Use `Ctrl+2` for Split view or `Ctrl+3` to read the preview. The [beginner guide](docs/BEGINNER_GUIDE.md) and [practice note](docs/practice/practice-note.md) provide a safe starting point.
+
+| Task | Start with |
+| --- | --- |
+| Open notes or browse a folder | `Ctrl+O`, `Ctrl+Shift+O` or **+ Add** in the Library |
+| Find a note or command | Quick Open (`Ctrl+K`) or Command Palette (`Ctrl+Shift+P`) |
+| Search text | Find (`Ctrl+F`), Replace (`Ctrl+H`) or workspace search (`Ctrl+Shift+F`) |
+| Add a link or picture | Insert Link (`Ctrl+Shift+K`) or the Format menu |
+| Learn or configure a feature | `F1` opens the guide; `Ctrl+,` opens Settings |
+| Export or print | File export commands, or Print (`Ctrl+P`) for plain-text printing |
+
+Closing a tab, folder or workspace asks about unsaved changes and does not delete its files. Separate file-management actions can change files on disk. Save As can carry attachments inside the original note's folder; check the [copy rules](docs/user-guide.md#save-as-and-portable-attachments) before moving a collection.
+
+The editor eagerly loads files up to **64 MiB**; this is a memory guard, not a responsiveness guarantee. Preview and export have smaller content/resource budgets and can report truncation. **1 GB editing is unsupported.** PDF font coverage, supported Mermaid syntax and native printing differ from browser output. See [known limits](docs/user-guide.md#known-limits).
+
+## Configuration and local data
+
+Settings controls appearance, fonts, wrapping, layout, shortcuts, session restoration and workspace exclusions. Configuration uses `%APPDATA%\Tern`; local state, recovery and search indexes use `%LOCALAPPDATA%\Tern`. `TERN_DATA_ROOT` selects an isolated root with separate settings, state, recovery and index directories. Back up important notes and state before clearing or replacing them.
+
+Saved AI connection keys use Windows Credential Manager; unsaved keys remain in memory. Optional requests can transmit a complete active note, a question or reviewed tool arguments. Opening a note with remote images can contact image hosts. Read [privacy, credentials and network access](docs/privacy.md) before opening confidential or untrusted content.
+
+## Development and testing
+
+Use Windows and the exact SDK selected by [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json), currently **10.0.402**. Run from the repository root:
 
 ```powershell
-dotnet build Tern.slnx -c Release -m:1
-dotnet test Tern.slnx -c Release -m:1
-dotnet run --project src\Tern.Desktop -c Release
+dotnet restore Tern.slnx --locked-mode
+dotnet build Tern.slnx -c Release --no-restore -m:1
+dotnet test Tern.slnx -c Release --no-build --no-restore -m:1
+dotnet run --project src/Tern.Desktop -c Release --no-build
 ```
 
-Requires the SDK pinned in `global.json`. Packages are pinned centrally in `Directory.Packages.props` and dependency lockfiles; warnings are errors. V1 distribution targets Windows x64.
+Dependencies and lockfiles are pinned, and warnings are errors. Eight test projects cover application, filesystem, rendering, workspace, headless UI and security behavior; benchmarks are separate. The unfiltered test command includes external-corpus and interactive Windows checks that need additional inputs. The reproducible CI gate excludes eight such cases explicitly; it does not establish full native acceptance. See [development](docs/development.md) and the [validation record](docs/BEGINNER_REVIEW_VALIDATION.md).
 
-## Publish (self-contained win-x64)
+## Automated releases
 
-```powershell
-.\scripts\publish.ps1        # -> artifacts\publish\win-x64\Tern.exe
-```
+The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.0**. A failed check must not be described as a verified release.
 
-## Benchmarks
+For a local candidate, use `./tools/BuildRelease.ps1`; it publishes, invokes the packaging helper and smokes the extracted application. The legacy `./scripts/publish.ps1` remains available for a local self-contained publish. These have different output directories; the [release guide](docs/releases.md) explains each and the unsigned/manual-acceptance limitations.
 
-```powershell
-dotnet run --project tests\Tern.Benchmarks -c Release            # full
-dotnet run --project tests\Tern.Benchmarks -c Release -- --quick # smoke
-```
+## Troubleshooting
 
-Results are written to `artifacts\benchmarks\`. Performance and installed-build acceptance remain separate from the current usability checks.
+- **The app does not start:** extract the whole application ZIP. A lone executable copied from a development build is not the release package.
+- **Windows warns about the publisher:** check signing status and checksum. An unsigned package does not establish a trusted Windows publisher; do not disable operating-system protections.
+- **An image or diagram is missing:** check the path, network, supported syntax and preview warnings. External local images need the appropriate per-note permission.
+- **An export is incomplete:** review readiness and truncation warnings and [export limits](docs/user-guide.md#export-and-print).
+- **A note changed on disk or recovery appears:** preserve both versions and use [comparison and recovery](docs/user-guide.md#saving-external-changes-and-recovery) before overwriting anything.
+- **An AI endpoint fails:** check protocol, endpoint and model using synthetic text. Provider compatibility and entitlement are separate from Tern's protocol support.
 
-If package vulnerability feeds are unavailable, the normal build can fail with `NU1900` because warnings are errors. For local offline verification with already cached packages, pass `-p:NuGetAudit=false` on that command only. This skips the dependency vulnerability check for that run; it is not a release audit.
+## Contributing and support
 
-## Layout
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and [repository standards](REPOSITORY_STANDARDS.md). Report reproducible problems through [GitHub issues](https://github.com/gcfernando/tern-markdown-editor/issues); follow [SECURITY.md](SECURITY.md) for sensitive reports. Use the [documentation index](documentation.md) or [published documentation](https://gcfernando.github.io/tern-markdown-editor/documentation/) for further guides.
 
-| Path | Purpose |
-|---|---|
-| `src\Tern.Domain` | Pure document model, text format, diff / three-way merge |
-| `src\Tern.Filesystem` | Load/save with encoding preservation, change monitor |
-| `src\Tern.Markdown` | Markdig pipelines, analysis, formatting, structured edits |
-| `src\Tern.Rendering` | Preview tree, sanitizer, resource resolver, math, Mermaid |
-| `src\Tern.PreviewView` | Avalonia preview control |
-| `src\Tern.Export` | HTML / PDF / text exporters |
-| `src\Tern.Workspaces` | Scanner, watcher, link graph, file operations, stores |
-| `src\Tern.Search` | SQLite FTS index, queries, find/replace, quick open |
-| `src\Tern.Recovery` | Recovery checkpoints |
-| `src\Tern.App` | View-models, commands, settings (UI-framework independent) |
-| `src\Tern.Desktop` | Avalonia application (assembly `Tern`) |
-| `tests\*` | Unit, integration, headless UI, security tests and benchmarks |
+## License
 
-## Documentation
+Developed by Gehan Fernando and released under the [MIT License](LICENSE). Dependencies retain their own terms; see [third-party notices](THIRD-PARTY-NOTICES.md).
 
-[Beginner guide](docs/BEGINNER_GUIDE.md) · [Practice note](docs/practice/practice-note.md) · [Feature inventory and validation](docs/BEGINNER_REVIEW_VALIDATION.md) · [Coordinated implementation plan](docs/review/IMPLEMENTATION_PLAN.md) · [CHANGELOG](CHANGELOG.md)
+<a id="highlights"></a>
+<a id="build-test-run"></a>
+<a id="publish-self-contained-win-x64"></a>
+<a id="benchmarks"></a>
+<a id="layout"></a>
+<a id="documentation"></a>
+<a id="closing-documents-and-workspaces"></a>
+<a id="known-limitations-summary"></a>
 
-## Closing documents and workspaces
-
-- Use the × on a document tab or open file in the Library to close that document (Ctrl+W).
-- Use the × on the workspace card, or File → Close Workspace (Ctrl+Shift+W), to close its documents and release the workspace. Unrelated open documents stay open.
-- Use the × on an expanded folder, or its context menu, to close its open documents and collapse it. Its folder entry remains part of the workspace.
-- File → Close All Documents (Ctrl+Alt+W) closes tabs while keeping the workspace.
-
-Save/Discard/Cancel decisions are completed before a group is closed. These actions never delete documents or folders. The window close button also asks about unsaved changes.
-
-Use **+ Add** for Open Files, Open Folder, New File and New Folder. Quick Open is Ctrl+K; Insert Link is Ctrl+Shift+K; Print is Ctrl+P.
-
-**Folders and workspaces:** Open Folder browses a physical directory without creating metadata. Create Workspace creates a new named directory containing `.tern-workspace.json`; Open Workspace restores that context. Existing legacy workspace/session records remain compatible. Independent roots stack in the Library, while Company/HR stays nested. Context creation targets its clicked directory; global Add asks whether to use the selected location or a separate outside location.
-
-## Known limitations (summary)
-
-The current editor eagerly loads files up to a 64 MiB safety ceiling; larger files are refused before allocation. **1 GB editing is not supported and is excluded from this implementation scope.** The ceiling is a memory guard, not a responsiveness guarantee. Optional AI Connections sends explicitly reviewed text through OpenAI-compatible, Ollama or Claude Messages protocols. Saved connection keys use Windows Credential Manager; unsaved keys remain in memory. MCP supports explicitly reviewed tool discovery/calls using its documented compatibility protocol. Live provider compatibility remains unverified.
-
-See the [validation record](docs/BEGINNER_REVIEW_VALIDATION.md) for what was actually tested. Native Windows printing produces readable text; PDF export has font/Unicode limits. Native clipboard/drop combinations, printers, Windows display scaling, assistive technology, installed offline operation, performance and signing still require broader acceptance. Saves preserve detected displaced competing versions and report failures explicitly; this is not universal filesystem compare-and-swap. No stable-release claim is made.
+The previous README's detailed workflow and architecture reference is preserved and clarified in the [user guide](docs/user-guide.md) and [development guide](docs/development.md).

@@ -18,3 +18,16 @@ dotnet_diagnostic.CA1861.severity = suggestion
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1062.severity = none
 dotnet_diagnostic.IDE0005.severity = suggestion
+
+# Shared documentation and repository metadata conventions.
+[*.md]
+end_of_line = lf
+indent_size = 2
+trim_trailing_whitespace = false
+
+[.github/**]
+end_of_line = lf
+indent_size = 2
+
+[{.editorconfig,.gitattributes,.gitignore,_config.yml}]
+end_of_line = lf

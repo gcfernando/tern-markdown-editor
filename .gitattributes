@@ -1,0 +1,11 @@
+# Documentation and administration only; preserve source checkout behavior.
+/*.md text eol=lf
+/.editorconfig text eol=lf
+/.gitattributes text eol=lf
+/.gitignore text eol=lf
+/_config.yml text eol=lf
+/.github/** text eol=lf
+/docs/**/*.md text eol=lf
+/LICENSE text eol=lf
+# Keep upstream notices byte-for-byte, including their original spacing/endings.
+/licenses/** -text -whitespace

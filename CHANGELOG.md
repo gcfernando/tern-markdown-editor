@@ -41,6 +41,7 @@
 ## 1.0.0-rc.1 (unreleased pre-release)
 
 ### Added
+
 - Complete editor shell: tabs, source/split/reading modes, workspace explorer, outline, backlinks / broken links, statistics, command palette, quick open, find/replace, workspace search.
 - Native GFM preview with sanitized HTML, math, Mermaid (flowchart + sequence).
 - Safe save pipeline, encoding/line-ending preservation, external-change detection with three-way merge, crash recovery.
@@ -51,12 +52,14 @@
 - Documentation set under `docs\`.
 
 ### Fixed
+
 - Command palette input rendered black on hover/focus (Fluent `PART_BorderElement` template); now panel-coloured.
 - **Security:** workspace file operations (create/rename/move/duplicate) checked containment lexically only, so a directory junction inside the workspace pointing outside allowed operations outside the root. Containment now resolves link targets; duplicating a directory link is rejected.
 - **Robustness:** `AppSettings.Normalize` let NaN/infinity through `Math.Clamp`; non-finite values now fall back to defaults.
 - Settings dialog numeric fields now clamp to valid ranges and settings are normalized after the dialog.
 
 ### Changed
+
 - Version set to `1.0.0-rc.1` in `Directory.Build.props`.
 
 ## 2026-10-26 quality pass (still 1.0.0-rc.1)

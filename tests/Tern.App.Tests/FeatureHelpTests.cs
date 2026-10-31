@@ -24,7 +24,9 @@ public class FeatureHelpTests
         Assert.Equal("Format → Heading → Heading 1 (title)", help.Single(f => f.Id == CommandIds.Heading1).MenuPath);
         Assert.Equal("Format → Insert Code Block", help.Single(f => f.Id == CommandIds.InsertCodeBlock).MenuPath);
         Assert.Equal("Format → Checklist", help.Single(f => f.Id == CommandIds.ToggleTask).MenuPath);
-        Assert.Contains("Save a writable document first", help.Single(f => f.Id == CommandIds.InsertImage).Prerequisite, StringComparison.Ordinal);
+        var imagePrerequisite = help.Single(f => f.Id == CommandIds.InsertImage).Prerequisite;
+        Assert.Contains("writable note", imagePrerequisite, StringComparison.Ordinal);
+        Assert.Contains("a new note asks where to save before adding pictures", imagePrerequisite, StringComparison.Ordinal);
         Assert.All(new[] { CommandIds.Print, CommandIds.ExportHtml, CommandIds.ExportPdf }, id =>
             Assert.Contains("Opened files count without edits", help.Single(f => f.Id == id).Prerequisite, StringComparison.Ordinal));
         Assert.Contains("copied picture stays on disk", help.Single(f => f.Id == CommandIds.PasteImage).Description, StringComparison.Ordinal);

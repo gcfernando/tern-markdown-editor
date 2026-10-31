@@ -4,3 +4,4 @@
 artifacts/
 TestResults/
 **/TestResults/
+/docs/review/*/after/
