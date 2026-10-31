@@ -1,5 +1,11 @@
 # Changelog
 
+## October 31 2026 rebuild verification
+
+- Make the temporary Windows file-reader test release its handle on a dedicated thread, independently of the test runner's thread pool. Keep the atomic-save retries and success assertions unchanged.
+- Verify that a persistent reader causes a bounded save failure while preserving the original metadata and removing the temporary file.
+- Keep the application version at 1.0.0. Trusted signing remains unavailable; rebuilding does not resolve Unknown publisher or SmartScreen reputation warnings.
+
 ## Image Link and Copy choice
 
 - Make Insert Local Image use copied image files directly, applying the existing same-folder or Link/Copy rules without asking for their source again; retain the source picker when no image file is copied.
