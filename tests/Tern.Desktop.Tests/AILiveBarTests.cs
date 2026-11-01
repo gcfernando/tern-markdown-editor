@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Tern.Desktop.Views;
 using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Tests;
@@ -17,17 +19,17 @@ public sealed class AILiveBarTests
         var first = new AIConnectionProfile(Guid.NewGuid().ToString("N"), "Local writing", "ollama-chat", "http://localhost:11434/api/chat", "model-one");
         var current = manager.Save(first, "", []);
         Assert.True(f.Window.AIBar.IsVisible);
-        Assert.Equal(first.Id, Assert.IsType<AIConnectionProfile>(f.Window.AIConnectionPicker.SelectedItem).Id);
+        Assert.Equal(first.Id, Assert.IsType<WorkspaceConnection>(f.Window.AIConnectionPicker.SelectedItem).Id);
         var changed = first with { Name = "Renamed writing", Model = "model-two" };
         current = manager.Save(changed, null, current);
-        Assert.Equal("Renamed writing", Assert.IsType<AIConnectionProfile>(f.Window.AIConnectionPicker.SelectedItem).Name);
+        Assert.Equal("Renamed writing", Assert.IsType<WorkspaceConnection>(f.Window.AIConnectionPicker.SelectedItem).Name);
         Assert.Contains("model-two", f.Window.AIConnectionSummary.Text, StringComparison.Ordinal);
         var second = first with { Id = Guid.NewGuid().ToString("N"), Name = "Second connection" };
         current = manager.Save(second, "", current);
         Assert.Equal(2, f.Window.AIConnectionPicker.ItemCount);
         current = manager.Remove(first.Id, current);
         Assert.True(f.Window.AIBar.IsVisible);
-        Assert.Equal(second.Id, Assert.IsType<AIConnectionProfile>(f.Window.AIConnectionPicker.SelectedItem).Id);
+        Assert.Equal(second.Id, Assert.IsType<WorkspaceConnection>(f.Window.AIConnectionPicker.SelectedItem).Id);
         manager.Remove(second.Id, current);
         Assert.False(f.Window.AIBar.IsVisible);
         Assert.Equal(0, f.Window.MainToolbarGrid.RowSpacing);
@@ -42,10 +44,29 @@ public sealed class AILiveBarTests
         store.Save([profile]);
         await Until(() => f.Window.AIBar.IsVisible);
         store.Save([profile with { Name = "Updated externally", Model = "two" }]);
-        await Until(() => (f.Window.AIConnectionPicker.SelectedItem as AIConnectionProfile)?.Name == "Updated externally");
+        await Until(() => (f.Window.AIConnectionPicker.SelectedItem as WorkspaceConnection)?.Name == "Updated externally");
         Assert.Contains("two", f.Window.AIConnectionSummary.Text, StringComparison.Ordinal);
         File.Delete(store.FilePath);
         await Until(() => !f.Window.AIBar.IsVisible);
+    }
+
+    [AvaloniaFact]
+    public void Settings_summary_includes_Copilot_and_MCP_connections()
+    {
+        using var f = new DesktopFixture();
+        WorkspaceConnection[] connections = [new("copilot", "My Copilot", "copilot", "auto", "C:/tools/copilot.exe"),
+            new("mcp", "My research tools", "mcp", "auto", "https://tools.example/mcp")];
+        var settings = new SettingsWindow(f.Shell.Settings, initialCategory: "AI connections", workspaceConnections: () => connections);
+        settings.Show(f.Window);
+        try
+        {
+            settings.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var text = settings.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text ?? "").ToArray();
+            Assert.Contains(text, t => t.StartsWith("2 saved connections", StringComparison.Ordinal));
+            Assert.Contains("My Copilot", text); Assert.Contains("My research tools", text);
+            Assert.Contains(text, t => t.Contains("MCP tools", StringComparison.Ordinal));
+        }
+        finally { settings.Close(); }
     }
 
     [Fact]

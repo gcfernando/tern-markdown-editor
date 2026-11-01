@@ -23,6 +23,7 @@ public sealed class AIConnectionWizardTests
         {
             Next(window); Fill(window);
             Find<TextBox>(window, "Connection name").Text = "Untested service";
+            Next(window); TryMessage(window);
             Find<TextBox>(window, "Exact message to send").Text = "Private message that must not be saved";
             Click(Find<Button>(window, "Save AI connection"));
             Assert.Contains("Connection saved", Find<TextBlock>(window, "AI connection status").Text, StringComparison.Ordinal);
@@ -33,7 +34,7 @@ public sealed class AIConnectionWizardTests
             window.Close();
         }
         using var loaded = Create(f, (_, _) => { calls++; return Task.FromResult(Json("{}")); }, vault);
-        Find<ComboBox>(loaded, "Saved AI connections").SelectedIndex = 0; Pump(loaded);
+        Find<ComboBox>(loaded, "Saved AI connections").SelectedIndex = 0; Pump(loaded); Next(loaded); Next(loaded);
         Assert.Equal(0, calls);
         Assert.Contains("Not tested", Find<TextBlock>(loaded, "AI validation status").Text, StringComparison.Ordinal);
         Assert.Empty(Find<TextBox>(loaded, "API key (saved only when you choose Save connection)").Text!);
@@ -49,8 +50,8 @@ public sealed class AIConnectionWizardTests
         Assert.StartsWith("Step 2", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
         Assert.True(Find<TextBlock>(window, "AI model error").IsVisible);
         Assert.True(Find<TextBlock>(window, "AI credential error").IsVisible);
-        Fill(window); Next(window);
-        Assert.Contains("Model not verified", Find<TextBlock>(window, "Reviewed validation status").Text, StringComparison.Ordinal);
+        Fill(window); Next(window); TryMessage(window);
+        Assert.Contains("Model not verified", Find<TextBlock>(window, "AI validation status").Text, StringComparison.Ordinal);
         Find<TextBox>(window, "Exact message to send").Text = " \n "; Pump(window);
         Consent(window); Pump(window);
         Assert.False(Button(window, "Send request").IsEnabled);
@@ -96,17 +97,19 @@ public sealed class AIConnectionWizardTests
         var store = new AIProfileStore(f.Shell.Paths.SettingsDirectory); store.Save([profile]); vault.Save(profile.Id, "test-stored-secret");
         using var window = new AIConnectionsWindow(f.Shell.Paths.SettingsDirectory, vault,
             confirmDiscard: _ => Task.FromResult(true), confirmDelete: _ => Task.FromResult(delete));
-        window.Show(f.Window); Find<ComboBox>(window, "Saved AI connections").SelectedIndex = 0; Pump(window);
+        window.Show(f.Window); Find<ComboBox>(window, "Saved AI connections").SelectedIndex = 0; Pump(window); Next(window);
         Assert.Equal(profile.Endpoint, Find<TextBox>(window, "Full AI endpoint").Text);
         Assert.True(Find<CheckBox>(window, "Use custom AI endpoint").IsChecked);
         Assert.Empty(Find<TextBox>(window, "API key (saved only when you choose Save connection)").Text!);
         Find<TextBox>(window, "Connection name").Text = "Renamed";
+        Next(window);
         Click(Find<Button>(window, "Save AI connection"));
         Assert.Equal("test-stored-secret", vault.Read(profile.Id));
         var saved = Assert.Single(store.Load());
         Assert.Equal(profile.Id, saved.Id); Assert.Equal(profile.Endpoint, saved.Endpoint);
         Assert.Equal("openai", saved.ServiceId); Assert.Equal("chat-completions", saved.Provider);
         Assert.DoesNotContain("test-stored-secret", File.ReadAllText(store.FilePath), StringComparison.Ordinal);
+        Back(window); Back(window);
         Click(Find<Button>(window, "Delete AI connection"));
         Assert.Single(store.Load()); Assert.Equal("test-stored-secret", vault.Read(profile.Id));
         delete = true; Click(Find<Button>(window, "Delete AI connection"));
@@ -122,15 +125,16 @@ public sealed class AIConnectionWizardTests
         var profile = Profile(); var store = new AIProfileStore(f.Shell.Paths.SettingsDirectory);
         store.Save([profile]); vault.Save(profile.Id, "test-stored-secret");
         using var window = Create(f, (_, _) => { calls++; return Task.FromResult(Json("{}")); }, vault);
-        Find<ComboBox>(window, "Saved AI connections").SelectedIndex = 0; Pump(window); Advanced(window);
+        Find<ComboBox>(window, "Saved AI connections").SelectedIndex = 0; Pump(window); Next(window); Advanced(window);
         Find<CheckBox>(window, "Use custom AI endpoint").IsChecked = true;
         Find<TextBox>(window, "Full AI endpoint").Text = "https://changed.test/team/chat";
-        Click(Find<Button>(window, "Validate AI connection"));
+        Next(window);
+        Assert.StartsWith("Step 2", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
         Assert.Equal(0, calls);
         Assert.Contains("origin", Find<TextBlock>(window, "AI credential error").Text, StringComparison.Ordinal);
-        Click(Find<Button>(window, "Save AI connection"));
         Assert.Equal(profile.Endpoint, Assert.Single(store.Load()).Endpoint);
         Find<CheckBox>(window, "Allow credential at changed destination").IsChecked = true;
+        Next(window);
         Click(Find<Button>(window, "Save AI connection"));
         Assert.Equal("https://changed.test/team/chat", Assert.Single(store.Load()).Endpoint);
         Assert.Equal("test-stored-secret", vault.Read(profile.Id));
@@ -143,10 +147,10 @@ public sealed class AIConnectionWizardTests
         using var f = new DesktopFixture();
         var completed = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var window = Create(f, (_, _) => completed.Task);
-        Next(window); Fill(window); Pump(window);
+        Next(window); Fill(window); Next(window);
         Click(Find<Button>(window, "Validate AI connection"));
         Find<TextBox>(window, "Model name").Text = "changed-model"; Pump(window);
-        completed.SetResult(Json("{\"data\":[{\"id\":\"test-model\"}]}"));
+        completed.SetResult(Json("{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}"));
         await Until(() => Find<Button>(window, "Validate AI connection").IsEnabled);
         Assert.Contains("Model not verified", Find<TextBlock>(window, "AI validation status").Text, StringComparison.Ordinal);
         Assert.DoesNotContain("Model is listed", Find<TextBlock>(window, "AI validation status").Text, StringComparison.Ordinal);
@@ -166,6 +170,7 @@ public sealed class AIConnectionWizardTests
         });
         Next(window); Fill(window); Next(window);
         const string message = "  Exact question\nSecond line  \n";
+        TryMessage(window);
         Find<TextBox>(window, "Exact message to send").Text = message; Pump(window); Consent(window);
         Click(Button(window, "Send request")); Click(Button(window, "Send request"));
         Assert.Equal(1, calls); Assert.Equal(message, sent);
@@ -175,7 +180,74 @@ public sealed class AIConnectionWizardTests
         Click(Find<Button>(window, "AI setup back")); Find<TextBox>(window, "Model name").Text = "corrected-model";
         Next(window); Consent(window);
         Assert.True(Button(window, "Send request").IsEnabled);
-        Assert.Contains("Model not verified", Find<TextBlock>(window, "Reviewed validation status").Text, StringComparison.Ordinal);
+        Assert.Contains("Model not verified", Find<TextBlock>(window, "AI validation status").Text, StringComparison.Ordinal);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Validation_sends_a_small_generation_probe_to_the_selected_model_before_saving()
+    {
+        using var f = new DesktopFixture(); var calls = 0; string? body = null; HttpMethod? method = null;
+        using var window = Create(f, async (request, token) =>
+        {
+            calls++; method = request.Method; body = await request.Content!.ReadAsStringAsync(token);
+            return Json("{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}");
+        });
+        Next(window); Fill(window); Next(window);
+        Assert.Contains("Validate and save", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
+        Assert.True(Find<Button>(window, "Validate AI connection").IsEffectivelyVisible);
+        Assert.True(Find<Button>(window, "Save AI connection").IsEffectivelyVisible);
+        Assert.Equal(0, calls);
+        Click(Find<Button>(window, "Validate AI connection"));
+        await Until(() => Find<TextBlock>(window, "AI connection status").Text?.Contains("Validation succeeded", StringComparison.Ordinal) == true);
+        Assert.Equal(HttpMethod.Post, method); Assert.Equal(1, calls);
+        using var json = JsonDocument.Parse(body!);
+        Assert.Equal("ssss", json.RootElement.GetProperty("model").GetString());
+        Assert.Equal("Reply with exactly: OK.", json.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+        Assert.Contains("Generation endpoint responded", Find<TextBlock>(window, "AI validation status").Text, StringComparison.Ordinal);
+        Click(Find<Button>(window, "Save AI connection"));
+        Assert.Equal(1, calls); Assert.Single(new AIProfileStore(f.Shell.Paths.SettingsDirectory).Load());
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Validation_shows_provider_errors_instead_of_claiming_a_successful_connection()
+    {
+        using var f = new DesktopFixture();
+        var calls = 0;
+        using var window = Create(f, (_, _) => Task.FromResult(++calls == 1
+            ? Json("{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}")
+            : new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            { Content = new StringContent("{\"error\":{\"message\":\"invalid API key\"}}") }));
+        Next(window); Fill(window); Next(window);
+        Click(Find<Button>(window, "Validate AI connection"));
+        await Until(() => Find<TextBlock>(window, "AI connection status").Text?.Contains("Validation succeeded", StringComparison.Ordinal) == true);
+        Click(Find<Button>(window, "Validate AI connection"));
+        await Until(() => Find<Button>(window, "Validate AI connection").IsEnabled);
+        Assert.Contains("Check failed", Find<TextBlock>(window, "AI validation status").Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Validation succeeded", Find<TextBlock>(window, "AI connection status").Text, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(Find<TextBlock>(window, "AI connection status").Text));
+        Click(Find<Button>(window, "Save AI connection"));
+        Assert.Contains("Validate it", Find<TextBlock>(window, "AI connection status").Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("ready to use", Find<TextBlock>(window, "AI connection status").Text, StringComparison.Ordinal);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Configuration_has_one_next_action_and_keeps_validation_and_saving_in_the_final_step()
+    {
+        using var f = new DesktopFixture();
+        using var window = Create(f, (_, _) => throw new InvalidOperationException("No automatic requests expected"));
+        Next(window);
+        Assert.True(Find<Button>(window, "AI setup next").IsEffectivelyVisible);
+        Assert.False(Find<Button>(window, "Validate AI connection").IsEffectivelyVisible);
+        Assert.False(Find<Button>(window, "Save AI connection").IsEffectivelyVisible);
+        Assert.False(Button(window, "Send request").IsEffectivelyVisible);
+        Assert.True(Find<TextBox>(window, "Connection name").IsEffectivelyVisible);
+        Fill(window); Next(window);
+        Assert.False(Find<Button>(window, "AI setup next").IsEffectivelyVisible);
+        Assert.True(Find<Button>(window, "Validate AI connection").IsEffectivelyVisible);
+        Assert.True(Find<Button>(window, "Save AI connection").IsEffectivelyVisible);
         window.Close();
     }
 
@@ -192,7 +264,13 @@ public sealed class AIConnectionWizardTests
     }
     private static void Advanced(Window window) { window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Advanced: service address and protocol")).IsExpanded = true; Pump(window); }
     private static void Next(Window window) { Click(Find<Button>(window, "AI setup next")); Pump(window); }
-    private static void Consent(Window window) { Find<CheckBox>(window, "Send exactly the message above to the endpoint above").IsChecked = true; Pump(window); }
+    private static void Back(Window window) { Click(Find<Button>(window, "AI setup back")); Pump(window); }
+    private static void TryMessage(Window window)
+    {
+        window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true;
+        Pump(window);
+    }
+    private static void Consent(Window window) { TryMessage(window); Find<CheckBox>(window, "Send exactly the message above to the endpoint above").IsChecked = true; Pump(window); }
     private static T Find<T>(Visual root, string name) where T : Control => root.GetVisualDescendants().OfType<T>().Single(c => AutomationProperties.GetName(c) == name);
     private static Button Button(Visual root, string content) => root.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, content));
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));

@@ -30,7 +30,6 @@ public class AIGuidedWindowTests
         window.Show(fixture.Window);
         await Settle();
         var presets = Find<ComboBox>(window, "AI service preset");
-        window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Separate integrations")).IsExpanded = true;
         await Settle();
         Assert.Equal("OpenAI API", Assert.IsType<string>(presets.SelectedItem));
         Click(Find<Button>(window, "AI setup next")); await Settle();
@@ -47,7 +46,8 @@ public class AIGuidedWindowTests
         Assert.Equal("http://localhost:11434/api/chat", Find<TextBox>(window, "Full AI endpoint").Text);
         Assert.Empty(Find<TextBox>(window, "API key (saved only when you choose Save connection)").Text!);
         Assert.Equal(0, vault.Writes);
-        Assert.False(Find<Button>(window, "Open GitHub Copilot connection").IsEnabled);
+        Assert.Contains("GitHub Copilot", presets.Items.OfType<string>());
+        Assert.Contains("MCP server", presets.Items.OfType<string>());
         window.Close();
     }
 
@@ -71,12 +71,12 @@ public class AIGuidedWindowTests
         Find<TextBox>(window, "API key (saved only when you choose Save connection)").Text = "test-only-secret";
         await Settle();
         Assert.Equal(0, vault.Writes);
+        Click(Find<Button>(window, "AI setup next"));
         Click(Button(window, "Save connection"));
         Assert.Equal(1, vault.Writes);
         var metadata = await File.ReadAllTextAsync(Path.Combine(directory, "ai-connections.json"));
         Assert.Contains("test-model", metadata, StringComparison.Ordinal);
         Assert.DoesNotContain("test-only-secret", metadata, StringComparison.Ordinal);
-        Click(Find<Button>(window, "AI setup next"));
         Assert.StartsWith("Step 3", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
         Assert.Contains("test-model", Find<TextBlock>(window, "Reviewed AI destination").Text, StringComparison.Ordinal);
         Assert.DoesNotContain("test-only-secret", Find<TextBlock>(window, "Reviewed AI destination").Text, StringComparison.Ordinal);
@@ -97,9 +97,11 @@ public class AIGuidedWindowTests
         Click(Find<Button>(window, "AI setup next"));
         Find<TextBox>(window, "Model name").Text = "test-model";
         Find<TextBox>(window, "API key (saved only when you choose Save connection)").Text = "test-only-key";
-        Find<TextBox>(window, "Exact message to send").Text = "Reviewed text";
         await Settle();
         Click(Find<Button>(window, "AI setup next"));
+        window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true;
+        await Settle();
+        Find<TextBox>(window, "Exact message to send").Text = "Reviewed text";
         var consent = Find<CheckBox>(window, "Send exactly the message above to the endpoint above");
         consent.IsChecked = true;
         Find<TextBox>(window, "Exact message to send").Text = "Unreviewed replacement";
@@ -120,15 +122,21 @@ public class AIGuidedWindowTests
         window.Show(fixture.Window);
         await Settle();
         Assert.Empty(launches);
-        window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Separate integrations")).IsExpanded = true;
         await Settle();
-        Click(Find<Button>(window, "Open GitHub Copilot connection"));
+        var services = Find<ComboBox>(window, "AI service preset");
+        services.SelectedIndex = services.Items.OfType<string>().ToList().IndexOf("GitHub Copilot");
+        await Settle();
+        Click(Find<Button>(window, "AI setup next"));
         Assert.Same(window, Assert.Single(launches));
-        Click(Find<Button>(window, "Open MCP server connections"));
+        services.SelectedIndex = services.Items.OfType<string>().ToList().IndexOf("MCP server");
+        await Settle();
+        Click(Find<Button>(window, "AI setup next"));
         await Settle();
         var mcp = Assert.Single(window.OwnedWindows.OfType<MCPConnectionsWindow>());
         Assert.False(mcp.CanMaximize);
         mcp.Close();
+        await Settle();
+        services.SelectedIndex = 0; await Settle();
         foreach (var name in new[] { "Back", "Configure connection", "Close" })
         {
             var button = Button(window, name);

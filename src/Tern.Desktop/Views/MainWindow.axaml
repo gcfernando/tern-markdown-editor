@@ -185,7 +185,7 @@
           <ComboBox x:Name="AIConnectionPicker" Grid.Column="1" Width="240" MinHeight="32" PlaceholderText="Choose an AI connection" SelectionChanged="OnAIConnectionChanged" AutomationProperties.Name="Active AI connection">
             <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" x:CompileBindings="False" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
           </ComboBox>
-          <Button Grid.Column="2" Content="Write with AI" Tag="edit.askAI" Click="OnMenuCommandClick" AutomationProperties.Name="Write with AI" Classes="accent" />
+          <Button x:Name="AIConnectionAction" Grid.Column="2" Content="Write with AI" Click="OnAIPrimaryActionClick" AutomationProperties.Name="Write with AI" Classes="accent" />
           <TextBlock x:Name="AIConnectionSummary" Grid.Column="3" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
           <Button Grid.Column="4" Content="Connections" Tag="app.aiConnections" Click="OnMenuCommandClick" Classes="flat" AutomationProperties.Name="Manage AI connections" />
         </Grid>

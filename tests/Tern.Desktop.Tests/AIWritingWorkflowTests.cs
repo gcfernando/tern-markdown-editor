@@ -109,7 +109,7 @@ public sealed class AIWritingWorkflowTests
             sentModel = json.RootElement.GetProperty("model").GetString();
             return Reply("New text");
         });
-        f.Window.AIConnectionPicker.SelectedItem = f.Window.AIWorkspace.Profiles[1];
+        f.Window.AIConnectionPicker.SelectedItem = f.Window.AIWorkspace.Connections[1];
         Assert.Equal(SecondId, f.Window.AIWorkspace.SelectedId);
         var reopened = new AIWorkspaceService(f.Shell.Paths.SettingsDirectory, new EmptyVault());
         reopened.Reload();

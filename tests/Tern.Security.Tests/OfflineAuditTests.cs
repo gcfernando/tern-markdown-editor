@@ -261,6 +261,8 @@ public class OfflineAuditTests
             "https://developers.openai.com/api/docs/quickstart",
             "https://platform.claude.com/docs/en/api/overview",
             "https://docs.ollama.com/quickstart",
+            "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli",
+            "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http",
             "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create",
             "http://localhost:3000/mcp",
             "Use https://api.anthropic.com/v1/messages, an Anthropic API key and an available Claude model ID. A Claude consumer subscription does not supply API credentials. Sends one reviewed text message; no tools or document access.",

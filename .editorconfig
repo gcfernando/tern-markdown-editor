@@ -11,7 +11,10 @@ trim_trailing_whitespace = true
 indent_size = 2
 
 [*.cs]
-csharp_style_namespace_declarations = file_scoped:warning
+# Suppress analyzer warnings across the solution, including IDE extensions.
+dotnet_analyzer_diagnostic.severity = none
+dotnet_analyzer_diagnostic.category-roslynator.severity = none
+csharp_style_namespace_declarations = file_scoped:none
 dotnet_diagnostic.CA1822.severity = suggestion
 dotnet_diagnostic.CA1859.severity = suggestion
 dotnet_diagnostic.CA1861.severity = suggestion

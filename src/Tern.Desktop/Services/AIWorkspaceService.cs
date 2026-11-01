@@ -6,21 +6,27 @@ namespace Tern.Desktop.Services;
 public sealed class AIWorkspaceService
 {
     private readonly AIProfileStore _profiles;
+    private readonly IntegrationProfileStore _integrations;
+    private readonly Func<CopilotTextClient> _createCopilot;
     private readonly IAICredentialStore _credentials;
     private readonly Func<AIConnectionClient> _createClient;
     private readonly string _selectionPath;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _retryAt = new(StringComparer.Ordinal);
 
-    public AIWorkspaceService(string settingsDirectory, IAICredentialStore? credentials = null, Func<AIConnectionClient>? createClient = null)
+    public AIWorkspaceService(string settingsDirectory, IAICredentialStore? credentials = null, Func<AIConnectionClient>? createClient = null, Func<CopilotTextClient>? createCopilotClient = null)
     {
         _profiles = new AIProfileStore(settingsDirectory);
         _credentials = credentials ?? new WindowsAICredentialStore();
+        _integrations = new IntegrationProfileStore(settingsDirectory, _credentials);
+        _createCopilot = createCopilotClient ?? (() => new CopilotTextClient());
         _createClient = createClient ?? (() => new AIConnectionClient());
         _selectionPath = Path.Combine(settingsDirectory, "active-ai-connection.json");
     }
 
     public IReadOnlyList<AIConnectionProfile> Profiles { get; private set; } = [];
     public AIConnectionProfile? Selected => Profiles.FirstOrDefault(p => p.Id == SelectedId);
+    public IReadOnlyList<WorkspaceConnection> Connections { get; private set; } = [];
+    public WorkspaceConnection? SelectedConnection => Connections.FirstOrDefault(p => p.Id == SelectedId);
     public string? SelectedId { get; private set; }
 
     public void Reload()
@@ -31,13 +37,16 @@ public sealed class AIWorkspaceService
             try { SelectedId = JsonSerializer.Deserialize<string>(File.ReadAllText(_selectionPath)); }
             catch (JsonException) { /* A damaged selection never damages saved connections. */ }
         }
+        var integrations = _integrations.Load();
         Profiles = profiles;
-        if (!profiles.Any(p => p.Id == SelectedId)) SelectedId = profiles.Count > 0 ? profiles[0].Id : null;
+        Connections = profiles.Select(p => new WorkspaceConnection(p.Id, p.Name, "api", p.Model, p.Endpoint))
+            .Concat(integrations.Select(p => new WorkspaceConnection(p.Id, p.Name, p.Kind, p.Model, p.Destination))).ToArray();
+        if (!Connections.Any(p => p.Id == SelectedId)) SelectedId = Connections.Count > 0 ? Connections[0].Id : null;
     }
 
     public void Select(string id)
     {
-        if (!Profiles.Any(p => p.Id == id)) throw new ArgumentException("Choose an available saved AI connection.", nameof(id));
+        if (!Connections.Any(p => p.Id == id)) throw new ArgumentException("Choose an available saved AI connection.", nameof(id));
         SelectedId = id;
         Directory.CreateDirectory(Path.GetDirectoryName(_selectionPath)!);
         var temporary = _selectionPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -51,6 +60,16 @@ public sealed class AIWorkspaceService
 
     public async Task<string> SendAsync(string profileId, string message, CancellationToken cancellationToken)
     {
+        if (Connections.FirstOrDefault(p => p.Id == profileId) is { Kind: not "api" } integration)
+        {
+            if (!integration.CanWrite) throw new InvalidOperationException("MCP provides tools, not a writing model. Choose Open MCP tools to review and run a tool.");
+            var saved = _integrations.Load().FirstOrDefault(p => p.Id == profileId && p.Kind == "copilot")
+                ?? throw new InvalidOperationException("This Copilot connection was removed. Choose an available connection.");
+            var answer = await _createCopilot().SendAsync(saved.Destination, saved.Model, _integrations.ReadSecret(saved), message, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException("Copilot returned an empty answer. Your note has not changed.");
+            return answer;
+        }
         var profile = Profiles.FirstOrDefault(p => p.Id == profileId)
             ?? throw new InvalidOperationException("Add an AI connection in Edit → Settings → AI connections, then choose it here.");
         AIProfileStore.Validate(profile);
@@ -79,6 +98,13 @@ public sealed class AIWorkspaceService
     {
         try
         {
+            var integration = _integrations.Load().FirstOrDefault(p => p.Id == profileId);
+            if (integration is not null)
+            {
+                if (integration.Kind == "mcp") return "MCP is a tool server. Choose Open MCP tools to discover and run an individually reviewed tool.";
+                CopilotTextClient.ValidateInputs(integration.Destination, integration.Model, _integrations.ReadSecret(integration), message);
+                return null;
+            }
             var profile = _profiles.Load().FirstOrDefault(p => p.Id == profileId);
             if (profile is null) return "Choose an available saved AI connection.";
             var errors = AIConnectionRules.Errors(Inputs(profile));
@@ -104,6 +130,23 @@ public sealed class AIWorkspaceService
         token.ThrowIfCancellationRequested();
         if (!targetIsCurrent()) throw new InvalidOperationException("Return to the intended editable note before generating. Nothing has been sent.");
         if (WritingValidationError(profileId, message) is { } error) throw new InvalidOperationException(error);
+        var integration = _integrations.Load().FirstOrDefault(p => p.Id == profileId);
+        if (integration is not null)
+        {
+            if (integration.Kind != "copilot") throw new InvalidOperationException("Open MCP tools to use this connection.");
+            var credential = _integrations.ReadSecret(integration);
+            var copilotClient = _createCopilot();
+            var test = await copilotClient.SendAsync(integration.Destination, integration.Model, credential, AIConnectionClient.ValidationMessage, token);
+            if (string.IsNullOrWhiteSpace(test)) throw new InvalidOperationException("Copilot returned no validation response. Your note has not changed.");
+            token.ThrowIfCancellationRequested();
+            if (_integrations.Load().FirstOrDefault(p => p.Id == profileId) != integration || _integrations.ReadSecret(integration) != credential)
+                throw new InvalidOperationException("The Copilot connection changed during validation. Review it and try again. Nothing was generated.");
+            if (!targetIsCurrent()) throw new InvalidOperationException("The active note changed during validation. Nothing was generated.");
+            var answer = await copilotClient.SendAsync(integration.Destination, integration.Model, credential, message, token);
+            token.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException("Copilot returned an empty answer. Your note has not changed.");
+            return answer;
+        }
         var profile = _profiles.Load().Single(p => p.Id == profileId);
         var inputs = Inputs(profile);
         using var client = _createClient();

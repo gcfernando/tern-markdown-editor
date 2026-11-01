@@ -20,7 +20,7 @@ public sealed class CopilotTextClient
 
     public async Task<string> SendAsync(string executable, string model, string token, string reviewedPrompt, CancellationToken cancellationToken)
     {
-        Validate(executable, model, token, reviewedPrompt);
+        ValidateInputs(executable, model, token, reviewedPrompt);
         var baseDirectory = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "Tern-Copilot-Text"));
         Directory.CreateDirectory(baseDirectory);
         var root = Path.Combine(baseDirectory, Guid.NewGuid().ToString("N"));
@@ -43,7 +43,7 @@ public sealed class CopilotTextClient
         finally { RemoveWorkingCopy(root, baseDirectory); }
     }
 
-    private static void Validate(string executable, string model, string token, string prompt)
+    internal static void ValidateInputs(string executable, string model, string token, string prompt)
     {
         if (!Path.IsPathFullyQualified(executable) || executable.StartsWith("\\\\", StringComparison.Ordinal)
             || !string.Equals(Path.GetFileName(executable), "copilot.exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(executable))
@@ -51,7 +51,7 @@ public sealed class CopilotTextClient
         if (string.IsNullOrWhiteSpace(model) || model.Length > 100 || model.Any(c => c < 33 || c > 126))
             throw new ArgumentException("Enter a model name, or auto, using up to 100 printable characters without spaces.", nameof(model));
         if (string.IsNullOrWhiteSpace(token) || token.Length > 4096 || token.Any(c => c < 33 || c > 126))
-            throw new ArgumentException("Enter a GitHub token with Copilot Requests permission. It remains in memory and is not saved.", nameof(token));
+            throw new ArgumentException("Enter a GitHub token with Copilot Requests permission. Choose Save connection to store it securely in Windows Credential Manager.", nameof(token));
         if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > MaximumPromptCharacters || prompt.Contains('\0'))
             throw new ArgumentException("Enter text of up to 8,192 characters.", nameof(prompt));
         if (prompt.Contains('@') || prompt.TrimStart().StartsWith('/') || prompt.TrimStart().StartsWith('!') || prompt.Trim() == "$")

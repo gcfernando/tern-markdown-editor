@@ -160,6 +160,46 @@ public sealed class AIConnectionValidationTests
             AIProviders.Get("anthropic-messages"), CancellationToken.None, "workspace-test"));
     }
 
+    [Theory]
+    [InlineData("openai", "chat-completions", "{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}")]
+    [InlineData("anthropic", "anthropic-messages", "{\"content\":[{\"type\":\"text\",\"text\":\"OK\"}]}")]
+    [InlineData("ollama", "ollama-chat", "{\"message\":{\"content\":\"OK\"}}")]
+    public async Task Live_validation_posts_only_fixed_test_to_configured_model(string service, string protocol, string response)
+    {
+        var calls = 0;
+        using var client = new AIConnectionClient(new Handler(async (request, token) =>
+        {
+            calls++;
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal(AIServices.Get(service).Endpoint, request.RequestUri!.AbsoluteUri);
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            Assert.Equal("chosen-model", body.RootElement.GetProperty("model").GetString());
+            Assert.Equal(AIConnectionClient.ValidationMessage, body.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+            return Json(response);
+        }));
+        var check = await client.ValidateAsync(new AIConnectionInputs(service, protocol, AIServices.Get(service).Endpoint, "chosen-model", service == "ollama" ? "" : "test-key"), CancellationToken.None);
+        Assert.Equal(1, calls); Assert.StartsWith("Passed", check.Generation); Assert.Empty(check.Models);
+    }
+
+    [Theory]
+    [InlineData(401, "invalid_api_key")]
+    [InlineData(404, "model_not_found")]
+    [InlineData(429, "insufficient_quota")]
+    public async Task Live_validation_surfaces_actual_provider_errors(int status, string code)
+    {
+        using var client = new AIConnectionClient(new Handler((_, _) => Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+            { Content = new StringContent(JsonSerializer.Serialize(new { error = new { code, message = "test-key provider failure" } })) })));
+        var error = await Assert.ThrowsAsync<AIServiceException>(() => client.ValidateAsync(new AIConnectionInputs("openai", "chat-completions", AIServices.Get("openai").Endpoint, "model", "test-key"), CancellationToken.None));
+        Assert.DoesNotContain("test-key", error.Message);
+    }
+
+    [Fact]
+    public async Task Live_validation_rejects_empty_or_wrong_protocol_response()
+    {
+        using var client = new AIConnectionClient(new Handler((_, _) => Task.FromResult(Json("{\"message\":{\"content\":\"OK\"}}"))));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.ValidateAsync(new AIConnectionInputs("openai", "chat-completions", AIServices.Get("openai").Endpoint, "model", "test-key"), CancellationToken.None));
+    }
+
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken); }

@@ -62,6 +62,7 @@ public sealed class AIConnectionReadabilityTests
             AssertReachable(window, Find<TextBox>(window, "Full AI endpoint"));
             Click(Find<Button>(window, "AI setup next")); Pump(window); CheckFooter(window);
             Assert.StartsWith("Step 3", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
+            window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true; Pump(window);
             Assert.True(Find<TextBox>(window, "Exact message to send").IsEffectivelyVisible);
             Capture(window, $"ai-review-{light}-{width}");
             Assert.Contains("test-model", Find<TextBlock>(window, "Reviewed AI destination").Text, StringComparison.Ordinal);
@@ -92,8 +93,8 @@ public sealed class AIConnectionReadabilityTests
                 Pump(window); CheckFooter(window);
                 Assert.Contains(window.GetVisualDescendants().OfType<TextBox>(), t => t.FontSize == 14 * scale);
                 var text = Text(window).ToArray();
-                Assert.Contains(text, t => t.StartsWith("1. ", StringComparison.Ordinal));
-                Assert.Contains(text, t => t.StartsWith("2. ", StringComparison.Ordinal));
+                Assert.Contains(text, t => t == "1  Configure");
+                Assert.Contains(text, t => t == "2  Validate and save");
                 Assert.Contains(window.GetVisualDescendants().OfType<TextBox>(), t => t.PasswordChar == '●');
                 Capture(window, window.GetType().Name + "-default-" + light + "-" + scale);
                 foreach (var expander in window.GetVisualDescendants().OfType<Expander>().ToArray()) { expander.IsExpanded = true; Pump(window); CheckFooter(window); }

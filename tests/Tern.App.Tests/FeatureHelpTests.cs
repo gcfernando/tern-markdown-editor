@@ -144,6 +144,23 @@ public class FeatureHelpTests
     }
 
     [Fact]
+    public void Connection_help_distinguishes_live_validation_from_saving_and_manual_tool_calls()
+    {
+        var help = FeatureCatalog.Search(CommandRegistry.CreateDefault(), null);
+        var setup = Assert.Single(help, f => f.Id == "ai.guidedSetup");
+        Assert.Contains("Validate and save", setup.Description, StringComparison.Ordinal);
+        Assert.Contains("saving make no network request", setup.Description, StringComparison.Ordinal);
+        Assert.Contains(setup.Steps, s => s.Contains("fixed test message", StringComparison.Ordinal));
+        var copilot = Assert.Single(help, f => f.Id == "ai.copilot");
+        Assert.Contains(copilot.Steps, s => s.Contains("Windows Credential Manager", StringComparison.Ordinal));
+        Assert.Contains(copilot.Steps, s => s.Contains("Copilot Chat permission is not required", StringComparison.Ordinal));
+        var mcp = Assert.Single(help, f => f.Id == "ai.mcp");
+        Assert.Contains(mcp.Steps, s => s.Contains("does not run one", StringComparison.Ordinal));
+        Assert.Contains(FeatureCatalog.Tutorials, t => t.Name == "Save a GitHub Copilot connection");
+        Assert.Contains(FeatureCatalog.Tutorials, t => t.Name == "Save an MCP tool server");
+    }
+
+    [Fact]
     public void Copilot_and_MCP_have_individual_truthful_protocol_and_authorization_lessons()
     {
         var registry = CommandRegistry.CreateDefault();
@@ -158,4 +175,44 @@ public class FeatureHelpTests
         Assert.Contains(mcp.Steps, s => s.Contains("OAuth", StringComparison.Ordinal) && s.Contains("stdio", StringComparison.Ordinal));
         Assert.Contains(mcp.Steps, s => s.Contains("JSON object", StringComparison.Ordinal));
     }
+    [Fact]
+    public void Unified_connection_help_explains_toolbar_modes_and_Copilot_note_sharing()
+    {
+        var help = FeatureCatalog.Search(CommandRegistry.CreateDefault(), null);
+        var workflow = Assert.Single(help, f => f.Id == "ai.workflow");
+        Assert.Contains(workflow.Steps, s => s.Contains("All saved API, GitHub Copilot and MCP", StringComparison.Ordinal)
+            && s.Contains("Open MCP tools", StringComparison.Ordinal));
+        var setup = Assert.Single(help, f => f.Id == "ai.guidedSetup");
+        Assert.Contains(setup.Steps, s => s.Contains("AI service menu", StringComparison.Ordinal)
+            && s.Contains("Create connection", StringComparison.Ordinal));
+        var copilot = Assert.Single(help, f => f.Id == "ai.copilot");
+        Assert.Contains(copilot.Steps, s => s.Contains("8,192", StringComparison.Ordinal)
+            && s.Contains("active note", StringComparison.Ordinal) && s.Contains("Undo", StringComparison.Ordinal));
+        var mcp = Assert.Single(help, f => f.Id == "ai.mcp");
+        Assert.Contains(mcp.Steps, s => s.Contains("main toolbar", StringComparison.Ordinal)
+            && s.Contains("without a request", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Latest_connection_help_and_tutorials_explain_explicit_navigation_and_official_guides()
+    {
+        var help = FeatureCatalog.Search(CommandRegistry.CreateDefault(), null);
+        foreach (var id in new[] { "ai.guidedSetup", "ai.profiles", "ai.copilot", "ai.mcp" })
+        {
+            var feature = Assert.Single(help, f => f.Id == id);
+            Assert.Contains(feature.Steps, s => s.Contains("stays on Choose service", StringComparison.Ordinal)
+                && s.Contains("Configure connection", StringComparison.Ordinal));
+        }
+        foreach (var name in new[] { "Save a GitHub Copilot connection", "Save an MCP tool server", "Manage saved AI and tool connections" })
+        {
+            var tutorial = Assert.Single(FeatureCatalog.Tutorials, t => t.Name == name);
+            Assert.Contains(tutorial.Steps, s => s.Contains("stays on Choose service", StringComparison.Ordinal)
+                && s.Contains("Setup guide", StringComparison.Ordinal) && s.Contains("official", StringComparison.Ordinal));
+        }
+        Assert.Contains(Assert.Single(help, f => f.Id == "ai.copilot").Steps,
+            s => s.Contains("personal account", StringComparison.Ordinal) && s.Contains("Copilot Requests", StringComparison.Ordinal));
+        Assert.Contains(Assert.Single(help, f => f.Id == "ai.mcp").Steps,
+            s => s.Contains("official", StringComparison.Ordinal) && s.Contains("2025-11-25 Streamable HTTP", StringComparison.Ordinal));
+    }
+
 }

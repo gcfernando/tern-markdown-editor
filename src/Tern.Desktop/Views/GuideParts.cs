@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Layout;
@@ -31,6 +32,31 @@ internal static class GuideParts
         var panel = new StackPanel { Spacing = 10 };
         foreach (var control in controls) panel.Children.Add(control);
         return panel;
+    }
+
+    /// <summary>Equal-width progress items; labels wrap rather than pushing dialog actions off screen.</summary>
+    public static Grid ConnectionSteps(int activeStep, params string[] labels)
+    {
+        var grid = new Grid { ColumnSpacing = 8 };
+        AutomationProperties.SetName(grid, "Connection setup progress");
+        for (var i = 0; i < labels.Length; i++)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            var text = Caption($"{i + 1}  {labels[i]}");
+            text.FontWeight = i == activeStep ? FontWeight.SemiBold : FontWeight.Normal;
+            var item = new Border
+            {
+                Padding = new Thickness(10, 9), CornerRadius = new CornerRadius(6),
+                BorderThickness = new Thickness(0, 0, 0, 2), Child = text,
+                Classes = { "connection-step" }
+            };
+            if (i == activeStep) item.Classes.Add("current");
+            if (i < activeStep) item.Classes.Add("complete");
+            AutomationProperties.SetName(item, $"Step {i + 1}: {labels[i]}{(i == activeStep ? ", current" : i < activeStep ? ", complete" : "")}");
+            Grid.SetColumn(item, i);
+            grid.Children.Add(item);
+        }
+        return grid;
     }
 
     public static WrapPanel Actions(params Button[] buttons)

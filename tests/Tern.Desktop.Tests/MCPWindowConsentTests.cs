@@ -35,7 +35,7 @@ public sealed class MCPWindowConsentTests
         {
             var connect = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Connect and discover tools"));
             connect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            var picker = window.GetVisualDescendants().OfType<ComboBox>().Single();
+            var picker = window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "Discovered MCP tools");
             for (var pass = 0; pass < 100 && picker.SelectedItem is null; pass++)
             { Dispatcher.UIThread.RunJobs(); await Task.Delay(10, TestContext.Current.CancellationToken); }
             Assert.IsType<MCPTool>(picker.SelectedItem);

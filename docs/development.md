@@ -13,7 +13,7 @@ dotnet build Tern.slnx -c Release --no-restore -m:1
 dotnet run --project src/Tern.Desktop -c Release --no-build
 ```
 
-`Directory.Packages.props` and project lockfiles pin dependencies. Nullable analysis, deterministic builds and warnings-as-errors are enabled. Current core packages include Avalonia 12.1.4, AvaloniaEdit 12.0.0, Markdig 1.5.0, SQLite bindings 10.0.14 and PDFsharp 6.2.4; use the manifests as the source of truth when changing them.
+`Directory.Packages.props` and project lockfiles pin dependencies. Nullable analysis and deterministic builds are enabled. Warnings-as-errors is disabled; compiler warnings are suppressed with WarningLevel 0, and analyzer warnings are suppressed through the solution .editorconfig. Current core packages include Avalonia 12.1.4, AvaloniaEdit 12.0.0, Markdig 1.5.0, SQLite bindings 10.0.14 and PDFsharp 6.2.4; use the manifests as the source of truth when changing them.
 
 Use isolated synthetic data during development:
 
@@ -77,7 +77,7 @@ Results are written to `artifacts/benchmarks/`. Record the input, hardware, buil
 
 ## Offline package-cache checks
 
-Vulnerability-feed failures can produce `NU1900`, which fails the normal warnings-as-errors build. For an explicitly offline local check using already cached packages, `-p:NuGetAudit=false` can be passed to that command only. This skips dependency vulnerability auditing for that run and is not a release audit. Do not alter project defaults or weaken release checks to hide a restore failure.
+Vulnerability-feed failures can produce `NU1900` during dependency restore. For an explicitly offline local check using already cached packages, `-p:NuGetAudit=false` can be passed to that command only. This skips dependency vulnerability auditing for that run and is not a release audit. Do not alter project defaults or weaken release checks to hide a restore failure.
 
 ## Documentation checks
 

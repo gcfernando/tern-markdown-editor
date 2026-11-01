@@ -21,6 +21,20 @@
   <Style Selector="TextBlock.muted">
     <Setter Property="Foreground" Value="{DynamicResource Tern.Muted}" />
   </Style>
+  <Style Selector="Border.connection-step">
+    <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+  </Style>
+  <Style Selector="Border.connection-step.current">
+    <Setter Property="Background" Value="{DynamicResource Tern.AccentSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" />
+  </Style>
+  <Style Selector="Border.connection-step.complete">
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" />
+  </Style>
+  <Style Selector="Window.ai-connection-wizard Expander.ai-advanced /template/ ToggleButton">
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
   <Style Selector="TextBlock.caps">
     <Setter Property="FontSize" Value="{DynamicResource Tern.SmallFontSize}" />
     <Setter Property="FontWeight" Value="SemiBold" />

@@ -7,7 +7,7 @@ using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Views;
 
-/// <summary>Saved API connections, explicit non-generation checks, and exact-message review.</summary>
+/// <summary>Guided service setup, live validation, secure saving, and optional exact-message review.</summary>
 public sealed class AIConnectionsWindow : Window, IDisposable
 {
     private readonly AIProfileStore _store;
@@ -17,8 +17,13 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private readonly Func<string, Task<bool>>? _confirmDiscard;
     private readonly Func<string, Task<bool>>? _confirmDelete;
     private readonly List<AIConnectionProfile> _profiles = [];
+    private readonly List<IntegrationProfile> _integrations = [];
+    private readonly IntegrationProfileStore _integrationStore;
+    private readonly string _settingsDirectory;
+    private IntegrationProfile? _selectedIntegration;
+    private readonly Func<Window, Task>? _openCopilot;
     private readonly ComboBox _saved = new() { PlaceholderText = "Choose a saved connection", HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox _service = new() { ItemsSource = AIServices.All.Select(s => s.Name).ToArray(), HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _service = new() { ItemsSource = AIServices.All.Select(s => s.Name).Concat(["GitHub Copilot", "MCP server"]).ToArray(), HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _protocol = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _models = new() { PlaceholderText = "Choose a discovered model, or enter its ID above", HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBox _name = Field("Connection name", 100);
@@ -54,6 +59,8 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private readonly Button _removeKey = new() { Content = "Remove stored credential", IsVisible = false };
     private readonly Button _replaceKey = new() { Content = "Replace stored credential", IsVisible = false };
     private readonly Control[] _pages = new Control[3];
+    private readonly Expander _tryMessage = new() { Header = "Try your own message (optional)", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private Control? _stepper;
     private Control? _workspaceSection;
     private readonly ScrollViewer _scroll = new() { HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
     private readonly Avalonia.Threading.DispatcherTimer _retryTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -91,12 +98,14 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         Func<Window, Task>? openCopilot = null, AIConnectionClient? connectionClient = null, string? initialQuestion = null,
         Func<string, Task<bool>>? confirmDiscard = null, Func<string, Task<bool>>? confirmDelete = null, string? writingShortcut = null)
     {
-        DialogParts.Setup(this, "AI Connections", 940, 790);
-        MinWidth = 640; MinHeight = 500;
+        DialogParts.SetupWizard(this, "AI Connections");
         _confirmDiscard = confirmDiscard; _confirmDelete = confirmDelete;
         _writingShortcut = writingShortcut ?? "Alt+Space";
-        _store = new AIProfileStore(settingsDirectory ?? Tern.App.Shell.AppPaths.Default().SettingsDirectory);
+        _settingsDirectory = settingsDirectory ?? Tern.App.Shell.AppPaths.Default().SettingsDirectory;
+        _openCopilot = openCopilot;
+        _store = new AIProfileStore(_settingsDirectory);
         _vault = credentialStore ?? new WindowsAICredentialStore();
+        _integrationStore = new IntegrationProfileStore(_settingsDirectory, _vault);
         _manager = new AIConnectionManager(_store, _vault);
         _client = connectionClient ?? new AIConnectionClient();
         _key.PasswordChar = '●'; _key.PlaceholderText = "Enter a key, or leave blank to keep the stored credential";
@@ -105,7 +114,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _message.TextWrapping = _response.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
         _message.MinHeight = 120; _response.MinHeight = 140; _response.IsReadOnly = true;
         _message.Text = initialQuestion ?? "";
-        _status.MaxHeight = GuideParts.Scaled(44); _status.ClipToBounds = true;
+        _status.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
         _technicalExpander.Content = _technical;
         _technicalExpander.Classes.Add("ai-advanced");
         AccessibleName(_saved, "Saved AI connections"); AccessibleName(_service, "AI service preset"); AccessibleName(_protocol, "AI provider protocol");
@@ -128,23 +137,22 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             if (Service.Id == "compatible") { Status("Other compatible APIs have no universal default. Enter the service's documented endpoint."); return; }
             _customCache = ""; _custom.IsChecked = false; _endpoint.Text = DefaultEndpoint;
         };
-        var docs = new Button { Content = "Official setup documentation ↗", Classes = { "flat" } };
+        var docs = new Button { Content = "Setup guide ↗", Classes = { "flat" } };
+        AccessibleName(docs, "AI service setup guide");
         docs.Click += (_, _) =>
         {
-            try { Process.Start(new ProcessStartInfo(Service.Documentation) { UseShellExecute = true }); }
+            try { Process.Start(new ProcessStartInfo(SetupGuideUrl) { UseShellExecute = true }); }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-            { Status("Open the provider's official documentation in your browser: " + Service.Documentation); }
+            { Status("Open the official setup guide in your browser: " + SetupGuideUrl); }
         };
-        var mcp = new Button { Content = "MCP servers…" }; AccessibleName(mcp, "Open MCP server connections");
-        mcp.Click += async (_, _) => await new MCPConnectionsWindow().ShowDialog(this);
-        var copilot = new Button { Content = "GitHub Copilot…", IsEnabled = openCopilot is not null }; AccessibleName(copilot, "Open GitHub Copilot connection");
-        copilot.Click += async (_, _) => { if (openCopilot is not null) await openCopilot(this); };
-        var integrations = new Expander { Header = "Separate integrations", HorizontalAlignment = HorizontalAlignment.Stretch,
-            Content = GuideParts.Vertical(GuideParts.Actions(mcp, copilot), GuideParts.Caption("Copilot uses its separate installed CLI connection. MCP manages tool servers; it does not choose a model or grant tools to these text requests.")) };
-        integrations.Classes.Add("ai-advanced");
+        var newProfile = new Button { Content = "Create connection", Classes = { "flat" } };
+        AccessibleName(newProfile, "New AI connection");
+        newProfile.Click += async (_, _) => { if (await ResolveUnsavedAsync()) { ApplyService(_serviceIndex); SetPage(0); Status("Choose a service, then configure your new connection."); } };
         _pages[0] = GuideParts.Vertical(
-            GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("SAVED CONNECTIONS"), _empty, _saved)),
-            GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Choose your AI service"), Label("AI service", _service), _prerequisites, docs)), integrations);
+            GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Manage your connections"),
+                GuideParts.Caption("Create, modify, delete and validate connections. Saved services are available from the main toolbar."),
+                Label("Saved connections", _saved), _empty, GuideParts.Actions(newProfile, _delete))),
+            GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Choose an AI service or tool server"), Label("AI service", _service), _prerequisites, docs)));
         _workspaceSection = Label("Anthropic workspace ID (optional)", _workspace, Error("workspace"));
         _advanced.Content = GuideParts.Vertical(_custom, Label("API endpoint (full URL)", _endpoint, Error("endpoint")), resetEndpoint,
             Label("Connection protocol", _protocol, Error("protocol")),
@@ -153,29 +161,35 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             GuideParts.Caption("Leave blank for documented provider defaults. Custom endpoints need their own documented model-list URL on the same origin; Tern does not guess paths."),
             _workspaceSection, _reuseCredential);
         _advanced.Classes.Add("ai-advanced");
-        var newProfile = new Button { Content = "New connection" };
-        newProfile.Click += async (_, _) => { if (await ResolveUnsavedAsync()) { ApplyService(_serviceIndex); SetPage(0); } };
-        var saveCard = GuideParts.Card(GuideParts.Vertical(GuideParts.Body("Save for next time"),
-            Label("Connection name", _name, Error("name")), GuideParts.Actions(newProfile, _delete, _save),
-            GuideParts.Caption("Saving is optional and does not test or contact the service. Your API key is stored securely on this device when you choose Save.")));
         _pages[1] = GuideParts.Vertical(
-            GuideParts.Card(GuideParts.Vertical(Label("Model ID", _model, Error("model")), _models,
-                Label("API key", keyRow, Error("credential")), _credentialStatus, GuideParts.Actions(_replaceKey, _removeKey), _advanced)),
-            GuideParts.Card(GuideParts.Vertical(_validationDestination, GuideParts.Actions(_validate),
-                GuideParts.Caption("Checks local settings and, where supported, requests the model list. Your message is not sent; no generation request is made. Provider policies may apply."), _checks)), saveCard);
-        var reviewChecks = GuideParts.Caption(""); AccessibleName(reviewChecks, "Reviewed validation status");
+            GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Configure your connection"),
+                Label("Connection name", _name, Error("name")),
+                Label("Model ID", _model, Error("model")), _models,
+                Label("API key", keyRow, Error("credential")), _credentialStatus,
+                GuideParts.Caption("Saved credentials stay in Windows Credential Manager. Leave a stored key blank to keep it."),
+                GuideParts.Actions(_replaceKey, _removeKey), _advanced)));
+        _tryMessage.Content = GuideParts.Vertical(Label("Exact message to send", _message),
+            GuideParts.Caption("Only this message is sent. No document, conversation history or tool permissions are attached."),
+            _consent, Label("Response", _response));
+        _tryMessage.IsExpanded = initialQuestion is not null;
+        _tryMessage.PropertyChanged += (_, e) => { if (e.Property == Expander.IsExpandedProperty) UpdateControls(); };
         _pages[2] = GuideParts.Vertical(
-            GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Review your request"), _summary, reviewChecks)),
-            GuideParts.Card(GuideParts.Vertical(Label("Exact message to send", _message),
-                GuideParts.Caption("One user message only. No system instructions, history, attachments or tool permissions are added. Your open documents are not read by this setup test."), _consent)),
-            GuideParts.Card(GuideParts.Vertical(Label("Response", _response))));
+            GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Validate and save"), _summary,
+                GuideParts.Caption("Validate sends the short test message ‘Reply with exactly: OK.’ to this model. Provider usage charges may apply. Your documents are not sent."),
+                _validationDestination, _checks)),
+            GuideParts.Card(GuideParts.Vertical(GuideParts.Body("Keep this connection for next time"),
+                GuideParts.Caption("Choose Save connection below to store these settings and your credential securely on this device. Saving does not send a request."))),
+            _tryMessage);
         var allPages = GuideParts.Vertical(_pages); allPages.Children.Add(_technicalExpander); _scroll.Content = allPages;
         var close = new Button { Content = "Close", IsCancel = true }; close.Click += (_, _) => Close();
         _next.Classes.Add("accent"); _send.Classes.Add("accent"); _save.Classes.Add("accent");
-        Content = GuideParts.Frame(GuideParts.Vertical(GuideParts.Title("AI connections"), _step), _scroll,
-            GuideParts.Vertical(_status, GuideParts.Actions(_back, _next, _send, _cancel, close)));
+        var header = GuideParts.Vertical(GuideParts.Title("AI connections"), _step);
+        _stepper = GuideParts.ConnectionSteps(0, "Choose service", "Configure", "Validate and save");
+        header.Children.Add(_stepper);
+        Content = GuideParts.Frame(header, _scroll,
+            GuideParts.Vertical(_status, GuideParts.Actions(_back, _next, _validate, _save, _send, _cancel, close)));
 
-        void RefreshReview() { _summary.Text = Summary(); reviewChecks.Text = _checks.Text; }
+        void RefreshReview() { _summary.Text = Summary(); ToolTip.SetTip(docs, SetupGuideUrl); }
         foreach (var field in new[] { _model, _endpoint, _discovery, _workspace }) field.PropertyChanged += (_, e) =>
         {
             if (_loading || e.Property != TextBox.TextProperty) return;
@@ -231,7 +245,19 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             var selected = _saved.SelectedIndex; _switching = true;
             try
             {
-                if (await ResolveUnsavedAsync()) LoadProfile(selected);
+                if (await ResolveUnsavedAsync())
+                {
+                    if (selected < _profiles.Count) LoadProfile(selected);
+                    else if (selected - _profiles.Count < _integrations.Count)
+                    {
+                        var profile = _integrations[selected - _profiles.Count];
+                        ApplyService(AIServices.All.Count + (profile.Kind == "copilot" ? 0 : 1));
+                        _selectedIntegration = profile; _savedIndex = selected;
+                        _loading = true; _saved.SelectedIndex = selected; _loading = false;
+                        SetPage(0);
+                        Status("Connection selected. Choose Configure connection to edit its saved settings. No request was made.");
+                    }
+                }
                 else { _loading = true; _saved.SelectedIndex = _savedIndex; _loading = false; }
             }
             finally { _switching = false; }
@@ -244,15 +270,16 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         };
         _replaceKey.Click += (_, _) => { _key.Focus(); _credentialStatus.Text = "Enter a replacement key. Leaving the field blank keeps the stored credential."; };
         _save.Click += (_, _) => { SaveProfile(); RefreshReview(); };
-        _delete.Click += async (_, _) => { await DeleteProfileAsync(); RefreshReview(); };
+        _delete.Click += async (_, _) => { if (_selectedIntegration is not null) await DeleteIntegrationAsync(); else await DeleteProfileAsync(); RefreshReview(); };
         _validate.Click += async (_, _) => { await ValidateAsync(); RefreshReview(); };
         _send.Click += async (_, _) => { await SendAsync(); RefreshReview(); };
         _cancel.Click += (_, _) => _request?.Cancel();
         _back.Click += (_, _) => { if (!_busy) SetPage(_page - 1); };
-        _next.Click += (_, _) =>
+        _next.Click += async (_, _) =>
         {
             if (_busy) return;
-            if (_page == 1 && !ShowLocalErrors()) return;
+            if (IsIntegration) { await OpenIntegrationAsync(); return; }
+            if (_page == 1 && !ShowLocalErrors(saving: true)) return;
             InvalidateReview(); RefreshReview(); SetPage(_page + 1);
         };
         _retryTimer.Tick += (_, _) =>
@@ -275,7 +302,13 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         RefreshProfiles(); ApplyService(0); SetPage(0); RefreshReview();
     }
 
-    private AIServiceDefinition Service => AIServices.All[_serviceIndex];
+    private string SetupGuideUrl => _serviceIndex == AIServices.All.Count
+        ? "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli"
+        : _serviceIndex == AIServices.All.Count + 1
+            ? "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"
+            : Service.Documentation;
+    private bool IsIntegration => _serviceIndex >= AIServices.All.Count;
+    private AIServiceDefinition Service => AIServices.All[Math.Min(_serviceIndex, AIServices.All.Count - 1)];
     private string Protocol => AIProviders.All.FirstOrDefault(p => p.Name == _protocol.SelectedItem as string)?.Id ?? Service.Protocol;
     private string DefaultEndpoint => AIServices.DefaultEndpoint(Service.Id, Protocol);
     private string CandidateKey => !string.IsNullOrEmpty(_key.Text) ? _key.Text : _storedKey;
@@ -313,6 +346,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _checks.Text = NotTested; _technicalExpander.IsVisible = false;
         if (!keepModels) { _models.ItemsSource = Array.Empty<string>(); _models.IsVisible = false; }
         InvalidateReview(); UpdateControls();
+        Status("Settings changed. Validate the current connection before using it.");
         if (_showErrors) ShowLocalErrors();
     }
 
@@ -325,24 +359,36 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     {
         _page = Math.Clamp(page, 0, 2); _scroll.Offset = default;
         for (var i = 0; i < _pages.Length; i++) _pages[i].IsVisible = i == _page;
-        _step.Text = _page switch { 0 => "Step 1 of 3 · Choose service", 1 => "Step 2 of 3 · Configure connection", _ => "Step 3 of 3 · Review and send" };
-        _next.Content = _page == 0 ? "Configure connection" : "Review and send";
-        _next.IsVisible = _page < 2; _send.IsVisible = _page == 2;
+        _step.Text = _page switch { 0 => "Step 1 of 3 · Choose service", 1 => "Step 2 of 3 · Configure connection", _ => "Step 3 of 3 · Validate and save" };
+        _next.Content = _page == 0 ? "Configure connection" : "Continue to validation";
+        if (_stepper?.Parent is StackPanel header)
+        {
+            header.Children.Remove(_stepper);
+            _stepper = GuideParts.ConnectionSteps(_page, "Choose service", "Configure", "Validate and save");
+            header.Children.Add(_stepper);
+        }
+        _next.IsVisible = _page < 2;
+        _validate.IsVisible = _save.IsVisible = _page == 2;
+        _back.IsVisible = _page > 0;
         UpdateControls();
     }
 
     private void UpdateControls()
     {
+        _send.IsVisible = _page == 2 && _tryMessage.IsExpanded;
+        _delete.IsVisible = _page == 0;
         var coolingDown = _retryAt is not null && DateTimeOffset.UtcNow < _retryAt;
         _next.IsEnabled = _back.IsEnabled = !_busy; _back.IsEnabled &= _page > 0;
-        _save.IsEnabled = _persistenceAvailable && !_busy; _delete.IsEnabled = _persistenceAvailable && _profileId is not null && !_busy;
+        _save.IsEnabled = _persistenceAvailable && !_busy; _delete.IsEnabled = _persistenceAvailable && (_profileId is not null || _selectedIntegration is not null) && !_busy;
         _save.Content = _profileId is null ? "Save connection" : "Save changes";
         _validate.IsEnabled = !_busy && !coolingDown;
+        _validate.Classes.Set("accent", _check is null);
+        _save.Classes.Set("accent", _check is not null);
         _cancel.IsVisible = _cancel.IsEnabled = _busy;
         _send.IsEnabled = !_busy && !coolingDown && _blocked is null && !string.IsNullOrWhiteSpace(_message.Text)
             && _consent.IsChecked == true && _reviewedSettings is not null && LocalErrors().Count == 0;
         foreach (var input in new Control[] { _service, _saved, _protocol, _custom, _model, _endpoint, _key, _name, _discovery, _workspace, _reuseCredential, _removeKey, _replaceKey, _models })
-            input.IsEnabled = !_sending;
+            input.IsEnabled = !_sending && (!IsIntegration || ReferenceEquals(input, _service) || ReferenceEquals(input, _saved));
         _protocol.IsEnabled &= Service.Id is "compatible" or "ollama";
         if (_workspaceSection is not null) _workspaceSection.IsVisible = Protocol == "anthropic-messages";
         _message.IsReadOnly = _sending;
@@ -353,7 +399,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _removeKey.IsVisible = _storedKey.Length > 0;
         _replaceKey.IsVisible = _storedKey.Length > 0;
         _summary.Text = Summary();
-        _validationDestination.Text = "Validation destination: " + (AIConnectionRules.ModelListEndpoint(Inputs()) ?? "local settings only; no documented model-list URL");
+        _validationDestination.Text = "Test destination: " + _endpoint.Text;
     }
 
     private string Summary() => $"Service: {Service.Name}\nProtocol: {AIProviders.Get(Protocol).Name}\nDestination: {_endpoint.Text}\nModel: {_model.Text}\nCredential: {(EffectiveKey.Length > 0 ? "provided; hidden" : "not provided")}"
@@ -369,10 +415,21 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private void ApplyService(int index)
     {
         _loading = true;
+        _selectedIntegration = null;
         _serviceIndex = index; _service.SelectedIndex = index; _savedIndex = -1; _saved.SelectedIndex = -1; _profileId = null;
         _storedKey = _storedKeyEndpoint = _enteredKeyEndpoint = _customCache = ""; _removeStoredKey = false;
         _storedKeyProtocol = _enteredKeyProtocol = "";
-        _key.Text = _name.Text = _model.Text = _discovery.Text = _workspace.Text = "";
+        _key.Text = _model.Text = _discovery.Text = _workspace.Text = "";
+        if (IsIntegration)
+        {
+            _loading = false; _dirty = false; _showErrors = false; ClearErrors(); ResetChecks(); SetPage(0);
+            _prerequisites.Text = index == AIServices.All.Count
+                ? "Install the native GitHub Copilot CLI and use an account with Copilot access. Create a fine-grained token owned by your personal account with the Copilot Requests account permission. Choose Configure connection, enter the token and model, then validate and save. Setup guide opens GitHub's official authentication instructions."
+                : "Ask the server owner for a Streamable HTTP endpoint supporting MCP 2025-11-25 and any required bearer token. Choose Configure connection, enter the server address, connect and discover tools, then save. Use Open MCP tools in the main toolbar to review individual tool calls. Tern does not support stdio or OAuth sign-in. Setup guide opens the matching official transport specification.";
+            Status("Configure " + (index == AIServices.All.Count ? "GitHub Copilot" : "an MCP server") + ". API-only fields are disabled for this service.");
+            return;
+        }
+        _name.Text = Service.Name;
         SetProtocols(Service.Id, Service.Protocol); _endpoint.Text = DefaultEndpoint;
         _custom.IsChecked = Service.Id == "compatible"; _endpoint.IsReadOnly = _custom.IsChecked != true;
         _advanced.IsExpanded = Service.Id == "compatible"; _reuseCredential.IsChecked = false; _prerequisites.Text = Service.Prerequisites;
@@ -386,7 +443,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         try
         {
             var secret = _vault.Read(profile.Id) ?? "";
-            _loading = true; _profileId = profile.Id; _savedIndex = index; _saved.SelectedIndex = index;
+            _loading = true; _selectedIntegration = null; _profileId = profile.Id; _savedIndex = index; _saved.SelectedIndex = index;
             _serviceIndex = AIServices.All.ToList().FindIndex(s => s.Id == AIServices.ServiceFor(profile));
             if (_serviceIndex < 0) _serviceIndex = AIServices.All.Count - 1;
             _service.SelectedIndex = _serviceIndex; SetProtocols(Service.Id, profile.Provider);
@@ -396,7 +453,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             _customCache = profile.Endpoint; _custom.IsChecked = profile.UseCustomEndpoint || profile.Endpoint != DefaultEndpoint;
             _endpoint.IsReadOnly = _custom.IsChecked != true; _advanced.IsExpanded = _custom.IsChecked == true;
             _reuseCredential.IsChecked = false; _prerequisites.Text = Service.Prerequisites;
-            _loading = false; ResetChecks(); _dirty = false; _showErrors = false; ClearErrors(); SetPage(1);
+            _loading = false; ResetChecks(); _dirty = false; _showErrors = false; ClearErrors(); SetPage(0);
             Status("Connection loaded. Not tested in this session; no request was made.");
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or PlatformNotSupportedException)
@@ -420,7 +477,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             _profiles.Clear(); _profiles.AddRange(updated); _profileId = profile.Id;
             _storedKey = EffectiveKey; _storedKeyEndpoint = profile.Endpoint; _storedKeyProtocol = profile.Provider; _removeStoredKey = false;
             _loading = true; _key.Text = ""; RefreshProfiles(); _savedIndex = _profiles.FindIndex(p => p.Id == profile.Id); _saved.SelectedIndex = _savedIndex; _loading = false;
-            _dirty = false; UpdateControls(); Status(creating ? "Connection saved. Not tested unless a check is shown above." : "Changes saved. Validation applies only to the settings checked in this session.");
+            _dirty = false; UpdateControls(); Status(_check is null ? "Connection saved. Validate it before using it for the first time." : "Connection saved and ready to use. Use " + _writingShortcut + " in a note to start writing with AI.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
         { _loading = false; Status("Connection could not be saved. Your edits are still here. " + ex.Message); }
@@ -453,17 +510,22 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     {
         if (_busy || !ShowLocalErrors()) return;
         var input = Inputs(); var generation = _generation;
-        _request = new CancellationTokenSource(); _busy = true; UpdateControls(); Status("Checking settings and the documented model list…");
+        _check = null; _checks.Text = "Testing the current connection…"; _technicalExpander.IsVisible = false;
+        _request = new CancellationTokenSource(); _busy = true; UpdateControls(); Status("Contacting the AI service and testing the selected model…");
         try
         {
-            var result = await _client.CheckAsync(input, _request.Token);
+            var result = await _client.ValidateAsync(input, _request.Token);
             if (_disposed || generation != _generation || input != Inputs()) return;
             _check = result; _checks.Text = result.Describe();
             _loading = true; _models.ItemsSource = result.Models; _models.IsVisible = result.Models.Count > 0; _models.SelectedIndex = -1; _loading = false;
             _blocked = result.ModelInvalid ? "Choose a model installed on this Ollama server before sending." : null;
-            Status(_blocked ?? "Check complete. Model listing does not verify generation compatibility or credits.");
+            Status(_blocked ?? "Validation succeeded. The selected model returned a text response. Choose Save connection to finish.");
         }
-        catch (OperationCanceledException) { if (generation == _generation && !_disposed) Status("Connection check canceled. No generation request was made."); }
+        catch (OperationCanceledException)
+        {
+            if (generation == _generation && !_disposed)
+            { _checks.Text = "Validation canceled. Model and generation are not verified."; Status("Validation canceled. The service may already have received the test request."); }
+        }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or System.Text.Json.JsonException)
         { if (generation == _generation && !_disposed) ReportFailure(ex); }
         finally { _request.Dispose(); _request = null; _busy = false; UpdateControls(); }
@@ -497,6 +559,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
 
     private void ReportFailure(Exception error)
     {
+        _check = null;
         _checks.Text = "Local settings: valid\nCheck failed. Model and generation are not verified.";
         Status(error.Message);
         if (error is AIServiceException service)
@@ -514,7 +577,37 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _checks.Text = NotTested; _models.ItemsSource = Array.Empty<string>(); _models.IsVisible = false; _technicalExpander.IsVisible = false; InvalidateReview();
     }
     private void RefreshProfiles()
-    { _saved.ItemsSource = _profiles.Select(p => p.Name).ToArray(); _saved.IsVisible = _profiles.Count > 0; _empty.IsVisible = _profiles.Count == 0; }
+    {
+        try { _integrations.Clear(); _integrations.AddRange(_integrationStore.Load()); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException or ArgumentException)
+        { Status("Saved tool and Copilot connections could not be loaded: " + ex.Message); }
+        _saved.ItemsSource = _profiles.Select(p => p.Name).Concat(_integrations.Select(p => p.Name + (p.Kind == "mcp" ? " · MCP tools" : " · GitHub Copilot"))).ToArray();
+        _saved.IsVisible = _profiles.Count + _integrations.Count > 0; _empty.IsVisible = !_saved.IsVisible;
+    }
+
+    private async Task OpenIntegrationAsync()
+    {
+        if (!await ResolveUnsavedAsync()) return;
+        if (_serviceIndex == AIServices.All.Count)
+        {
+            if (_openCopilot is not null && _selectedIntegration is null) await _openCopilot(this);
+            else await new CopilotConnectionWindow(_settingsDirectory, _vault, _selectedIntegration?.Id).ShowDialog(this);
+        }
+        else await new MCPConnectionsWindow(_settingsDirectory, _vault, _selectedIntegration?.Id).ShowDialog(this);
+        _loading = true; RefreshProfiles(); _loading = false;
+        Status("Connections refreshed. Saved services are available from the main toolbar.");
+    }
+
+    private async Task DeleteIntegrationAsync()
+    {
+        if (_selectedIntegration is not { } profile || _busy) return;
+        var approved = _confirmDelete is not null ? await _confirmDelete(profile.Name)
+            : await PromptWindow.AskAsync(this, "Delete connection?", "Delete “" + profile.Name + "” and its stored credential?", ["Delete connection", "Cancel"], 1, 1) == 0;
+        if (!approved) return;
+        try { _integrationStore.Remove(profile.Id); _selectedIntegration = null; _loading = true; RefreshProfiles(); _loading = false; ApplyService(_serviceIndex); Status("Connection and its stored credential deleted."); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
+        { Status("Connection could not be deleted: " + ex.Message); }
+    }
     private void ClearErrors() { foreach (var label in _errors.Values) { label.Text = ""; label.IsVisible = false; } }
     private void Status(string text) { _status.Text = text; ToolTip.SetTip(_status, text); }
     private TextBlock Error(string field)

@@ -48,6 +48,16 @@ public class GuideScreenshotsTests
             }
             if (window is AIConnectionsWindow)
             {
+                var next = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "AI setup next");
+                next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var model = window.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "Model name");
+                var key = window.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "API key (saved only when you choose Save connection)");
+                model.Text = "synthetic-model"; key.Text = "synthetic-key";
+                next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                model.Text = ""; key.Text = "";
+                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true;
+                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var send = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Send request"));
                 Assert.False(send.IsEnabled);
                 var consent = window.GetVisualDescendants().OfType<CheckBox>().Single(c => AutomationProperties.GetName(c) == "Send exactly the message above to the endpoint above");

@@ -22,7 +22,7 @@ public sealed class SettingsWindow : Window
     private readonly Func<string, CancellationToken, Task<string>>? _answerAI;
     public SettingsWindow(AppSettings settings, CommandRegistry? registry = null, Func<string, Task>? openFeature = null, Func<string, Task>? askAI = null,
         Func<Window, Task>? configureAI = null, Func<IReadOnlyList<AIConnectionProfile>>? aiProfiles = null, string? initialCategory = null,
-        Func<string, CancellationToken, Task<string>>? answerAI = null)
+        Func<string, CancellationToken, Task<string>>? answerAI = null, Func<IReadOnlyList<WorkspaceConnection>>? workspaceConnections = null)
     {
         _openFeature = openFeature;
         _askAI = askAI;
@@ -78,16 +78,16 @@ public sealed class SettingsWindow : Window
         var aiList = new StackPanel { Spacing = 10 };
         void RefreshAI()
         {
-            var profiles = aiProfiles?.Invoke() ?? [];
+            var profiles = workspaceConnections?.Invoke() ?? (aiProfiles?.Invoke() ?? []).Select(p => new WorkspaceConnection(p.Id, p.Name, "api", p.Model, p.Endpoint)).ToArray();
             var shortcut = Gesture.Describe(registry.GetGesture(CommandIds.AskAI));
             var writingAction = shortcut.Length > 0 ? "Press " + shortcut : "Choose Edit → Write with AI";
-            aiWritingDescription.Text = "Choose a connection in the main toolbar. " + writingAction + " in Source, Reading preview or the Reference pane, then describe your change. AI updates the active note in one undoable edit.";
+            aiWritingDescription.Text = "Choose a connection in the main toolbar. " + writingAction + " in Source, Reading preview or the Reference pane, then describe your change. AI updates the active note in one undoable edit. For an MCP connection, choose Open MCP tools to review and run a tool separately.";
             aiSummary.Text = profiles.Count == 0 ? "Connect a service once. Your saved connections will be ready throughout Tern."
                 : $"{profiles.Count} saved {(profiles.Count == 1 ? "connection" : "connections")} · Switch between them from the main toolbar.";
             aiList.Children.Clear();
             foreach (var profile in profiles)
                 aiList.Children.Add(GuideParts.Card(GuideParts.Vertical(new TextBlock { Text = profile.Name, FontWeight = FontWeight.SemiBold },
-                    GuideParts.Caption(profile.Model + " · " + new Uri(profile.Endpoint).Host))));
+                    GuideParts.Caption(profile.ProviderLabel + " · " + profile.Summary))));
         }
         var connections = new Button { Content = "Manage AI connections", IsEnabled = configureAI is not null || openFeature is not null, Classes = { "accent" } };
         AutomationProperties.SetName(connections, "Configure AI connections");
@@ -101,7 +101,7 @@ public sealed class SettingsWindow : Window
         var aiCards = GuideParts.Vertical(GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("YOUR WRITING COMPANIONS"),
             aiSummary, connections)), aiList,
             GuideParts.Card(GuideParts.Vertical(GuideParts.Body("Write where you work"), aiWritingDescription)),
-            GuideParts.Caption("Saved keys stay in Windows Credential Manager. A request starts only when you choose Generate or Ask. AI edits remain unsaved until you save the note."));
+            GuideParts.Caption("Saved keys stay in Windows Credential Manager. Requests start only when you explicitly validate, generate, ask, connect or run a reviewed tool. AI edits remain unsaved until you save the note."));
         groups["AI connections"] = (aiHeading, aiCards);
         aiSection.Children.Add(aiHeading);
         aiSection.Children.Add(aiCards);

@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Tern.App.Commands;
-using Tern.App.Help;
 using Tern.Desktop.Services;
 using Tern.Domain.Text;
 using Avalonia.Threading;
@@ -22,12 +21,14 @@ public partial class MainWindow
         {
             _aiWorkspace.Reload();
             _refreshingAI = true;
-            AIConnectionPicker.ItemsSource = _aiWorkspace.Profiles;
-            AIConnectionPicker.SelectedItem = _aiWorkspace.Selected;
-            AIBar.IsVisible = _aiWorkspace.Profiles.Count > 0;
+            AIConnectionPicker.ItemsSource = _aiWorkspace.Connections;
+            AIConnectionPicker.SelectedItem = _aiWorkspace.SelectedConnection;
+            AIBar.IsVisible = _aiWorkspace.Connections.Count > 0;
             MainToolbarGrid.RowSpacing = AIBar.IsVisible ? 4 : 0;
-            AIConnectionSummary.Text = _aiWorkspace.Selected is { } profile
-                ? profile.Model + " · " + new Uri(profile.Endpoint).Host
+            AIConnectionAction.Content = _aiWorkspace.SelectedConnection is { Kind: "mcp" } ? "Open MCP tools" : "Write with AI";
+            Avalonia.Automation.AutomationProperties.SetName(AIConnectionAction, AIConnectionAction.Content.ToString());
+            AIConnectionSummary.Text = _aiWorkspace.SelectedConnection is { } profile
+                ? profile.Summary
                 : "Set up once in Settings, then ask from any writing pane.";
             foreach (var panel in OverlayLayer.Children.OfType<AIPromptPanel>()) panel.RefreshConnections(_aiWorkspace);
         }
@@ -39,11 +40,12 @@ public partial class MainWindow
     private void ObserveAIConnections()
     {
         AIConnectionManager.ConnectionsChanged += OnSavedAIConnectionsChanged;
+        IntegrationProfileStore.ConnectionsChanged += OnSavedAIConnectionsChanged;
         _aiReloadTimer.Tick += (_, _) => { _aiReloadTimer.Stop(); if (!_windowClosed) ReloadAIConnections(); };
         try
         {
             Directory.CreateDirectory(_shell.Paths.SettingsDirectory);
-            _aiWatcher = new FileSystemWatcher(_shell.Paths.SettingsDirectory, "ai-connections.json")
+            _aiWatcher = new FileSystemWatcher(_shell.Paths.SettingsDirectory, "*connections.json")
             { NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size };
             _aiWatcher.Changed += (_, _) => QueueAIRefresh();
             _aiWatcher.Created += (_, _) => QueueAIRefresh();
@@ -69,13 +71,14 @@ public partial class MainWindow
     private void StopObservingAIConnections()
     {
         AIConnectionManager.ConnectionsChanged -= OnSavedAIConnectionsChanged;
+        IntegrationProfileStore.ConnectionsChanged -= OnSavedAIConnectionsChanged;
         _aiReloadTimer.Stop();
         _aiWatcher?.Dispose();
     }
 
     private void OnAIConnectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (!_refreshingAI && AIConnectionPicker.SelectedItem is AIConnectionProfile profile) SelectAIConnection(profile.Id);
+        if (!_refreshingAI && AIConnectionPicker.SelectedItem is WorkspaceConnection profile) SelectAIConnection(profile.Id);
     }
 
     private void SelectAIConnection(string id)
@@ -86,16 +89,30 @@ public partial class MainWindow
         ReloadAIConnections();
     }
 
+    private async void OnAIPrimaryActionClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_aiWorkspace.SelectedConnection is { Kind: "mcp" } profile) await ShowMCPToolsAsync(profile.Id);
+        else ShowAIWritingPrompt();
+    }
+
+    private async Task ShowMCPToolsAsync(string profileId)
+    {
+        HideOverlay();
+        await new MCPConnectionsWindow(_shell.Paths.SettingsDirectory, selectedProfileId: profileId, useTools: true).ShowDialog(this);
+        ReloadAIConnections();
+    }
+
     private async Task ShowAIConnectionsAsync(Window owner)
     {
         await new AIConnectionsWindow(_shell.Paths.SettingsDirectory,
-            openCopilot: parent => new CopilotConnectionWindow().ShowDialog(parent),
+            openCopilot: parent => new CopilotConnectionWindow(_shell.Paths.SettingsDirectory).ShowDialog(parent),
             writingShortcut: WritingShortcut()).ShowDialog(owner);
         ReloadAIConnections();
     }
 
     internal void ShowAIWritingPrompt()
     {
+        if (_aiWorkspace.SelectedConnection is { Kind: "mcp" } tools) { _ = ShowMCPToolsAsync(tools.Id); return; }
         if (_shown is not { IsReadOnly: false } tab || !CanRunCommand(CommandIds.AskAI)) return;
         ReloadAIConnections();
         HideOverlay();
@@ -131,8 +148,8 @@ public partial class MainWindow
                 if (tab.CurrentText.Length + question.Length > AIConnectionClient.MaximumMessageCharacters)
                     return "Shorten the note or question: the complete request exceeds 32,768 characters.";
                 return _aiWorkspace.WritingValidationError(profileId, AIWorkspaceService.WritingMessage(question, tab.CurrentText));
-            });
-        panel.MaxHeight = Math.Max(250, Body.Bounds.Height - 75);
+            }, openTools: ShowMCPToolsAsync);
+        panel.MaxHeight = Math.Max(250, Body.Bounds.Height - 40);
         OverlayLayer.Children.Add(panel);
         OverlayLayer.IsVisible = true;
     }
@@ -141,16 +158,9 @@ public partial class MainWindow
 
     private Task<string> AnswerGuideQuestionAsync(string question, CancellationToken token)
     {
-        if (_aiWorkspace.Selected is not { } profile)
+        if (_aiWorkspace.SelectedConnection is not { } profile)
             throw new InvalidOperationException("Choose an AI connection on Tern's main screen. Add one in Edit → Settings → AI connections if you have not set one up yet.");
-        var reference = string.Join('\n', _shell.Registry.Commands.Select(c =>
-            c.Title + " | " + c.Category + " | " + Gesture.Describe(_shell.Registry.GetGesture(c.Id))));
-        var relevant = string.Join('\n', FeatureCatalog.Search(_shell.Registry, question).Take(8)
-            .Select(f => f.Name + ": " + f.Description + " " + string.Join(" ", f.Steps)));
-        var message = "Answer the user's question clearly. General questions are welcome. If the question concerns Tern, " +
-            "use the supplied current command list and guide; do not invent features or claim to have performed actions. " +
-            "If these facts do not establish an answer, explain the uncertainty.\n\nTERN COMMANDS\n" + reference +
-            "\n\nRELEVANT GUIDE\n" + relevant + "\n\nUSER QUESTION\n" + question;
+        var message = GuideQuestionPrompt.Build(_shell.Registry, question, forCopilot: profile.Kind == "copilot");
         return _aiWorkspace.SendAsync(profile.Id, message, token);
     }
 }

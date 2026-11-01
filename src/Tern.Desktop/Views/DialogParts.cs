@@ -12,7 +12,14 @@ namespace Tern.Desktop.Views;
 /// <summary>Shared construction helpers for the code-built dialog windows.</summary>
 internal static class DialogParts
 {
-    public static void Setup(Window window, string title, double width, double height)
+    /// <summary>Keep setup steps in one stable viewport, sized like the settings window that opened them.</summary>
+    public static void SetupWizard(Window window, string title)
+    {
+        window.Classes.Add("ai-connection-wizard");
+        Setup(window, title, 940, 760, stableViewport: true);
+    }
+
+    public static void Setup(Window window, string title, double width, double height, bool stableViewport = false)
     {
         window.Title = title;
         window.Width = width;
@@ -49,7 +56,8 @@ internal static class DialogParts
                     // forms and editors retain their own, separately chosen viewport.
                     var expanded = observed.OfType<Expander>().Any(expander => expander.IsEffectivelyVisible && expander.IsExpanded);
                     var textScale = Math.Max(1, GuideParts.Scaled(14) / 14);
-                    FitContentHeight(window, expanded ? window.MaxHeight : height * textScale);
+                    if (!stableViewport)
+                        FitContentHeight(window, expanded ? window.MaxHeight : height * textScale);
                     KeepInWorkingArea(window);
                 }
                 finally { fitting = false; }
@@ -75,6 +83,13 @@ internal static class DialogParts
         window.Opened += (_, _) =>
         {
             opened = true;
+            if (stableViewport && window.Owner is Window owner &&
+                (owner is SettingsWindow || owner.Classes.Contains("ai-connection-wizard")))
+            {
+                window.Width = owner.Width;
+                window.Height = owner.Height;
+                window.Position = owner.Position;
+            }
             FitWorkingArea(window);
             ObserveContent();
             // Wait until native decorations and control templates have a real size.

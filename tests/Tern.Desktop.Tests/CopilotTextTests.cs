@@ -111,7 +111,7 @@ public sealed class CopilotTextTests
         var window = new CopilotConnectionWindow(client); window.Show(fixture.Window);
         try
         {
-            window.GetVisualDescendants().OfType<Expander>().Single().IsExpanded = true;
+            window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Advanced: installed CLI and safety limits")).IsExpanded = true;
             window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
             var fields = window.GetVisualDescendants().OfType<TextBox>().ToArray();
             fields.Single(t => AutomationProperties.GetName(t) == "Installed native copilot.exe").Text = installed.Path;
@@ -125,6 +125,45 @@ public sealed class CopilotTextTests
             Dispatcher.UIThread.RunJobs(); await Task.Delay(30, TestContext.Current.CancellationToken);
             Assert.Equal(0, calls); Assert.False(consent.IsChecked);
             Assert.DoesNotContain(send.GetVisualAncestors(), ancestor => ancestor is ScrollViewer);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Prompt_edits_keep_connection_validation_but_failed_retest_blocks_save()
+    {
+        using var installed = new FakeExecutable(); using var fixture = new DesktopFixture(); var calls = 0;
+        var client = new CopilotTextClient((_, _) => Task.FromResult(++calls == 1
+            ? new CopilotProcessResult(0, "OK") : new CopilotProcessResult(3, "authentication failed")));
+        var directory = System.IO.Path.GetDirectoryName(installed.Path)!;
+        var window = new CopilotConnectionWindow(client, directory); window.Show(fixture.Window);
+        try
+        {
+            window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Advanced: installed CLI and safety limits")).IsExpanded = true;
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            var fields = window.GetVisualDescendants().OfType<TextBox>().ToArray();
+            fields.Single(t => AutomationProperties.GetName(t) == "Installed native copilot.exe").Text = installed.Path;
+            fields.Single(t => AutomationProperties.GetName(t)?.StartsWith("GitHub token", StringComparison.Ordinal) == true).Text = "test-key";
+            fields.Single(t => AutomationProperties.GetName(t) == "Integration connection name").Text = "My Copilot";
+            Dispatcher.UIThread.RunJobs();
+            Button Button(string content) => window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, content));
+            void Click(string content) => Button(content).RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+            Click("Continue"); Click("Validate connection");
+            async Task Finish()
+            {
+                for (var pass = 0; pass < 100 && !Button("Validate connection").IsEnabled; pass++)
+                { Dispatcher.UIThread.RunJobs(); await Task.Delay(10, TestContext.Current.CancellationToken); }
+                Dispatcher.UIThread.RunJobs(); Assert.True(Button("Validate connection").IsEnabled);
+            }
+            await Finish();
+            bool Has(string prefix) => window.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.StartsWith(prefix, StringComparison.Ordinal) == true);
+            Assert.True(Has("Validation passed."));
+            fields.Single(t => AutomationProperties.GetName(t) == "Exact reviewed text to send").Text = "New question";
+            Dispatcher.UIThread.RunJobs(); Assert.True(Has("Validation passed."));
+            Click("Validate connection"); await Finish(); Assert.True(Has("Validation failed."));
+            Click("Save connection"); Dispatcher.UIThread.RunJobs();
+            Assert.True(Has("Validate these settings successfully before saving."));
+            Assert.False(File.Exists(System.IO.Path.Combine(directory, "integration-connections.json")));
         }
         finally { window.Close(); }
     }

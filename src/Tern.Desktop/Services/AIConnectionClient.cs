@@ -61,6 +61,21 @@ public sealed class AIConnectionClient : IDisposable
         return (provider ?? AIProviders.All[0]).ReadResponse(json.RootElement);
     }
 
+    public const string ValidationMessage = "Reply with exactly: OK.";
+
+    /// <summary>Explicit live generation probe. Never includes the user's message or document.</summary>
+    public async Task<AIConnectionCheck> ValidateAsync(AIConnectionInputs input, CancellationToken cancellationToken)
+    {
+        var errors = AIConnectionRules.Errors(input);
+        if (errors.Count > 0) throw new ArgumentException(string.Join("\n", errors.Values), nameof(input));
+        var answer = await SendAsync(new Uri(input.Endpoint), input.Model, input.Credential, ValidationMessage,
+            AIProviders.Get(input.Protocol), cancellationToken, input.WorkspaceId).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException("The service returned an empty test response. Generation could not be verified.");
+        return new AIConnectionCheck(DateTimeOffset.Now, "Generation endpoint responded", input.Credential.Length == 0
+            ? "No credential required by this request" : "Supplied credential accepted for generation",
+            "Configured model generated text", "Passed - live test response received", []);
+    }
+
     public async Task<AIConnectionCheck> CheckAsync(AIConnectionInputs input, CancellationToken cancellationToken)
     {
         var errors = AIConnectionRules.Errors(input);

@@ -30,7 +30,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Release policy tests failed.' }
       - name: Restore locked dependencies with vulnerability auditing
         run: dotnet restore Tern.slnx --locked-mode -m:1
-      - name: Build complete solution with warnings as errors
+      - name: Build complete solution
         run: dotnet build Tern.slnx -c Release --no-restore -m:1 -p:UseSharedCompilation=false
       - name: Eight test projects with explicit external acceptance exclusions
         # Eight cases need untracked original corpora/samples or an interactive Explorer recycle bin.

@@ -721,7 +721,7 @@ public partial class MainWindow
     {
         await new SettingsWindow(_shell.Settings, _shell.Registry, RunCommandAsync, AskGuideAIAsync,
             configureAI: ShowAIConnectionsAsync, aiProfiles: () => _aiWorkspace.Profiles, initialCategory: initialCategory,
-            answerAI: AnswerGuideQuestionAsync).ShowDialog(this);
+            answerAI: AnswerGuideQuestionAsync, workspaceConnections: () => _aiWorkspace.Connections).ShowDialog(this);
         ReloadAIConnections();
         _shell.Settings.Normalize();
         _shell.SaveSettings();

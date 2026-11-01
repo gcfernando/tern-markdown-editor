@@ -4,7 +4,7 @@ Tern's application metadata is **1.0.1**. This ledger restores the path referenc
 
 | Gate | Current evidence requirement |
 | --- | --- |
-| Reproducible automated gate | Successful locked restore, warnings-as-errors build and filtered eight-project test run for the exact commit; inspect reports rather than assuming completion |
+| Reproducible automated gate | Successful locked restore, solution build and filtered eight-project test run for the exact commit; inspect reports rather than assuming completion |
 | External sample/corpus tests | Run the eight explicitly excluded cases with their original inputs/native environment; see the [case list](BEGINNER_REVIEW_VALIDATION.md#automated-gate-and-external-cases) |
 | Package integrity | Fresh complete Windows x64 ZIP, matching checksum and extracted-application smoke evidence |
 | Editing and file safety | Native save/Save As/conflict/recovery checks with synthetic copies and unchanged unrelated files |

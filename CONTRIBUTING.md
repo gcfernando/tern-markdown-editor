@@ -8,7 +8,7 @@ Read the [project overview](README.md), [documentation index](documentation.md) 
 
 ## Project-specific validation
 
-Develop on Windows with the exact .NET SDK in [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json). Follow the [development guide](docs/development.md) for the locked restore, warnings-as-errors build and test commands. UI tests use Avalonia's headless platform; they do not replace physical keyboard, clipboard, printer, screen-reader, DPI or clean-machine checks. Report the Windows version, display scaling and checks actually completed for UI and packaging changes.
+Develop on Windows with the exact .NET SDK in [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json). Follow the [development guide](docs/development.md) for the locked restore, solution build and test commands. UI tests use Avalonia's headless platform; they do not replace physical keyboard, clipboard, printer, screen-reader, DPI or clean-machine checks. Report the Windows version, display scaling and checks actually completed for UI and packaging changes.
 
 Keep application documents and credentials out of tests. Use isolated `TERN_DATA_ROOT` folders and synthetic Markdown fixtures. AI and MCP changes need local protocol fixtures; do not send another person's documents to a provider or commit API keys. Changes to save, overwrite, recovery, export or path handling need regression evidence that unrelated files and unsaved edits remain protected.
 

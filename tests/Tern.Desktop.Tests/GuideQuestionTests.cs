@@ -110,6 +110,8 @@ public sealed class GuideQuestionTests
             {
                 Find<Button>(ai, "AI setup next").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 await Settle(ai);
+                Find<TextBox>(ai, "Model name").Text = "synthetic-model";
+                Find<TextBox>(ai, "API key (saved only when you choose Save connection)").Text = "synthetic-key";
                 Find<Button>(ai, "AI setup next").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 await Settle(ai);
                 Assert.Equal(question, Find<TextBox>(ai, "Exact message to send").Text);

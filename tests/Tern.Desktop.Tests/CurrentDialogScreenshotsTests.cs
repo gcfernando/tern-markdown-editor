@@ -57,11 +57,14 @@ public class CurrentDialogScreenshotsTests
         await Capture(ai, "ai-choose-service");
         Find<Button>(ai, "AI setup next").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Find<TextBox>(ai, "Model name").Text = "example-model-id";
+        Find<TextBox>(ai, "API key (saved only when you choose Save connection)").Text = "synthetic-test-key";
         await Capture(ai, "ai-configure");
         Find<Button>(ai, "AI setup next").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        ai.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true;
+        ai.UpdateLayout(); Dispatcher.UIThread.RunJobs();
         Find<TextBox>(ai, "Exact message to send").Text = "Summarize the purpose of a Markdown workspace.";
         await Capture(ai, "ai-review");
-        Assert.False(Assert.Single(ai.GetVisualDescendants().OfType<CheckBox>()).IsChecked);
+        Assert.False(Find<CheckBox>(ai, "Send exactly the message above to the endpoint above").IsChecked);
         ai.Close();
     }
 
