@@ -41,7 +41,7 @@ public sealed class MCPConnectionClient : IDisposable
             _endpoint = endpoint; _key = key; _session = null; _initialized = false; _knownTools.Clear();
             using var deadline = Deadline(cancellationToken);
             var result = await RequestAsync("initialize", new
-            { protocolVersion = SupportedProtocol, capabilities = new { }, clientInfo = new { name = "Tern", version = "1.0.1" } }, deadline.Token, initializing: true).ConfigureAwait(false);
+            { protocolVersion = SupportedProtocol, capabilities = new { }, clientInfo = new { name = "Tern", version = "1.0.2" } }, deadline.Token, initializing: true).ConfigureAwait(false);
             if (String(result, "protocolVersion", 32) != SupportedProtocol)
                 throw new InvalidOperationException("This server did not negotiate MCP 2025-11-25. Use a server with that compatibility mode; the newer 2026 protocol is not supported in this build.");
             if (!result.TryGetProperty("serverInfo", out var info) || info.ValueKind != JsonValueKind.Object)

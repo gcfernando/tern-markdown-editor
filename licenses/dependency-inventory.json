@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "Locked Tern desktop dependency graph; includes build-only and non-Windows graph entries, not a claim that every listed native binary is distributed.",
-  "applicationVersion": "1.0.1",
+  "applicationVersion": "1.0.2",
   "framework": "net10.0",
   "runtimeIdentifier": "win-x64",
   "runtime": {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.2 — November 1 2026
+
+- Unify saved API, GitHub Copilot and MCP connections in the service selector and main toolbar, with create, edit, delete, validation and secure credential storage.
+- Keep saved-profile selection on Choose service until Configure connection is clicked, consistently across all service types.
+- Validate AI connections with an explicit fixed test message and show actionable authentication, model and connectivity errors.
+- Add saved Copilot note-writing connections and a dedicated MCP tool workflow with individually reviewed tool calls.
+- Enlarge the AI writing workspace, keep actions visible at compact sizes, and preserve cancellation, document revision checks and Undo.
+- Add official Copilot and MCP setup links and update the Feature Guide, tutorials and beginner instructions.
+- Bound Copilot guide requests to its supported prompt limit while preserving the exact user question.
+- Disable warnings-as-errors and suppress compiler/analyzer warnings solution-wide as requested.
+- Update application, Windows manifest, displayed version, MCP client metadata and package inventory to 1.0.2.
+
 ## 1.0.1 — October 31 2026
 
 - Make linked images and download badges receive clicks, and make the entire visible text link clickable, including its final character.

@@ -11,7 +11,7 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Tern contributors</Authors>
     <Product>Tern</Product>
     <NuGetAudit>true</NuGetAudit>
