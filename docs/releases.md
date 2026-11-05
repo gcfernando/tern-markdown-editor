@@ -12,7 +12,7 @@ Get-FileHash .\Tern-win-x64.zip -Algorithm SHA256
 
 Compare the result with the entry for the same filename in the checksum file from that release. A checksum checks consistency with the supplied manifest; it does not identify a trusted publisher or guarantee security.
 
-Extract the **entire** ZIP to a writable folder and run `Tern.exe`. Keep its runtime, Avalonia/native dependencies, notices, license files and other companion files together. This package is self-contained: it bundles .NET rather than requiring a separately installed runtime. The current runtime is .NET **10.0.13**; package versions such as `Microsoft.Data.Sqlite` **10.0.14** are different dependencies, not the bundled runtime version.
+Extract the **entire** ZIP to a writable folder and run `Tern.exe`. Keep its runtime, Avalonia/native dependencies, notices, license files and other companion files together. This package is self-contained: it bundles .NET rather than requiring a separately installed runtime. The current runtime is .NET **10.0.14**; package versions such as `Microsoft.Data.Sqlite` **10.0.14** are different dependencies, not the bundled runtime version.
 
 ## Signing and Windows warnings
 

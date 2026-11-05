@@ -54,7 +54,7 @@ The graph declares MIT, BSD-2-Clause and Apache-2.0 package licenses. Inter's fo
 
 ## Bundled .NET runtime
 
-The self-contained Windows x64 package uses Microsoft.NETCore.App 10.0.13, selected by the pinned SDK's restore graph. Its MIT license and third-party notices are retained under `licenses/dotnet-runtime/10.0.13/`. A separate .NET installation is not required for that package. Dependency package versions such as Microsoft.Data.Sqlite are separate from the runtime version.
+The self-contained Windows x64 package uses Microsoft.NETCore.App 10.0.14, selected by the current stable .NET 10 SDK's restore graph. Its MIT license and third-party notices are retained under `licenses/dotnet-runtime/10.0.14/`. A separate .NET installation is not required for that package. Dependency package versions such as Microsoft.Data.Sqlite are separate from the runtime version.
 
 ## Upstream sources
 
