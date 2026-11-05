@@ -30,6 +30,7 @@ public sealed class WorkspaceSearchFeedbackTests
         }
         await fixture.Window.RunCommandAsync(CommandIds.FindInWorkspace);
         fixture.Window.Picker!.Input.Text = "Employees";
+        await WaitForQueryAsync(fixture.Window);
         Pump(fixture.Window);
         var status = Assert.Single(fixture.Window.Picker.GetVisualDescendants().OfType<TextBlock>(), block => AutomationProperties.GetName(block) == "Search result status");
         Assert.Contains("search index could not be read", status.Text);
@@ -54,12 +55,14 @@ public sealed class WorkspaceSearchFeedbackTests
         await fixture.WriteAsync("Diagrams/note.md", "# People\nEmployees and teams.");
         Assert.True(await fixture.Shell.OpenWorkspaceAsync(root));
         await fixture.Window.RunCommandAsync(CommandIds.FindInWorkspace);
+        await WaitForQueryAsync(fixture.Window);
         Pump(fixture.Window);
         var picker = Assert.Single(fixture.Window.GetVisualDescendants().OfType<QuickPicker>());
         var status = Assert.Single(picker.GetVisualDescendants().OfType<TextBlock>(), block => AutomationProperties.GetName(block) == "Search result status");
         Assert.True(status.IsEffectivelyVisible);
         Assert.Contains("Type a word or phrase", status.Text, StringComparison.Ordinal);
         picker.Input.Text = "Diagrams";
+        await WaitForQueryAsync(fixture.Window);
         Pump(fixture.Window);
         Assert.Equal(0, picker.Results.ItemCount);
         Assert.True(status.IsEffectivelyVisible);
@@ -81,6 +84,13 @@ public sealed class WorkspaceSearchFeedbackTests
         Assert.Equal("No workspace documents", status.Text);
         picker.Open("Go to file", "missing", _ => [], _ => { }, () => { });
         Assert.Equal("No matches", status.Text);
+    }
+
+    private static async Task WaitForQueryAsync(Window window)
+    {
+        // Search now debounces and executes away from the UI thread.
+        await ((MainWindow)window).Picker!.QueryWork;
+        Pump(window);
     }
 
     private static void Pump(Window window)

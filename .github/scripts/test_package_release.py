@@ -93,7 +93,9 @@ class PackageTests(unittest.TestCase):
         (self.source / "Directory.Build.props").write_text(
             "<Project><PropertyGroup><Version>1.0.0</Version></PropertyGroup></Project>"
         )
-        (self.source / "global.json").write_text('{"sdk":{"version":"10.0.402"}}')
+        sdk_patch = patch.object(package.subprocess, "check_output", return_value="10.0.403\n")
+        self.sdk_version = sdk_patch.start()
+        self.addCleanup(sdk_patch.stop)
         root_patch = patch.object(package, "ROOT", self.source)
         root_patch.start()
         self.addCleanup(root_patch.stop)
@@ -101,10 +103,28 @@ class PackageTests(unittest.TestCase):
     def build(self):
         return package.package(self.publish, self.root / "release", "a" * 40)
 
+    def test_signed_route_requires_verified_signatures_and_produces_no_archive_on_failure(self):
+        with patch.object(package, "verified_signatures", side_effect=package.PackageError("No trusted signature")):
+            with self.assertRaisesRegex(package.PackageError, "No trusted signature"):
+                package.package(self.publish, self.root / "release", "a" * 40, require_signed=True)
+        self.assertFalse((self.root / "release/Tern-win-x64.zip").exists())
+
+    def test_signed_manifest_covers_exact_binary_hashes(self):
+        evidence = [{"file": name, "sha256": package.sha256(self.publish / name),
+                     "publisher": "Synthetic test publisher", "thumbprint": "a" * 40}
+                    for name in ("Tern.exe", "Tern.dll")]
+        with patch.object(package, "verified_signatures", return_value=evidence):
+            archive = package.package(self.publish, self.root / "release", "a" * 40, require_signed=True)
+        manifest = package.verify_archive(archive)
+        self.assertEqual(manifest["signing"], "Verified Authenticode signatures")
+        self.assertEqual(manifest["signatures"], evidence)
+
     def test_complete_package_hashes_licenses_runtime_and_portable_guides(self):
         archive = self.build()
         manifest = package.verify_archive(archive)
         self.assertEqual(manifest["version"], "1.0.0")
+        self.assertEqual(manifest["sdk"], "10.0.403")
+        self.sdk_version.assert_called_once_with(["dotnet", "--version"], cwd=self.source, text=True)
         self.assertTrue(manifest["selfContained"])
         self.assertEqual(manifest["sourceCommit"], "a" * 40)
         self.assertEqual(len(manifest["acceptance"]["manualTestClasses"]), 3)

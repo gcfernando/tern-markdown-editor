@@ -10,6 +10,8 @@ The Library holds files, folders and workspaces. Tabs select the active note. Th
 
 Use File, Edit, Format, View and Help to discover actions. **+ Add** asks where a new file or folder belongs. Quick Open (`Ctrl+K`) finds a note; Command Palette (`Ctrl+Shift+P`) finds an action. Focus mode (`F8`), Library/inspector toggles, resizable panes and reading-width settings adapt the writing space.
 
+Use **Tab** and **Shift+Tab** to move through controls in either direction. Open dialogs and overlays keep keyboard focus within their own controls. Use **F6** or **Shift+F6** to move between visible areas in the main window, including the Library, document tabs, Source, Reading, and the selected Inspector tab. To resize a pane, tab to its divider and press the arrow keys. In Markdown Source, Tab can indent text.
+
 ## Open and edit local files
 
 Use `Ctrl+O`, `Ctrl+Shift+O` or **+ Add**. The editor preserves detected encoding, BOM and LF/CRLF/CR line endings; new notes default to CRLF. Opening a file is not a request to normalize its text. Source editing includes syntax highlighting, undo/redo, formatting and find/replace. Broken-link repair is an undoable source edit.
@@ -70,6 +72,10 @@ The scanner includes `.md`, `.markdown`, `.mdown` and `.mkd` by default, with op
 
 Workspace search uses a local SQLite full-text index. Active-note find/replace and workspace search have different scopes. Indexes can be rebuilt; they are not document backups. Outline, backlinks and broken links depend on recognized syntax and available workspace files.
 
+In **Inspector → Outline**, use **Search headings** and select a result to jump to that section. The H1–H6 labels indicate heading depth. In **Inspector → Links**, search by label, path, or domain. Each result shows the destination and link status. Select it to jump to the source line.
+
+In **Inspector → History**, choose **Open version history** to compare a dated version with your current draft. If the list is empty, edit and save the file in Tern, then return. **Open as copy** creates a separate unsaved tab and keeps your original file and draft available.
+
 ## Close without deleting
 
 | Action | Result |
@@ -95,6 +101,10 @@ HTML, PDF and text exports share document/resource readiness checks. A format ch
 Resources must remain accessible under their local/remote policies. The PDF path bounds page count and image resources. A successful export call does not prove that every intended glyph, diagram and attachment is present; inspect the final artifact.
 
 ## Settings and local data
+
+For large notes, choose **Source** while editing to defer preview work, then return to **Split** or **Reading**. Workspace links update shortly after typing stops. Large searches and searches involving unsaved text run in the background; typing a new query cancels the obsolete request. If a preview reports truncation, the saved Markdown remains complete. Large merges can show broader conflicts to keep their memory use bounded.
+
+Online imports fetch at most four dependencies at once and stop after a two-minute overall deadline. Assets stay in the local cache for offline use. Superseded snapshots older than seven days are cleaned at startup, while current snapshots and open tabs are protected. The **Feature Guide and Tutorials** includes **Large notes and background updates** with these instructions.
 
 Settings (`Ctrl+,`) controls System/Midnight/Paper appearance, fonts, reading width, wrapping, line numbers, indentation, layout, session restoration, shortcuts and exclusions. New documents default to Extended Markdown and Split view. Shortcut preferences can override the defaults below.
 
@@ -124,11 +134,17 @@ Saving stores metadata locally and secrets in Windows Credential Manager. Saving
 
 If validation fails, check the key and API permissions for authentication errors, the exact model ID and account access for unavailable-model errors, and the endpoint, TLS certificate and server/network for connection errors. Correct the setting with **Back** and validate again. A successful test describes that request; it does not guarantee future availability.
 
-For a separate question, expand **Try your own message (optional)**, review the exact text and destination, check consent and choose **Send request**. For note editing, select a saved API or Copilot connection in the main toolbar and use **Write with AI**. The larger writing panel places the connection and destination first, provides a multiline instruction editor, and keeps actions at the bottom. Expand **Review the exact request** before **Generate & update note**; this sends the active note and instruction. The result is one undoable edit and is not saved to disk automatically.
+For a separate question, expand **Try your own message (optional)**, review the exact text and destination, check consent and choose **Send request**. For note editing, select a saved API or Copilot connection in the main toolbar and use **Write with AI**. When you select source text and press **Alt+Space**, the composer asks what you want to do with it. Use **Rewrite**, **Summarize**, **Explain**, or **Extract tasks** to start an editable instruction. Check **Selected text** or **Entire note** and the connection below the instruction. **Generate for review** sends the chosen text and instruction. Use **Set up connection** if none is saved. Compare the original and proposed Markdown, then choose **Apply** to use all proposed changes as one undoable edit. **Copy result** copies the full suggestion. **Close** or **Escape** discards the suggestion.
+
+Double-click empty space on the tab bar to open a blank **New document**. Without a selection, Write with AI uses the entire note and hides the scope picker. An empty note contributes no document text. The taller instruction box is available with or without selected text. With a selection, **Selected text** is the default and the starter buttons, including **Proofread**, fill in an instruction you can edit. In the review, use **Back** to revise your instruction before generating again.
+
+Use the **AI** menu in Source for **Summarize**, **Extract action items**, or **Improve headings**. For summaries, explanations, and checklists, the review shows the original text beside the result. **Apply** inserts the result below the source. **Back** in the bottom row returns to your instruction.
+
+Use **Ask workspace** in the AI toolbar to choose a workspace, find passages, and review them before sending. Select a source in the answer to open its file and line. In a saved workspace note, **Inspector → Links → Suggest related notes** finds candidates and explains their relevance. Select the links you want to insert.
 
 ### Save GitHub Copilot or MCP settings
 
-**GitHub Copilot:** have Copilot access and native `copilot.exe` installed. In GitHub, create a fine-grained token owned by your personal account with the **Copilot Requests** account permission; **Copilot Chat** is unnecessary. In the Copilot wizard, choose or name a connection, enter the token, leave Model at `auto` for a first test, and check the native executable in Advanced. Continue to **Validate and save**. **Validate connection** sends the fixed test message through the CLI; **Save connection** stores metadata and protects the token in Windows Credential Manager. The saved Copilot connection is also available for **Write with AI** and guide questions from the main toolbar. Writing first sends a fixed validation test and then the active note and instruction; provider usage may apply to both requests. A changed note or connection during validation blocks generation. The complete Copilot request is limited to 8,192 characters, including the note and instruction; @mentions and CLI commands are not accepted. For a separate question in **Try connection**, paste only your question, review it, check consent and choose **Send reviewed text**. This separate question does not attach the note.
+**GitHub Copilot:** have Copilot access and native `copilot.exe` installed. In GitHub, create a fine-grained token owned by your personal account with the **Copilot Requests** account permission; **Copilot Chat** is unnecessary. In the Copilot wizard, choose or name a connection, enter the token, leave Model at `auto` for a first test, and check the native executable in Advanced. Continue to **Validate and save**. **Validate connection** sends the fixed test message through the CLI; **Save connection** stores metadata and protects the token in Windows Credential Manager. The saved Copilot connection is also available for **Write with AI** and guide questions from the main toolbar. Writing sends a fixed validation test before the chosen text and instruction, and may reuse that successful check for up to 30 seconds with the exact same connection and credentials. Provider usage may apply to both requests. A changed note or connection during validation blocks generation. The complete Copilot request is limited to 8,192 characters, including the note and instruction; @mentions and CLI commands are not accepted. For a separate question in **Try connection**, paste only your question, review it, check consent and choose **Send reviewed text**. This separate question does not attach the note.
 
 **MCP servers:** obtain a full Streamable HTTP endpoint with MCP 2025-11-25 compatibility and any required bearer token from the server owner. Configure a name, HTTPS address (HTTP allowed on loopback) and optional token. In **Validate and save**, **Connect and discover tools** initializes the server and lists tools without running one. Save the connection, then select it in the main toolbar and choose **Open MCP tools**. The workspace loads the selected saved server without contacting it. Choose **Connect and discover tools**, then use **Review tools** to read a tool description/schema and enter exact JSON object arguments. Review possible external effects before consent and **Run reviewed tool**. Results are not applied to notes. When MCP is selected in the writing panel, note-generation controls are disabled and **Open MCP tools** is offered instead. OAuth and stdio are unsupported.
 

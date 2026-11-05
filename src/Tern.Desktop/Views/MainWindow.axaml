@@ -26,7 +26,7 @@
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Stretch" Background="Transparent">
           <Path Width="26" Height="26" Stretch="Uniform" Fill="{DynamicResource Tern.Accent}" VerticalAlignment="Center" AutomationProperties.Name="Tern logo" Data="M1,3 C7,5 10,8 12,11 C15,8 18,8 21,10 L28,9 L23,13 C22,19 18,21 13,20 L5,27 L8,19 L3,20 L7,15 C4,12 2,8 1,3 Z" />
           <TextBlock Text="Tern" FontSize="17" FontWeight="SemiBold" LetterSpacing="0.3" VerticalAlignment="Center" />
-          <TextBlock Text="V1.0.2" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" VerticalAlignment="Center" />
+          <TextBlock Text="V1.0.3" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" VerticalAlignment="Center" />
           <TextBlock x:Name="Breadcrumb" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="110" />
         </StackPanel>
 
@@ -180,7 +180,7 @@
         </Button>
       </StackPanel>
       <Border x:Name="AIBar" Grid.Row="1" Grid.ColumnSpan="3" IsVisible="False" Background="{DynamicResource Tern.Surface}" CornerRadius="8" Padding="10,5">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="10">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="10">
           <TextBlock Text="✦  AI" Foreground="{DynamicResource Tern.Accent}" FontWeight="SemiBold" VerticalAlignment="Center" />
           <ComboBox x:Name="AIConnectionPicker" Grid.Column="1" Width="240" MinHeight="32" PlaceholderText="Choose an AI connection" SelectionChanged="OnAIConnectionChanged" AutomationProperties.Name="Active AI connection">
             <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" x:CompileBindings="False" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
@@ -188,6 +188,7 @@
           <Button x:Name="AIConnectionAction" Grid.Column="2" Content="Write with AI" Click="OnAIPrimaryActionClick" AutomationProperties.Name="Write with AI" Classes="accent" />
           <TextBlock x:Name="AIConnectionSummary" Grid.Column="3" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
           <Button Grid.Column="4" Content="Connections" Tag="app.aiConnections" Click="OnMenuCommandClick" Classes="flat" AutomationProperties.Name="Manage AI connections" />
+          <Button Grid.Column="5" Content="Ask workspace" Click="OnAskWorkspaceClick" Classes="flat" AutomationProperties.Name="Ask your workspace with AI" />
         </Grid>
       </Border>
       </Grid>
@@ -198,40 +199,8 @@
 
       <!-- Sidebar -->
       <Border x:Name="Sidebar" Background="{DynamicResource Tern.Panel}">
-        <DockPanel>
-          <StackPanel DockPanel.Dock="Bottom" Margin="8" Spacing="1" x:Name="NavPanel">
-            <ToggleButton Classes="nav" x:Name="NavRecent" Tag="Recent" Click="OnNavClick" AutomationProperties.Name="Recent files">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M8,2 A6,6 0 1 1 2,8 M2,3 L2,8 L7,8 M8,4 L8,8 L11,10" VerticalAlignment="Center" /><TextBlock Text="Recent" /></StackPanel>
-            </ToggleButton>
-            <ToggleButton Classes="nav" x:Name="NavSearch" Tag="Search" Click="OnNavClick" AutomationProperties.Name="Search results">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M11,6 A5,5 0 1 1 1,6 A5,5 0 1 1 11,6 M10,10 L15,15" VerticalAlignment="Center" /><TextBlock Text="Search" /></StackPanel>
-            </ToggleButton>
-            <ToggleButton Classes="nav" x:Name="NavFiles" Tag="Files" Click="OnNavClick" AutomationProperties.Name="All files">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,8 L11,8 M6,11 L11,11" VerticalAlignment="Center" /><TextBlock Text="All Files" /></StackPanel>
-            </ToggleButton>
-            <ToggleButton Classes="nav" x:Name="NavBacklinks" Tag="Backlinks" Click="OnNavClick" AutomationProperties.Name="Backlinks">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L10,11 M10,11 L7,14 Q4,16 2,13 Q0,11 3,8 L6,5 M5,11 L11,5" VerticalAlignment="Center" /><TextBlock Text="Backlinks" /></StackPanel>
-            </ToggleButton>
-            <ToggleButton Classes="nav" x:Name="NavBroken" Tag="Broken" Click="OnNavClick" AutomationProperties.Name="Broken links">
-              <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M5,6 L2,9 Q0,12 3,14 Q5,16 8,13 L10,11 M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L11,10 M1,1 L15,15" VerticalAlignment="Center" /><TextBlock Text="Broken Links" /></StackPanel>
-                <Border x:Name="BrokenBadge" Grid.Column="1" Background="{DynamicResource Tern.Danger}" CornerRadius="9" Padding="7,1" IsVisible="False">
-                  <TextBlock x:Name="BrokenBadgeText" FontSize="{DynamicResource Tern.SmallFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.OnDanger}" />
-                </Border>
-              </Grid>
-            </ToggleButton>
-            <ToggleButton Classes="nav" x:Name="NavTasks" Tag="Tasks" Click="OnNavClick" AutomationProperties.Name="Tasks">
-              <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M2,2 L14,2 L14,14 L2,14 Z M5,8 L7,10 L12,5" VerticalAlignment="Center" /><TextBlock Text="Tasks" /></StackPanel>
-                <Border x:Name="TasksBadge" Grid.Column="1" Background="{DynamicResource Tern.AccentSoft}" CornerRadius="9" Padding="7,1" IsVisible="False">
-                  <TextBlock x:Name="TasksBadgeText" FontSize="{DynamicResource Tern.SmallFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.Accent}" />
-                </Border>
-              </Grid>
-            </ToggleButton>
-          </StackPanel>
-          <Border DockPanel.Dock="Bottom" Height="1" Background="{DynamicResource Tern.Border}" />
-
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="18,16,12,12">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="18,16,12,12">
             <TextBlock x:Name="SidebarTitle" Classes="caps" Text="LIBRARY" VerticalAlignment="Center" />
             <Button x:Name="WorkspaceAddButton" Grid.Column="1" Classes="flat" Content="+ Add" Padding="9,5" AutomationProperties.Name="Add files or folders">
               <Button.Flyout>
@@ -250,7 +219,7 @@
             </Button>
             <Button Grid.Column="2" Content="‹" Classes="flat" Tag="view.toggleSidebar" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Library. Restore with View → Sidebar." AutomationProperties.Name="Collapse Library" />
           </Grid>
-          <Border x:Name="WorkspaceCard" DockPanel.Dock="Top" Margin="12,0,12,12" Padding="12" CornerRadius="8" Background="{DynamicResource Tern.AccentSoft}">
+          <Border x:Name="WorkspaceCard" Grid.Row="1" Margin="12,0,12,12" Padding="12" CornerRadius="8" Background="{DynamicResource Tern.AccentSoft}">
             <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
               <TextBlock x:Name="WorkspaceTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               <Button Grid.Column="1" Classes="flat icon" Tag="workspace.close" Click="OnMenuCommandClick" ToolTip.Tip="Close selected workspace or folder (Ctrl+Shift+W)" AutomationProperties.Name="Close selected workspace or folder">
@@ -263,11 +232,11 @@
               </ComboBox>
             </Grid>
           </Border>
-          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="12,0,12,6" Spacing="8">
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="12,0,12,6" Spacing="8">
 <Button Classes="flat" Content="Expand all" Tag="expand" Click="OnExpandAllRootsClick" ToolTip.Tip="Expand all Library folders and workspaces" />
 <Button Classes="flat" Content="Collapse all" Tag="collapse" Click="OnExpandAllRootsClick" ToolTip.Tip="Collapse all Library folders and workspaces" />
 </StackPanel>
-<Grid x:Name="LibraryContent" RowDefinitions="*,Auto,Auto" Background="Transparent">
+<Grid x:Name="LibraryContent" Grid.Row="3" RowDefinitions="*,Auto,Auto" Background="Transparent">
             <TextBlock x:Name="NoWorkspaceText" Classes="muted" Margin="16" TextWrapping="Wrap" IsVisible="False"
                        Text="Your file list is empty.&#10;&#10;Use + Add to open a file or folder. Removing a reference from this list keeps the file on your computer and any open edits." />
             <TreeView x:Name="FileTree" Margin="12,0,6,0" SelectionChanged="OnTreeSelectionChanged" AutomationProperties.Name="Stacked workspaces and folders" HorizontalAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.AllowAutoHide="False">
@@ -412,14 +381,58 @@
               </ListBox.ItemTemplate>
             </ListBox>
           </Grid>
-        </DockPanel>
+          <Border Grid.Row="4" Height="1" Background="{DynamicResource Tern.Border}" />
+
+          <Expander Grid.Row="5" Classes="library-shortcuts" Header="Shortcuts" IsExpanded="True"
+                    AutomationProperties.Name="Library shortcuts" Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="8,0">
+          <Expander.HeaderTemplate>
+            <DataTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Path Width="13" Height="13" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2"
+                      Data="M1,1 H6 V6 H1 Z M9,1 H14 V6 H9 Z M1,9 H6 V14 H1 Z M9,9 H14 V14 H9 Z" />
+                <TextBlock Text="{Binding}" FontWeight="SemiBold" VerticalAlignment="Center" />
+              </StackPanel>
+            </DataTemplate>
+          </Expander.HeaderTemplate>
+          <StackPanel Margin="0,4,0,8" Spacing="1" x:Name="NavPanel">
+            <ToggleButton Classes="nav" x:Name="NavRecent" Tag="Recent" Click="OnNavClick" AutomationProperties.Name="Recent files">
+              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M8,2 A6,6 0 1 1 2,8 M2,3 L2,8 L7,8 M8,4 L8,8 L11,10" VerticalAlignment="Center" /><TextBlock Text="Recent" /></StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="nav" x:Name="NavSearch" Tag="Search" Click="OnNavClick" AutomationProperties.Name="Search results">
+              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M11,6 A5,5 0 1 1 1,6 A5,5 0 1 1 11,6 M10,10 L15,15" VerticalAlignment="Center" /><TextBlock Text="Search" /></StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="nav" x:Name="NavFiles" Tag="Files" Click="OnNavClick" AutomationProperties.Name="All files">
+              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,8 L11,8 M6,11 L11,11" VerticalAlignment="Center" /><TextBlock Text="All Files" /></StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="nav" x:Name="NavBacklinks" Tag="Backlinks" Click="OnNavClick" AutomationProperties.Name="Backlinks">
+              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L10,11 M10,11 L7,14 Q4,16 2,13 Q0,11 3,8 L6,5 M5,11 L11,5" VerticalAlignment="Center" /><TextBlock Text="Backlinks" /></StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="nav" x:Name="NavBroken" Tag="Broken" Click="OnNavClick" AutomationProperties.Name="Broken links">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M5,6 L2,9 Q0,12 3,14 Q5,16 8,13 L10,11 M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L11,10 M1,1 L15,15" VerticalAlignment="Center" /><TextBlock Text="Broken Links" /></StackPanel>
+                <Border x:Name="BrokenBadge" Grid.Column="1" Background="{DynamicResource Tern.Danger}" CornerRadius="9" Padding="7,1" IsVisible="False">
+                  <TextBlock x:Name="BrokenBadgeText" FontSize="{DynamicResource Tern.SmallFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.OnDanger}" />
+                </Border>
+              </Grid>
+            </ToggleButton>
+            <ToggleButton Classes="nav" x:Name="NavTasks" Tag="Tasks" Click="OnNavClick" AutomationProperties.Name="Tasks">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M2,2 L14,2 L14,14 L2,14 Z M5,8 L7,10 L12,5" VerticalAlignment="Center" /><TextBlock Text="Tasks" /></StackPanel>
+                <Border x:Name="TasksBadge" Grid.Column="1" Background="{DynamicResource Tern.AccentSoft}" CornerRadius="9" Padding="7,1" IsVisible="False">
+                  <TextBlock x:Name="TasksBadgeText" FontSize="{DynamicResource Tern.SmallFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.Accent}" />
+                </Border>
+              </Grid>
+            </ToggleButton>
+          </StackPanel>
+          </Expander>
+        </Grid>
       </Border>
-      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Width="1" AutomationProperties.Name="Resize sidebar" />
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Width="1" IsVisible="{Binding IsVisible, ElementName=Sidebar}" AutomationProperties.Name="Resize sidebar" />
 
       <!-- Center -->
       <Border Grid.Column="2" Margin="16" CornerRadius="12" ClipToBounds="True" BorderThickness="1" BorderBrush="{DynamicResource Tern.Border}" Background="{DynamicResource Tern.Surface}">
       <Grid RowDefinitions="Auto,Auto,*">
-        <Border Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1">
+        <Border Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1" DoubleTapped="OnTabBarDoubleTapped">
           <Grid ColumnDefinitions="Auto,*,Auto,Auto">
             <Button x:Name="TabsPrevious" Classes="flat" Content="‹" Width="32" Margin="4,0" VerticalAlignment="Center" IsVisible="False" Tag="left" Click="OnTabScrollClick" AutomationProperties.Name="Scroll tabs left" ToolTip.Tip="Scroll tabs left" />
             <ListBox Grid.Column="1" x:Name="TabStrip" Loaded="OnTabStripLoaded" SelectionChanged="OnTabSelectionChanged" AutomationProperties.Name="Open documents"
@@ -442,7 +455,7 @@
               </ListBox.ItemTemplate>
             </ListBox>
             <Button Grid.Column="2" x:Name="TabsNext" Classes="flat" Content="›" Width="32" Margin="4,0" VerticalAlignment="Center" IsVisible="False" Tag="right" Click="OnTabScrollClick" AutomationProperties.Name="Scroll tabs right" ToolTip.Tip="Scroll tabs right" />
-            <Button Grid.Column="3" Classes="flat" Content="+" FontSize="16" Margin="4" Click="OnNewTabClick" AutomationProperties.Name="New document" ToolTip.Tip="{DynamicResource Tern.NewDocumentHint}" />
+            <Button x:Name="NewTabButton" Grid.Column="3" Classes="flat" Content="+" FontSize="16" Margin="4" Click="OnNewTabClick" AutomationProperties.Name="New document" ToolTip.Tip="{DynamicResource Tern.NewDocumentHint}" />
           </Grid>
         </Border>
 
@@ -454,8 +467,8 @@
               <ToggleButton x:Name="CaseToggle" Content="Aa" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Match case" AutomationProperties.Name="Match case" />
               <ToggleButton x:Name="WordToggle" Content="W" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Whole word" AutomationProperties.Name="Whole word" />
               <ToggleButton x:Name="RegexToggle" Content=".*" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Regular expression" AutomationProperties.Name="Regular expression" />
-              <Button Content="↑" Click="OnFindPreviousClick" AutomationProperties.Name="Previous match" />
-              <Button Content="↓" Click="OnFindNextClick" AutomationProperties.Name="Next match" />
+              <Button Content="↑" Click="OnFindPreviousClick" ToolTip.Tip="Previous match (Shift+F3)" AutomationProperties.Name="Previous match" />
+              <Button Content="↓" Click="OnFindNextClick" ToolTip.Tip="Next match (F3)" AutomationProperties.Name="Next match" />
               <TextBlock x:Name="FindStatus" Classes="muted" VerticalAlignment="Center" />
             </StackPanel>
             <Button Grid.Column="1" Classes="flat" Content="✕" Click="OnFindCloseClick" AutomationProperties.Name="Close find" />
@@ -478,6 +491,15 @@
                     <Button Content="B" FontWeight="Bold" Classes="flat" Tag="format.bold" Click="OnMenuCommandClick" ToolTip.Tip="Bold selected text" AutomationProperties.Name="Bold selected text" />
                     <Button Content="I" FontStyle="Italic" Classes="flat" Tag="format.italic" Click="OnMenuCommandClick" ToolTip.Tip="Italic selected text" AutomationProperties.Name="Italic selected text" />
                     <Button Content="Link" Classes="flat" Tag="format.link" Click="OnMenuCommandClick" AutomationProperties.Name="Insert link" />
+                    <Button Content="AI" Classes="flat" AutomationProperties.Name="Markdown AI actions" ToolTip.Tip="AI actions for the current note or selection">
+                      <Button.Flyout>
+                        <MenuFlyout>
+                          <MenuItem Header="Summarize" Tag="Summarize" Click="OnMarkdownAIActionClick" />
+                          <MenuItem Header="Extract action items" Tag="Extract action items" Click="OnMarkdownAIActionClick" />
+                          <MenuItem Header="Improve headings" Tag="Improve headings" Click="OnMarkdownAIActionClick" />
+                        </MenuFlyout>
+                      </Button.Flyout>
+                    </Button>
                     <Button Content="?" Classes="flat" Tag="view.source" Click="OnFeatureHelpClick" AutomationProperties.Name="Source editor help" />
                   </StackPanel>
                 </Grid>
@@ -535,10 +557,13 @@
       </Grid>
 
       </Border>
-      <GridSplitter Grid.Column="3" ResizeDirection="Columns" Width="1" AutomationProperties.Name="Resize right panel" />
+      <GridSplitter Grid.Column="3" ResizeDirection="Columns" Width="1" IsVisible="{Binding IsVisible, ElementName=RightPanel}" AutomationProperties.Name="Resize right panel" />
 
       <!-- Right panel -->
       <Border x:Name="RightPanel" Grid.Column="4" Background="{DynamicResource Tern.Panel}">
+        <Border.Resources>
+          <StreamGeometry x:Key="InspectorSearchIcon">M6.5,1 A5.5,5.5 0 1 0 6.5,12 A5.5,5.5 0 1 0 6.5,1 M10.5,10.5 L15,15</StreamGeometry>
+        </Border.Resources>
         <Grid RowDefinitions="Auto,*" Margin="12,18">
           <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,16">
             <StackPanel Spacing="4"><TextBlock Text="Inspector" FontSize="{DynamicResource Tern.SectionFontSize}" FontWeight="SemiBold" /><TextBlock Text="Navigate. Understand. Review." TextWrapping="Wrap" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" /></StackPanel>
@@ -546,36 +571,71 @@
           </Grid>
           <TabControl x:Name="InspectorContent" Grid.Row="1" AutomationProperties.Name="Document inspector sections" FontSize="{DynamicResource Tern.SmallFontSize}">
           <TabItem Header="Outline" ToolTip.Tip="Navigate document headings">
-            <Grid RowDefinitions="Auto,Auto,*" Margin="0,12,0,0" RowSpacing="12">
-              <TextBlock Text="ON THIS PAGE" Classes="caps" />
-              <TextBlock x:Name="OutlineEmpty" Grid.Row="1" Text="Add # headings in Source to create an outline." Classes="muted" TextWrapping="Wrap" />
-            <ListBox x:Name="OutlineList" Grid.Row="2" SelectionChanged="OnOutlineSelectionChanged" AutomationProperties.Name="Document outline">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="0,12,0,0" RowSpacing="8">
+              <StackPanel Spacing="3">
+                <TextBlock Text="On this page" FontWeight="SemiBold" />
+                <TextBlock x:Name="OutlineCount" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
+              </StackPanel>
+              <TextBox x:Name="OutlineSearchBox" Grid.Row="1" PlaceholderText="Search headings" TextChanged="OnOutlineSearchChanged" AutomationProperties.Name="Search outline headings">
+                <TextBox.InnerLeftContent>
+                  <Path Width="13" Height="13" Margin="9,0,3,0" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3"
+                        Stretch="Uniform" Data="{StaticResource InspectorSearchIcon}" IsHitTestVisible="False" />
+                </TextBox.InnerLeftContent>
+              </TextBox>
+              <TextBlock x:Name="OutlineEmpty" Grid.Row="2" Text="Add # headings in Source to create an outline." Classes="muted" TextWrapping="Wrap" />
+            <ListBox x:Name="OutlineList" Grid.Row="3" SelectionChanged="OnOutlineSelectionChanged" AutomationProperties.Name="Document outline">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:OutlineRow">
-                  <TextBlock Text="{Binding Text}" Margin="{Binding Indent}" TextTrimming="CharacterEllipsis" />
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="{Binding Indent}" ToolTip.Tip="{Binding Text}">
+                    <Border Background="{DynamicResource Tern.AccentSoft}" CornerRadius="4" Padding="4,1" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding LevelLabel}" Foreground="{DynamicResource Tern.Accent}" FontSize="{DynamicResource Tern.SmallFontSize}" />
+                    </Border>
+                    <TextBlock Grid.Column="1" Text="{Binding Text}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  </Grid>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
             </Grid>
           </TabItem>
           <TabItem Header="Links" ToolTip.Tip="Check targets and repair broken links">
-            <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="0,12,0,0" RowSpacing="12">
-            <Grid RowDefinitions="Auto,Auto" RowSpacing="5">
-              <TextBlock Classes="caps" Text="DOCUMENT LINKS" />
-              <TextBlock x:Name="LinksSummary" Grid.Row="1" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" TextWrapping="Wrap" />
-            </Grid>
-            <TextBlock x:Name="LinksEmpty" Grid.Row="1" Text="No links found. Insert a link from the source toolbar." Classes="muted" TextWrapping="Wrap" />
-            <ListBox x:Name="LinkList" Grid.Row="2" SelectionChanged="OnLinkListSelectionChanged" AutomationProperties.Name="Links in document">
+            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="0,12,0,0" RowSpacing="8">
+            <StackPanel Spacing="3">
+              <TextBlock Text="Document links" FontWeight="SemiBold" />
+              <WrapPanel ItemSpacing="8">
+                <TextBlock x:Name="LinksCount" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
+                <TextBlock x:Name="LinksSummary" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
+              </WrapPanel>
+            </StackPanel>
+            <TextBox x:Name="LinksSearchBox" Grid.Row="1" PlaceholderText="Search label or destination" TextChanged="OnLinksSearchChanged" AutomationProperties.Name="Search document links">
+              <TextBox.InnerLeftContent>
+                <Path Width="13" Height="13" Margin="9,0,3,0" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3"
+                      Stretch="Uniform" Data="{StaticResource InspectorSearchIcon}" IsHitTestVisible="False" />
+              </TextBox.InnerLeftContent>
+            </TextBox>
+            <TextBlock x:Name="LinksEmpty" Grid.Row="2" Text="No links found. Insert a link from the source toolbar." Classes="muted" TextWrapping="Wrap" />
+            <ListBox x:Name="LinkList" Grid.Row="3" SelectionChanged="OnLinkListSelectionChanged" AutomationProperties.Name="Links in document">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:LinkRowView">
-                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-                    <TextBlock Text="{Binding Glyph}" Foreground="{DynamicResource Tern.Accent}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Text}" TextTrimming="CharacterEllipsis" />
+                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="3" ToolTip.Tip="{Binding Destination}">
+                    <TextBlock Text="{Binding Text}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <Border Grid.Column="1" CornerRadius="4" Padding="4,1" Background="{DynamicResource Tern.AccentSoft}">
+                      <TextBlock Text="{Binding Status}" Classes.broken="{Binding IsBroken}" FontSize="{DynamicResource Tern.SmallFontSize}">
+                        <TextBlock.Styles>
+                          <Style Selector="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Tern.Accent}" /></Style>
+                          <Style Selector="TextBlock.broken"><Setter Property="Foreground" Value="{DynamicResource Tern.Danger}" /></Style>
+                        </TextBlock.Styles>
+                      </TextBlock>
+                    </Border>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Destination}" Classes="muted"
+                               FontSize="{DynamicResource Tern.SmallFontSize}" TextTrimming="CharacterEllipsis" />
                   </Grid>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <Button x:Name="RepairLinkButton" Grid.Row="3" Content="Repair selected link…" IsEnabled="False" Click="OnRepairLinkClick" AutomationProperties.Name="Repair selected broken link" />
+            <StackPanel Grid.Row="4" Spacing="6">
+              <Button x:Name="RepairLinkButton" Content="Repair selected link…" IsEnabled="False" Click="OnRepairLinkClick" AutomationProperties.Name="Repair selected broken link" />
+              <Button x:Name="RelatedNotesButton" Content="Suggest related notes…" Click="OnRelatedNotesClick" IsVisible="False" />
+            </StackPanel>
             </Grid>
           </TabItem>
           <TabItem Header="Details" ToolTip.Tip="Document statistics and tags">
@@ -611,20 +671,29 @@
             </StackPanel></ScrollViewer>
           </TabItem>
           <TabItem Header="History" ToolTip.Tip="Review saved versions safely">
-            <StackPanel Margin="0,12,0,0" Spacing="16">
-              <TextBlock Classes="caps" Text="SAVED VERSIONS" />
-              <TextBlock Text="Review earlier saved text, compare it with your current draft, or restore a version as a separate document." TextWrapping="Wrap" />
-              <Button Content="Open version history" Tag="file.history" Click="OnMenuCommandClick" AutomationProperties.Name="Document version history" />
-              <TextBlock Text="Versions are local to this computer. They start with saves recorded by Tern; they are separate from recent-file references." TextWrapping="Wrap" Classes="muted" />
-              <Button Content="How version history works" Classes="flat" Tag="file.history" Click="OnFeatureHelpClick" />
-            </StackPanel>
+            <ScrollViewer>
+              <StackPanel Margin="0,12,0,0" Spacing="10">
+                <TextBlock Text="Saved versions" FontWeight="SemiBold" />
+                <TextBlock Text="Compare an earlier save with the draft you have open." TextWrapping="Wrap" Classes="muted" />
+                <Border Classes="card" Padding="12">
+                  <StackPanel Spacing="7">
+                    <TextBlock Text="How to use History" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="1. Edit and save your file in Tern.&#10;2. Open History and choose a version to compare.&#10;3. Choose Open as copy to work in a separate unsaved tab." TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+                <TextBlock x:Name="HistoryStartHint" Text="Save this draft to a file to start its history." TextWrapping="Wrap" Classes="muted" />
+                <Button x:Name="HistoryOpenButton" Content="Open version history" Classes="accent" Tag="file.history" Click="OnMenuCommandClick" AutomationProperties.Name="Document version history" />
+                <Button Content="How version history works" Classes="flat" Tag="file.history" Click="OnFeatureHelpClick" HorizontalAlignment="Left" />
+              </StackPanel>
+            </ScrollViewer>
           </TabItem>
           </TabControl>
         <TextBlock x:Name="InspectorEmpty" Grid.Row="1" Text="Your document, at a glance.&#10;&#10;Open a file to navigate its outline, check links, inspect tags and review saved versions." Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12" />
         </Grid>
       </Border>
 
-      <Grid x:Name="OverlayLayer" Grid.ColumnSpan="5" IsVisible="False" Background="#66000000" PointerPressed="OnOverlayPressed" />
+      <Grid x:Name="OverlayLayer" Grid.ColumnSpan="5" IsVisible="False" Background="#66000000"
+            KeyboardNavigation.TabNavigation="Cycle" PointerPressed="OnOverlayPressed" />
     </Grid>
 
     <!-- Status bar -->

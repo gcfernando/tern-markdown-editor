@@ -60,7 +60,7 @@ Saved AI connection keys use Windows Credential Manager; unsaved keys remain in 
 
 ## Development and testing
 
-Use Windows and the exact SDK selected by [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json), currently **10.0.402**. Run from the repository root:
+Use Windows with a stable .NET 10 SDK installed. [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json) selects the newest installed stable .NET 10 SDK. Run from the repository root:
 
 ```powershell
 dotnet restore Tern.slnx --locked-mode
@@ -73,7 +73,7 @@ Dependencies and lockfiles are pinned, and warnings are errors. Eight test proje
 
 ## Automated releases
 
-The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.2**. A failed check must not be described as a verified release.
+The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.3**. A failed check must not be described as a verified release.
 
 For a local candidate, use `./tools/BuildRelease.ps1`; it publishes, invokes the packaging helper and smokes the extracted application. The legacy `./scripts/publish.ps1` remains available for a local self-contained publish. These have different output directories; the [release guide](docs/releases.md) explains each and the unsigned/manual-acceptance limitations.
 

@@ -29,7 +29,7 @@ Shared `.editorconfig` and `.gitattributes` sections cover documentation and adm
 
 ## Automation
 
-Active workflows pin external actions to full commit SHAs, declare read-only default contents permissions and set job timeouts. Grant release-write permissions only to publication jobs. Dependabot proposes GitHub Actions updates for review; preserve pinned SDKs and dependency locks. The repository check runs on pushes, pull requests and manual dispatch.
+Active workflows pin external actions to full commit SHAs, declare read-only default contents permissions and set job timeouts. Grant release-write permissions only to publication jobs. Dependabot proposes GitHub Actions updates for review. Keep the SDK on the stable .NET 10 channel and preserve dependency locks. The repository check runs on pushes, pull requests and manual dispatch.
 
 Run `python .github/scripts/check_repository.py` with Python 3.12 or later. Its scope is repository documentation and administration. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for application checks. Release evidence must describe the actual source, platform, tests, package and limitations rather than implying complete acceptance from a badge.
 

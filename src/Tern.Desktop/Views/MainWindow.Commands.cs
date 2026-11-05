@@ -18,6 +18,7 @@ namespace Tern.Desktop.Views;
 public partial class MainWindow
 {
     private QuickPicker? _picker;
+    private Control? _overlayReturnFocus;
 
     internal bool IsOverlayOpen => OverlayLayer.IsVisible;
 
@@ -25,6 +26,23 @@ public partial class MainWindow
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Tab && IsOverlayOpen && e.KeyModifiers is KeyModifiers.None or KeyModifiers.Shift)
+        {
+            if (OverlayLayer.Children.FirstOrDefault() is AIEditReview review)
+            {
+                review.MoveTabFocus(e.KeyModifiers == KeyModifiers.Shift);
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (e.Key == Key.Escape && IsOverlayOpen && OverlayLayer.Children.OfType<AIEditReview>().Any())
+        {
+            HideOverlay();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin)
         {
             return;
@@ -59,17 +77,17 @@ public partial class MainWindow
             return;
         }
 
-        if (e.Key == Key.F6 && modifiers is KeyModifiers.None or KeyModifiers.Shift)
+        if (FindBar.IsVisible && !IsOverlayOpen && e.Key == Key.F3
+            && modifiers is KeyModifiers.None or KeyModifiers.Shift)
         {
-            Control[] panes = [Editor, Preview, ReferenceEditor, FileTree, OutlineList];
-            var visible = panes.Where(p => p.IsEffectivelyVisible).ToArray();
-            if (visible.Length > 0)
-            {
-                var current = Array.FindIndex(visible, p => p.IsKeyboardFocusWithin);
-                var direction = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1;
-                visible[(current + direction + visible.Length) % visible.Length].Focus();
-                e.Handled = true;
-            }
+            FindNext(modifiers == KeyModifiers.None);
+            e.Handled = true;
+            return;
+        }
+
+        if (!IsOverlayOpen && e.Key == Key.F6 && modifiers is KeyModifiers.None or KeyModifiers.Shift)
+        {
+            e.Handled = FocusNextRegion(modifiers == KeyModifiers.Shift);
             return;
         }
 
@@ -79,6 +97,35 @@ public partial class MainWindow
             e.Handled = true;
             return;
         }
+    }
+
+    private bool FocusNextRegion(bool backward)
+    {
+        var tabEntry = TabStrip.GetVisualDescendants().OfType<ListBoxItem>().FirstOrDefault(item => item.IsSelected)
+            ?? (Control?)this.FindControl<Button>("NewTabButton");
+        var inspectorEntry = InspectorContent.Items.OfType<TabItem>().FirstOrDefault(item => item.IsSelected);
+        (Control Region, Control? Entry)[] regions =
+        [
+            (TitleBar, SearchBox),
+            (Sidebar, WorkspaceAddButton),
+            ((Control)TabStrip.Parent!, tabEntry),
+            (FindBar, FindBox),
+            (EditorHost, Editor.TextArea),
+            (PreviewHost, Preview),
+            (ReferenceEditor, ReferenceEditor.TextArea),
+            (RightPanel, inspectorEntry)
+        ];
+        var available = regions.Where(region => region.Entry is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true }).ToArray();
+        if (available.Length == 0) return false;
+        var current = Array.FindIndex(available, region => region.Region.IsKeyboardFocusWithin);
+        var direction = backward ? -1 : 1;
+        if (current < 0) current = backward ? 0 : -1;
+        for (var step = 1; step <= available.Length; step++)
+        {
+            var index = (current + step * direction + available.Length) % available.Length;
+            if (available[index].Entry!.Focus(NavigationMethod.Tab)) return true;
+        }
+        return false;
     }
 
     private void OnEditorKeyDown(object? sender, KeyEventArgs e)
@@ -292,20 +339,30 @@ public partial class MainWindow
 
     // ---- Overlays -----------------------------------------------------------------------------------------------
 
-    private void ShowPicker(string watermark, string initialText, Func<string, IReadOnlyList<PickerItem>> provider, Action<PickerItem> accept, string emptyText = "No matches", Func<string, string>? emptyTextProvider = null)
+    private void ShowPicker(string watermark, string initialText, Func<string, IReadOnlyList<PickerItem>> provider, Action<PickerItem> accept, string emptyText = "No matches", Func<string, string>? emptyTextProvider = null,
+        Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? asyncProvider = null)
     {
         _picker ??= new QuickPicker();
+        ShowOverlay(_picker);
+        _picker.Open(watermark, initialText, provider, accept, HideOverlay, emptyText, emptyTextProvider, asyncProvider);
+    }
+
+    private void ShowOverlay(Control panel)
+    {
+        if (!IsOverlayOpen) _overlayReturnFocus = FocusManager?.GetFocusedElement() as Control;
         OverlayLayer.Children.Clear();
-        OverlayLayer.Children.Add(_picker);
         OverlayLayer.IsVisible = true;
-        _picker.Open(watermark, initialText, provider, accept, HideOverlay, emptyText, emptyTextProvider);
+        OverlayLayer.Children.Add(panel);
     }
 
     internal void HideOverlay()
     {
+        if (!IsOverlayOpen) return;
+        var target = _overlayReturnFocus;
+        _overlayReturnFocus = null;
         OverlayLayer.IsVisible = false;
         OverlayLayer.Children.Clear();
-        if (_shown is not null)
+        if (target?.Focus() != true && _shown is not null)
         {
             FocusVisibleContent();
         }
@@ -331,7 +388,12 @@ public partial class MainWindow
                 }
             });
 
-    internal void ShowQuickOpen(string initial) =>
+    internal void ShowQuickOpen(string initial)
+    {
+        var workspace = _shell.Workspace;
+        var files = (workspace is null ? _shell.Recent.Files.Select(f => f.Path) : workspace.Snapshot.Files.Select(f => f.RelativePath)).ToArray();
+        var headings = (workspace is not null ? HeadingCandidate.FromGraph(workspace.Graph)
+            : _shell.Tabs.Where(t => t.FilePath is not null).SelectMany(t => (t.Analysis?.Headings ?? []).Select(h => new HeadingCandidate(t.FilePath!, h.Text, h.Level, h.Line)))).ToArray();
         ShowPicker("Go to file…  (# for headings)", initial, QuickOpenItems, item =>
         {
             HideOverlay();
@@ -344,7 +406,20 @@ public partial class MainWindow
                     _ = OpenDocumentPathAsync(path);
                     break;
             }
-        });
+        }, asyncProvider: files.Length <= 500 && headings.Length <= 500 ? null : (query, token) => Task.Run<IReadOnlyList<PickerItem>>(() =>
+        {
+            token.ThrowIfCancellationRequested();
+            var result = Tern.Search.QuickOpen.Search(query, files, headings, 40);
+            if (result.Mode == QuickOpenMode.Headings)
+                return result.Headings.Select(h => new PickerItem(h.Item.Text, Path.GetFileName(h.Item.Path), "H" + h.Item.Level, h.Item)).ToArray();
+            return result.Files.Select(f =>
+            {
+                var full = workspace is null ? f.Item : workspace.ToFullPath(f.Item);
+                return new PickerItem(Path.GetFileName(f.Item), Path.GetDirectoryName(f.Item) ?? "", "", full,
+                    workspace is null ? () => RemoveQuickOpenReference(full) : null);
+            }).ToArray();
+        }, token));
+    }
 
     private IReadOnlyList<PickerItem> QuickOpenItems(string query)
     {
@@ -396,7 +471,7 @@ public partial class MainWindow
         try
         {
             _shell.StatusMessage = "Opening online file…";
-            var document = await MarkdownUrlCache.ReadAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), canonical, operation.Token)
+            var document = await MarkdownUrlCache.ReadAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), canonical, operation.Token, includeAssets: false)
                 ?? await loader.LoadBundleAsync(canonical, operation.Token);
             if (!_windowClosed && !operation.IsCancellationRequested) await OpenUrlDocumentAsync(document);
         }
@@ -436,7 +511,14 @@ public partial class MainWindow
         }
         else opened = _shell.OpenOnlineDocument(source, downloaded.SuggestedFileName, downloaded.Text, downloaded.Format);
         opened.ResourceDocumentPath = downloaded.CachedPath;
-        opened.ResourceFiles = downloaded.Assets;
+        if (downloaded.CachedPath is { } cachePath)
+        {
+            if (_cacheLeases.Remove(opened, out var oldLease)) oldLease.Dispose();
+            _cacheLeases[opened] = MarkdownUrlCache.AcquireLease(cachePath);
+        }
+        // The immutable cache is the resource backing store. Keep compressed asset
+        // bytes only until publication, rather than for the lifetime of every tab.
+        opened.ResourceFiles = new Dictionary<string, byte[]>();
         UpdateChrome();
         await RebuildPreviewAsync();
         try { _shell.Recent.AddUrl(downloaded.SourceUrl.AbsoluteUri); }
@@ -490,18 +572,24 @@ public partial class MainWindow
         }
 
         string? searchError = null;
-        IReadOnlyList<PickerItem> Matches(string query)
+        IReadOnlyList<PickerItem> PresentSearch(SearchPage page)
         {
             var previousError = searchError;
-            searchError = null;
-            if (_shell.Workspace is not { } workspace || string.IsNullOrWhiteSpace(query)) return [];
-            var page = workspace.Search(query, 40);
             searchError = page.Error;
             if (searchError is not null) _shell.StatusMessage = searchError;
             else if (previousError is not null && _shell.StatusMessage == previousError) _shell.StatusMessage = "Search completed";
             return [.. page.Hits.Select(h => new PickerItem(h.Title, h.RelativePath + "  —  " + h.Snippet, h.Line > 0 ? "line " + h.Line : string.Empty, h))];
         }
-        ShowPicker("Search document content in " + _shell.Workspace!.Name + "…", _lastSearch, Matches,
+        IReadOnlyList<PickerItem> MatchesSmall(string query) => _shell.Workspace is { } workspace && !string.IsNullOrWhiteSpace(query)
+            ? PresentSearch(workspace.Search(query, 40)) : [];
+        async Task<IReadOnlyList<PickerItem>> Matches(string query, CancellationToken token)
+        {
+            if (_shell.Workspace is not { } workspace || string.IsNullOrWhiteSpace(query)) return [];
+            var page = await Task.Run(() => workspace.Search(query, 40, cancellationToken: token), token);
+            token.ThrowIfCancellationRequested();
+            return PresentSearch(page);
+        }
+        ShowPicker("Search document content in " + _shell.Workspace!.Name + "…", _lastSearch, MatchesSmall,
             item =>
             {
                 var query = _picker?.Input.Text ?? string.Empty;
@@ -514,7 +602,8 @@ public partial class MainWindow
             },
             "Type to search", query => searchError ?? (string.IsNullOrWhiteSpace(query)
                 ? "Type a word or phrase to search this workspace's documents."
-                : "No matching documents. Search checks document text and paths; browse folder and workspace names in the Library tree."));
+                : "No matching documents. Search checks document text and paths; browse folder and workspace names in the Library tree."),
+                asyncProvider: _shell.Workspace.Snapshot.Files.Count > 500 || _shell.Workspace.HasUnsavedSearchBuffers ? Matches : null);
     }
 
     // ---- Find / replace ----------------------------------------------------------------------------------------
@@ -525,12 +614,15 @@ public partial class MainWindow
     private Tern.App.Documents.DocumentTab? _findTab;
     private long _findRevision;
     private FindOptions? _findOptions;
+    private readonly FindMatchRenderer _findHighlight = new();
+    private CancellationTokenSource? _findCancellation;
 
     private void InvalidateFind()
     {
         _findGeneration++;
         _found = InFileFindResult.Empty;
         _foundIndex = -1;
+        SetFindHighlight(null);
         if (FindBar.IsVisible) _ = RunFindAsync(false);
     }
 
@@ -553,12 +645,14 @@ public partial class MainWindow
 
         FindBox.Focus();
         FindBox.SelectAll();
-        _ = RunFindAsync(false);
+        _ = RunFindAsync(true);
     }
 
     private void OnFindCloseClick(object? sender, RoutedEventArgs e)
     {
         FindBar.IsVisible = false;
+        _findGeneration++;
+        SetFindHighlight(null);
         FocusVisibleContent();
     }
 
@@ -568,14 +662,26 @@ public partial class MainWindow
 
     private async Task RunFindAsync(bool select)
     {
+        _findCancellation?.Cancel();
+        _findCancellation?.Dispose();
+        using var cancellation = new CancellationTokenSource();
+        _findCancellation = cancellation;
         var generation = ++_findGeneration;
         _found = InFileFindResult.Empty;
         _foundIndex = -1;
+        SetFindHighlight(null);
         var tab = _shown;
-        if (tab is null) return;
+        if (tab is null) { _findCancellation = null; return; }
         var snapshot = tab.Session.GetSnapshot();
         var options = CurrentFindOptions();
-        var result = await InFileFinder.FindAsync(snapshot.Text, options);
+        InFileFindResult result;
+        try
+        {
+            await Task.Delay(80, cancellation.Token);
+            result = await InFileFinder.FindAsync(snapshot.Text, options, cancellation.Token);
+        }
+        catch (OperationCanceledException) { return; }
+        finally { if (ReferenceEquals(_findCancellation, cancellation)) _findCancellation = null; }
         if (generation != _findGeneration || !ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(snapshot.Revision))
         {
             return;
@@ -589,7 +695,7 @@ public partial class MainWindow
         ShowFindStatus();
         if (select && _foundIndex >= 0)
         {
-            SelectMatch(_foundIndex, false);
+            SelectMatch(_foundIndex);
         }
     }
 
@@ -607,7 +713,13 @@ public partial class MainWindow
             : _found.Matches.Count == 0 ? "No results"
             : $"{_foundIndex + 1} of {_found.Matches.Count}{(_found.Truncated ? "+" : string.Empty)}";
 
-    private void SelectMatch(int index, bool focusEditor)
+    private void SetFindHighlight(FindMatch? match)
+    {
+        _findHighlight.Match = match;
+        Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
+    }
+
+    private void SelectMatch(int index)
     {
         if (index < 0 || index >= _found.Matches.Count)
         {
@@ -617,14 +729,18 @@ public partial class MainWindow
         var match = _found.Matches[index];
         _foundIndex = index;
         Editor.Select(match.Start, match.Length);
-        Editor.TextArea.Caret.BringCaretToView();
+        SetFindHighlight(FindBar.IsVisible ? match : null);
+        var line = Editor.Document.GetLineByOffset(match.Start);
         if (_shell.ViewMode == ViewMode.Reading)
-            NavigateReadingPreviewTo(Editor.Document.GetLineByOffset(match.Start).LineNumber);
-        ShowFindStatus();
-        if (focusEditor)
         {
-            FocusVisibleContent();
+            NavigateReadingPreviewTo(line.LineNumber);
+            if (FindBar.IsVisible && _shown is { } tab && ReferenceEquals(_renderedPreviewTab, tab)
+                && tab.Session.IsCurrent(_renderedPreviewRevision))
+                Preview.HighlightSourceBlock(line.LineNumber);
         }
+        else
+            Editor.ScrollTo(line.LineNumber, match.Start - line.Offset + 1);
+        ShowFindStatus();
     }
 
     internal void FindNext(bool forward)
@@ -637,7 +753,7 @@ public partial class MainWindow
         var next = forward
             ? _found.IndexAtOrAfter(Editor.SelectionStart + Math.Max(1, Editor.SelectionLength))
             : _found.IndexBefore(Editor.SelectionStart);
-        SelectMatch(next, false);
+        SelectMatch(next);
     }
 
     private void OnFindNextClick(object? sender, RoutedEventArgs e) => FindNext(true);

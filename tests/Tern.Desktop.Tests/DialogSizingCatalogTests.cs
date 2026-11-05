@@ -207,6 +207,7 @@ public sealed class DialogSizingCatalogTests
             new("export", () => new ExportWindow("meeting.md", null, current, MarkdownProfile.Extended, null, ExportFormat.Html), "Export document", "Close export"),
             new("insert-table", () => new InsertTableWindow(), "Insert table", "Cancel"),
             new("version-history", () => new HistoryWindow("meeting.md", versions, current), "Open selected version as unsaved copy", "Close"),
+            new("version-history-empty", () => new HistoryWindow("meeting.md", [], current), "Close"),
             new("feature-guide", () => new HelpWindow(fixture.Shell.Registry), "Exit guide", "Next"),
             new("filename", () => new FileNameWindow(false, fixture.Docs, true, "meeting.md"), "Rename", "Cancel"),
             new("mcp", () => new MCPConnectionsWindow(), "Continue", "Close"),

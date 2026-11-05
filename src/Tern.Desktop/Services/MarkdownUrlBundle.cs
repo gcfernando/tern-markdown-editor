@@ -21,6 +21,9 @@ public sealed partial class MarkdownUrlLoader
     /// <summary>Downloads one document and its direct file/image dependencies; never crawls linked pages.</summary>
     public async Task<MarkdownUrlDocument> LoadBundleAsync(string url, CancellationToken cancellationToken = default)
     {
+        using var operationDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        operationDeadline.CancelAfter(TimeSpan.FromMinutes(2));
+        cancellationToken = operationDeadline.Token;
         var document = await LoadAsync(url, cancellationToken).ConfigureAwait(false);
         var parsed = Markdig.Markdown.Parse(document.Text, MarkdownPipelines.For(MarkdownProfile.Extended));
         var links = MarkdownAnalyzer.Analyze(document.Text, parsed, MarkdownProfile.Extended).Links
@@ -44,6 +47,38 @@ public sealed partial class MarkdownUrlLoader
         var failures = new Dictionary<string, string>(StringComparer.Ordinal);
         var rewrites = new List<(SourceRange Range, string Value)>();
         long bytes = Encoding.UTF8.GetByteCount(document.Text);
+        // At most four active transfers and one aggregate admission budget, including
+        // completed transfers waiting for their deterministic source-order rewrite.
+        var prefetched = new System.Collections.Concurrent.ConcurrentDictionary<string, (byte[] Bytes, string? MediaType, string? Error)>(StringComparer.Ordinal);
+        var dependencies = links.Select(link =>
+        {
+            var destination = DecodeDestination(link.Destination);
+            return Uri.TryCreate(document.SourceUrl, destination, out var address) && address.Scheme is "http" or "https"
+                && !destination.StartsWith('#') && (link.Image || referencedImages.Contains(link.Destination) || FileExtensions.Contains(Path.GetExtension(address.AbsolutePath)))
+                ? (Address: new UriBuilder(address) { Fragment = string.Empty }.Uri,
+                    Image: link.Image || referencedImages.Contains(link.Destination) || Tern.Rendering.Resources.ResourceResolverOptions.DefaultImageExtensions.Contains(Path.GetExtension(address.AbsolutePath)))
+                : (Address: (Uri?)null, Image: false);
+        }).Where(item => item.Address is not null && item.Address.AbsoluteUri != document.SourceUrl.AbsoluteUri)
+            .GroupBy(item => item.Address!.AbsoluteUri, StringComparer.Ordinal).Take(MaximumAssetCount)
+            .Select(group => (Address: group.First().Address!, Image: group.Any(item => item.Image))).ToArray();
+        long admittedBytes = bytes;
+        await Parallel.ForEachAsync(dependencies, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken }, async (dependency, token) =>
+        {
+            try
+            {
+                if (IsExplicitLoopbackHost(dependency.Address.IdnHost) && !SameOrigin(document.SourceUrl, dependency.Address))
+                    throw new InvalidOperationException("A document cannot download from a different local server.");
+                var content = await LoadAssetAsync(dependency.Address, dependency.Image, token).ConfigureAwait(false);
+                if (Interlocked.Add(ref admittedBytes, content.Bytes.Length) > MaximumBundleBytes)
+                {
+                    Interlocked.Add(ref admittedBytes, -content.Bytes.Length);
+                    throw new InvalidOperationException("The document and assets exceed the 100 MB total limit.");
+                }
+                prefetched[dependency.Address.AbsoluteUri] = (content.Bytes, content.MediaType, null);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            { prefetched[dependency.Address.AbsoluteUri] = ([], null, ex.Message); }
+        }).ConfigureAwait(false);
         foreach (var link in links.DistinctBy(l => l.Range))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -68,7 +103,8 @@ public sealed partial class MarkdownUrlLoader
                         throw new InvalidOperationException("A document cannot download from a different local server.");
                     var expectsImage = link.Image || referencedImages.Contains(link.Destination)
                         || Tern.Rendering.Resources.ResourceResolverOptions.DefaultImageExtensions.Contains(Path.GetExtension(fetch.AbsolutePath));
-                    var content = await LoadAssetAsync(fetch, expectsImage, cancellationToken).ConfigureAwait(false);
+                    if (!prefetched.TryGetValue(canonical, out var content)) throw new InvalidOperationException("The document exceeds the 128-file dependency limit.");
+                    if (content.Error is not null) throw new InvalidOperationException(content.Error);
                     if (bytes + content.Bytes.Length > MaximumBundleBytes) throw new InvalidOperationException("The document and assets exceed the 100 MB total limit.");
                     bytes += content.Bytes.Length;
                     var extension = Path.GetExtension(fetch.AbsolutePath).ToLowerInvariant();
@@ -177,7 +213,58 @@ public static class MarkdownUrlCache
     public static string Root(string stateDirectory) => Path.Combine(stateDirectory, "remote-cache");
     private sealed record Manifest(string Source, string Name, string[] Assets, string[] Warnings);
 
-    public static async Task<MarkdownUrlDocument?> ReadAsync(string root, string url, CancellationToken cancellationToken = default)
+    /// <summary>Cross-process read lease prevents pruning a snapshot used by an open tab.</summary>
+    public static IDisposable AcquireLease(string documentPath)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(documentPath))!;
+        RejectLinks(directory);
+        var lease = Path.Combine(directory, ".lease");
+        RejectLinks(lease);
+        if (!File.Exists(lease))
+            using (new FileStream(lease, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite)) { }
+        return new FileStream(lease, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+    }
+
+    /// <summary>Expires superseded snapshots after seven days. Current snapshots and
+    /// open tabs in any process are retained. Only app-owned files are removed.</summary>
+    public static Task PruneAsync(string root) => Task.Run(() =>
+    {
+        if (!Directory.Exists(root)) return;
+        try
+        {
+            RejectLinks(root);
+            var current = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var pointer in Directory.EnumerateFiles(root, "*.current"))
+            {
+                RejectLinks(pointer);
+                current.Add(File.ReadAllText(pointer));
+            }
+            foreach (var directory in Directory.EnumerateDirectories(root))
+            {
+                if (!Regex.IsMatch(Path.GetFileName(directory), "^[a-f0-9]{64}(?:-[a-f0-9]{32})?$", RegexOptions.CultureInvariant)
+                    || current.Contains(Path.GetFileName(directory)) || Directory.GetLastWriteTimeUtc(directory) > DateTime.UtcNow.AddDays(-7)) continue;
+                try
+                {
+                    RejectLinks(directory);
+                    // Do not remove unknown content or follow junctions during cleanup.
+                    var children = Directory.EnumerateDirectories(directory).ToArray();
+                    if (children.Any(path => Path.GetFileName(path) != "assets")) continue;
+                    foreach (var child in children) RejectLinks(child);
+                    if (children.Any(path => Directory.EnumerateDirectories(path).Any())) continue;
+                    var files = Directory.EnumerateFiles(directory).Concat(children.SelectMany(path => Directory.EnumerateFiles(path))).ToArray();
+                    if (files.Any(path => Path.GetRelativePath(directory, path).Replace('\\', '/') is var relative
+                        && relative is not ("document.md" or "original.md" or "manifest.json" or ".lease") && !IsAssetPath(relative))) continue;
+                    foreach (var file in files) RejectLinks(file);
+                    using var exclusive = new FileStream(Path.Combine(directory, ".lease"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Delete);
+                    Directory.Delete(directory, recursive: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Leased or inaccessible snapshots stay. */ }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Cache maintenance is best effort. */ }
+    });
+
+    public static async Task<MarkdownUrlDocument?> ReadAsync(string root, string url, CancellationToken cancellationToken = default, bool includeAssets = true)
     {
         try
         {
@@ -201,7 +288,7 @@ public static class MarkdownUrlCache
                 var path = Path.Combine(directory, asset); RejectLinks(path);
                 var size = new FileInfo(path).Length; assetBytes += size;
                 if (size > 20_000_000 || assetBytes > MarkdownUrlLoader.MaximumBundleBytes) return null;
-                assets.Add(asset, await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false));
+                if (includeAssets) assets.Add(asset, await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false));
             }
             var documentPath = Path.Combine(directory, "document.md"); RejectLinks(documentPath);
             return new MarkdownUrlDocument(new Uri(metadata.Source), metadata.Name, await File.ReadAllTextAsync(documentPath, cancellationToken).ConfigureAwait(false))

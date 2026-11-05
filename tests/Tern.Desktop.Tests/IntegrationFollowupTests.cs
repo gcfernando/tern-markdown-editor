@@ -50,7 +50,7 @@ public sealed class IntegrationFollowupTests
         var target = await fixture.WriteAsync("target.md", "# Target\n");
         await fixture.Shell.OpenWorkspaceAsync(fixture.Docs);
         var tab = (await fixture.Shell.OpenFileAsync(source))!;
-        var repair = fixture.Window.RepairLinkAsync(tab, new LinkRowView("broken", "missing.md", 1, true, "✕"), target);
+        var repair = fixture.Window.RepairLinkAsync(tab, new LinkRowView("broken", "missing.md", 1, true, false), target);
         Assert.True(await fixture.Shell.CloseTabAsync(tab));
         await repair;
         Assert.Equal("[broken](missing.md)\n", await File.ReadAllTextAsync(source));

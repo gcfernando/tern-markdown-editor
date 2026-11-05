@@ -1,6 +1,6 @@
 # Downloads and releases
 
-Tern's distribution target is **Windows x64**. Application version metadata remains **1.0.2**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
+Tern's distribution target is **Windows x64**. Application version metadata remains **1.0.3**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
 
 ## Download and verify
 
@@ -17,6 +17,16 @@ Extract the **entire** ZIP to a writable folder and run `Tern.exe`. Keep its run
 ## Signing and Windows warnings
 
 The current packaging route is **unsigned**. No trusted signing identity or completed signing-provider enrollment is established by these documents. Windows can show Unknown publisher or SmartScreen warnings. Do not disable operating-system protections or regard a release tag/checksum as a certificate. Signing, if later configured, cannot guarantee that every Windows reputation warning disappears.
+
+A certificate-based signing route is now available, but it does not create or purchase a publisher identity. Install a trusted code-signing certificate with an accessible private key in the current user's Personal store, and install Windows SDK SignTool. Use the timestamp URL specified by your signing provider:
+
+```powershell
+./tools/BuildRelease.ps1 -BuildRoot artifacts/signed-build -OutputDirectory artifacts/signed-release -SigningCertificateThumbprint YOUR_CERTIFICATE_THUMBPRINT -TimestampServer https://YOUR_PROVIDER_TIMESTAMP_URL -SignToolPath 'C:/path/to/signtool.exe'
+```
+
+The wrapper signs first-party `Tern.exe` and `Tern*.dll` files before packaging. It requires valid, timestamped Authenticode signatures with one signing identity and records binary hashes and publisher evidence in the manifest. `-RequireSigned` requires the fresh publish to carry valid signatures, for example from a custom signing build target. For an externally signed publish, run `python tools/package_release.py --publish SIGNED_FOLDER --output FRESH_OUTPUT_FOLDER --require-signed`. Both routes fail if signature verification is unsuccessful. The extracted-package smoke step verifies signatures again. Unsigned builds retain their explicit unsigned label. The automated workflow remains unsigned until a signing identity is supplied and configured.
+
+Microsoft distinguishes a trusted signature from SmartScreen reputation. Signing establishes publisher identity; new files or publishers can still receive a reputation warning. See [Microsoft's SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation) and [code signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options).
 
 ## Local package candidate
 

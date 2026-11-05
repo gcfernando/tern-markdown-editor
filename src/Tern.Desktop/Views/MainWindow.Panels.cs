@@ -17,11 +17,20 @@ public partial class MainWindow
     private string _nav = "Files";
     private string _lastSearch = string.Empty;
     private IReadOnlyList<TreeRow> _treeRoots = [];
+    private IReadOnlyList<OutlineItem> _outline = [];
+    private IReadOnlyList<LinkRowView> _documentLinks = [];
     private int _taskScanGeneration;
     private int _tasksOpen;
     private readonly HashSet<Tern.App.Shell.WorkspaceSession> _observedWorkspaces = [];
 
     private void OnWorkspaceFilesChanged(object? sender, WorkspaceChangeSet e) => Dispatcher.UIThread.Post(async () => { if (!_windowClosed) { RefreshWorkspace(); await CheckExternalChangesAsync(); } });
+    private void OnWorkspaceGraphChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
+    {
+        if (_windowClosed) return;
+        RefreshPanels();
+        UpdateBadges();
+        if (_nav is "Backlinks" or "Broken") ShowNav(_nav);
+    });
 
     internal string ActiveNav => _nav;
 
@@ -53,10 +62,11 @@ public partial class MainWindow
         foreach (var old in _observedWorkspaces.Where(w => !_shell.OpenWorkspaces.Contains(w)).ToArray())
         {
             old.FilesChanged -= OnWorkspaceFilesChanged;
+            old.GraphChanged -= OnWorkspaceGraphChanged;
             _observedWorkspaces.Remove(old);
         }
         foreach (var current in _shell.OpenWorkspaces)
-            if (_observedWorkspaces.Add(current)) current.FilesChanged += OnWorkspaceFilesChanged;
+            if (_observedWorkspaces.Add(current)) { current.FilesChanged += OnWorkspaceFilesChanged; current.GraphChanged += OnWorkspaceGraphChanged; }
         _syncingWorkspaces = true;
         WorkspaceSelector.ItemsSource = _shell.OpenWorkspaces.ToArray();
         WorkspaceSelector.SelectedItem = workspace;
@@ -414,33 +424,63 @@ public partial class MainWindow
     {
         if (OutlineList.SelectedItem is OutlineRow row)
         {
-            GoToLine(row.Line, 1);
+            GoToLine(row.Line, 1, focusEditor: false);
             Preview.ScrollToAnchor(row.Anchor);
-            OutlineList.SelectedItem = null;
         }
+    }
+
+    private void OnOutlineSearchChanged(object? sender, TextChangedEventArgs e) => RefreshOutline();
+
+    private void RefreshOutline()
+    {
+        var query = OutlineSearchBox.Text?.Trim() ?? string.Empty;
+        var rows = _outline.Where(item => item.Text.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Select(item => new OutlineRow(item.Text, new Thickness(Math.Max(0, item.Level - 1) * 8, 2, 0, 2), item.Line, item.Anchor, item.Level))
+            .ToList();
+        OutlineList.ItemsSource = rows;
+        this.FindControl<TextBlock>("OutlineCount")!.Text = query.Length == 0 ? $"{rows.Count} headings" : $"{rows.Count} of {_outline.Count} headings";
+        OutlineEmpty.IsVisible = rows.Count == 0;
+        OutlineEmpty.Text = _outline.Count == 0 ? "Add # headings in Source to create an outline." : "No headings match your search.";
     }
 
     private void OnLinkListSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
+        RepairLinkButton.IsEnabled = false;
         if (LinkList.SelectedItem is LinkRowView row)
         {
-            GoToLine(row.Line, 1);
+            GoToLine(row.Line, 1, focusEditor: false);
             RepairLinkButton.IsEnabled = row.IsBroken && _shown is { IsReadOnly: false, FilePath: { } path }
                 && _shell.WorkspaceForPath(path) is not null;
         }
+    }
+
+    private void OnLinksSearchChanged(object? sender, TextChangedEventArgs e) => RefreshLinks();
+
+    private void RefreshLinks()
+    {
+        var query = this.FindControl<TextBox>("LinksSearchBox")!.Text?.Trim() ?? string.Empty;
+        var rows = _documentLinks.Where(row => row.Text.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || row.Destination.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        RepairLinkButton.IsEnabled = false;
+        LinkList.SelectedItem = null;
+        LinkList.ItemsSource = rows;
+        this.FindControl<TextBlock>("LinksCount")!.Text = query.Length == 0 ? $"{rows.Length} links" : $"{rows.Length} of {_documentLinks.Count} links";
+        LinksEmpty.IsVisible = rows.Length == 0;
+        LinksEmpty.Text = _documentLinks.Count == 0 ? "No links found. Insert a link from the source toolbar." : "No links match your search.";
     }
 
     private void RefreshPanels()
     {
         RepairLinkButton.IsEnabled = false;
         var owner = _shown?.FilePath is { } path ? _shell.WorkspaceForPath(path) : _shell.Workspace;
+        RelatedNotesButton.IsVisible = owner is not null && _shown is { IsReadOnly: false, FilePath: not null };
         var panel = DocumentPanel.Build(_shown, owner);
-        OutlineEmpty.IsVisible = panel.Outline.Count == 0;
-        LinksEmpty.IsVisible = panel.Links.Count == 0;
+        _outline = panel.Outline;
+        RefreshOutline();
         TagsEmpty.IsVisible = panel.Tags.Count == 0;
         RepairLinkButton.IsVisible = panel.Links.Any(link => link.IsBroken);
-        OutlineList.ItemsSource = panel.Outline.Select(o => new OutlineRow(o.Text, new Thickness(Math.Max(0, o.Level - 1) * 12, 2, 0, 2), o.Line, o.Anchor)).ToList();
-        LinkList.ItemsSource = panel.Links.Select(l => new LinkRowView(l.Label, l.Destination, l.Line, l.IsBroken, l.IsBroken ? "✕" : l.IsExternal ? "↗" : "✓")).ToList();
+        _documentLinks = panel.Links.Select(l => new LinkRowView(l.Label, l.Destination, l.Line, l.IsBroken, l.IsExternal)).ToArray();
+        RefreshLinks();
         LinksSummary.Text = panel.LinksChecked == 0 ? string.Empty : panel.LinksBroken == 0 ? $"{panel.LinksChecked} checked" : $"{panel.LinksChecked} checked · {panel.LinksBroken} broken";
         InfoWords.Text = panel.Info.Words.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
         InfoRead.Text = panel.Info.ReadMinutes == 0 ? "–" : $"{panel.Info.ReadMinutes} min";

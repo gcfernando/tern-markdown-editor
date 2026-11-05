@@ -19,7 +19,7 @@ public sealed class DocumentHistoryStore(string root) : IDisposable
     public async Task CaptureAsync(string path, string text)
     {
         await _gate.WaitAsync().ConfigureAwait(false);
-        try { await CaptureCoreAsync(path, text).ConfigureAwait(false); }
+        try { await Task.Run(() => CaptureCoreAsync(path, text)).ConfigureAwait(false); }
         finally { _gate.Release(); }
     }
 
@@ -28,8 +28,17 @@ public sealed class DocumentHistoryStore(string root) : IDisposable
         var directory = DirectoryFor(path);
         Directory.CreateDirectory(directory);
         var digest = Hash(text);
-        var existing = await ReadCoreAsync(path).ConfigureAwait(false);
-        if (existing.Count > 0 && existing[0].Sha256 == digest) return;
+        // Saving needs only the newest version for deduplication. History browsing
+        // continues to verify every version it opens.
+        var newest = new DirectoryInfo(directory).EnumerateFiles("*.json").OrderByDescending(f => f.Name, StringComparer.Ordinal).FirstOrDefault();
+        if (newest is not null)
+        {
+            if (newest.Length > ByteBudget) throw new InvalidDataException("Local history exceeds its size budget.");
+            var version = JsonSerializer.Deserialize<DocumentVersion>(await File.ReadAllBytesAsync(newest.FullName).ConfigureAwait(false));
+            if (version is null || version.Text is null || Hash(version.Text) != version.Sha256)
+                throw new InvalidDataException("A local-history version failed its integrity check.");
+            if (version.Sha256 == digest) return;
+        }
         var payload = JsonSerializer.SerializeToUtf8Bytes(new DocumentVersion(DateTime.UtcNow, text, digest));
         if (payload.LongLength > ByteBudget) throw new IOException("This document exceeds the 32 MiB local-history budget.");
         var target = Path.Combine(directory, $"{DateTime.UtcNow.Ticks:D19}-{Guid.NewGuid():N}.json");

@@ -20,20 +20,25 @@ public sealed class AIWritingWorkbenchTests
     [InlineData(true, 1240, 850)]
     [InlineData(false, 640, 500)]
     [InlineData(true, 640, 500)]
-    public void Writing_workbench_fills_available_space_and_keeps_actions_visible(bool light, int width, int height)
+    public void Compact_composer_keeps_setup_visible_and_omits_raw_requests(bool light, int width, int height)
     {
         using var fixture = new DesktopFixture();
         ThemeManager.Apply(Application.Current!, light ? ThemeChoice.Paper : ThemeChoice.Midnight);
         var workspace = new AIWorkspaceService(fixture.AppData, new Vault()); workspace.Reload();
+        var scope = new ComboBox { ItemsSource = new[] { "Entire note" }, SelectedIndex = 0 };
         var panel = new AIPromptPanel("Project plan", workspace, (_, _, _) => throw new InvalidOperationException("Unexpected generation"),
-            () => { }, () => Task.CompletedTask, _ => { });
+            () => { }, () => Task.CompletedTask, _ => { }, scope: scope, isEmptyDraft: true);
         var window = new Window { Width = width, Height = height, Content = panel };
         window.Show(fixture.Window);
         try
         {
             Pump(window);
-            Assert.InRange(panel.Bounds.Width, Math.Min(1120, width - 48) - 1, Math.Min(1120, width - 48) + 1);
-            Assert.True(Find<TextBox>(panel, "AI writing question").Bounds.Height >= 280);
+            Assert.InRange(panel.Bounds.Width, Math.Min(720, width - 32) - 1, Math.Min(720, width - 32) + 1);
+            Assert.InRange(Find<TextBox>(panel, "AI writing question").Bounds.Height, 260, 380);
+            Assert.Contains("Describe what you want to create", Find<TextBlock>(panel, "How to write an AI instruction").Text);
+            Assert.Contains("This note is empty", Find<TextBlock>(panel, "What the selected text scope shares").Text);
+            Assert.Contains(panel.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && Equals(b.Content, "Set up connection"));
+            Assert.Empty(panel.GetVisualDescendants().OfType<Expander>());
             foreach (var button in panel.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible))
             {
                 var point = button.TranslatePoint(default, window)!.Value;
@@ -66,7 +71,7 @@ public sealed class AIWritingWorkbenchTests
         {
             Pump(window);
             Assert.False(Find<TextBox>(panel, "AI writing question").IsEnabled);
-            var generate = Find<Button>(panel, "Generate and update Markdown"); Assert.False(generate.IsEnabled);
+            var generate = Find<Button>(panel, "Generate AI suggestion"); Assert.False(generate.IsEnabled);
             generate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Equal(0, generated);
             var tools = Find<Button>(panel, "Open selected MCP tools"); Assert.True(tools.IsEffectivelyVisible); Assert.True(tools.IsEnabled);

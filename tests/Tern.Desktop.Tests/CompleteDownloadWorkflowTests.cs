@@ -28,16 +28,18 @@ public sealed class CompleteDownloadWorkflowTests
         using (var loader = Loader(server)) document = await loader.LoadBundleAsync(Url);
         await fixture.Window.OpenUrlDocumentAsync(document);
         var opened = Assert.Single(fixture.Shell.Tabs);
-        Assert.Equal(2, opened.ResourceFiles.Count);
+        Assert.Empty(opened.ResourceFiles);
         Assert.True(File.Exists(opened.ResourceDocumentPath));
+        AssertLocalResources(opened.ResourceDocumentPath!, document);
         Assert.True(await fixture.Shell.CloseTabAsync(opened));
         server.Offline = true;
         fixture.Window.OnlineLoaderFactory = () => Loader(server);
         await fixture.Window.ShowNavAsync("Recent");
         var list = fixture.Window.FindControl<ListBox>("SideList")!;
         list.SelectedItem = Assert.Single(list.Items.OfType<SideRow>(), row => row.IsOnline);
-        await UntilAsync(fixture, () => fixture.Shell.Tabs.Count == 1 && fixture.Shell.ActiveTab!.ResourceFiles.Count == 2);
+        await UntilAsync(fixture, () => fixture.Shell.Tabs.Count == 1 && fixture.Shell.ActiveTab!.ResourceDocumentPath is not null);
         var reopened = Assert.Single(fixture.Shell.Tabs);
+        Assert.Empty(reopened.ResourceFiles);
         Assert.Equal(document.Text, reopened.CurrentText);
         Assert.Equal(3, server.Requests);
         AssertLocalResources(reopened.ResourceDocumentPath!, document);
@@ -141,7 +143,7 @@ public sealed class CompleteDownloadWorkflowTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
-            server.Requests++;
+            Interlocked.Increment(ref server.Requests);
             if (server.Offline) throw new HttpRequestException("Offline acceptance check must use the local cache.");
             HttpContent body = request.RequestUri!.AbsolutePath switch
             {

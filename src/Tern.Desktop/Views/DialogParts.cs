@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
@@ -35,6 +36,7 @@ internal static class DialogParts
         window[!Window.BackgroundProperty] = window.GetResourceObservable(ThemeManager.Panel).ToBinding();
         AutomationProperties.SetName(window, title);
         window.Classes.Add("tern-dialog");
+        KeyboardNavigation.SetTabNavigation(window, KeyboardNavigationMode.Cycle);
         var observed = new HashSet<Control>();
         var pending = false;
         var fitting = false;
@@ -96,6 +98,12 @@ internal static class DialogParts
             // Measuring once inside Opened can retain the initial empty viewport.
             QueueFit();
             window.LayoutUpdated += LayoutUpdated;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!closed && (window.FocusManager?.GetFocusedElement() is not Control focused || ReferenceEquals(focused, window))
+                    && window.Content is Control content)
+                    FocusFirst(content);
+            }, DispatcherPriority.Loaded);
         };
         window.SizeChanged += (_, e) =>
         {
@@ -109,6 +117,21 @@ internal static class DialogParts
             foreach (var control in observed) control.PropertyChanged -= ContentChanged;
             observed.Clear();
         };
+    }
+
+    internal static void FocusPage(Control page, Control? fallback = null) => Dispatcher.UIThread.Post(() =>
+    {
+        if (page.IsEffectivelyVisible && TopLevel.GetTopLevel(page) is Window { IsActive: true }
+            && !FocusFirst(page))
+            fallback?.Focus(NavigationMethod.Tab);
+    }, DispatcherPriority.Loaded);
+
+    private static bool FocusFirst(Control content)
+    {
+        var first = content.GetVisualDescendants().OfType<Control>().Prepend(content)
+            .Where(control => control is { Focusable: true, IsTabStop: true, IsEffectivelyVisible: true, IsEffectivelyEnabled: true })
+            .OrderBy(control => control.TabIndex).FirstOrDefault();
+        return first?.Focus(NavigationMethod.Tab) == true;
     }
 
     /// <summary>Fit short forms to their content while keeping long views in a bounded scrollable viewport.</summary>

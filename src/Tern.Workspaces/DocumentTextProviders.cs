@@ -10,13 +10,15 @@ public interface IDocumentTextProvider
 }
 
 /// <summary>Reads documents from disk through <see cref="TextFileCodec"/>, so the text matches what the editor would show.</summary>
-public sealed class DiskDocumentTextProvider : IDocumentTextProvider
+public sealed class DiskDocumentTextProvider(long maximumBytes = 16L * 1024 * 1024) : IDocumentTextProvider
 {
     public async ValueTask<string?> ReadTextAsync(string path, CancellationToken cancellationToken)
     {
         try
         {
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
+            // Recheck on the opened handle: a file can grow after the directory scan.
+            if (stream.Length > maximumBytes) return null;
             var bytes = new byte[stream.Length];
             await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
             return TextFileCodec.Decode(bytes).Text;

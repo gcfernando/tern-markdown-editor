@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.3 — November 5 2026
+
+- Add AI edit review with original/result comparison, Back, Copy result, Apply and Close, plus Escape to discard and close.
+- Improve selection-aware AI prompts, quick actions, workspace answers with citations and related-note suggestions.
+- Refresh library shortcuts, outline, searchable document links and version history with clearer guidance.
+- Improve keyboard focus and tab navigation, search-match visibility and empty-tab-bar double-click creation.
+- Reduce duplicate workspace scans, coalesce watcher events, reuse highlighting state and move costly work off the UI thread.
+- Bound merge memory and file reads; improve online download concurrency, disk-backed assets and cache cleanup.
+- Reuse short-lived AI connection validation with configuration and credential checks.
+- Add optional Authenticode signing and verification tooling. This release remains unsigned because a trusted signing identity is not configured.
+- Update Feature Guide and Tutorials, user documentation and the performance before-and-after report.
+- Update application metadata, Windows manifest, displayed version, MCP client metadata and dependency inventory to 1.0.3.
+
 ## 1.0.2 — November 1 2026
 
 - Unify saved API, GitHub Copilot and MCP connections in the service selector and main toolbar, with create, edit, delete, validation and secure credential storage.

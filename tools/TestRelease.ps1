@@ -19,6 +19,9 @@ $manifest = $manifestText | ConvertFrom-Json
 [void][IO.Directory]::CreateDirectory($evidence)
 $extract = Join-Path $evidence 'extracted'
 [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extract)
+if ($manifest.signing -eq 'Verified Authenticode signatures') {
+    & (Join-Path $PSScriptRoot 'VerifyReleaseSignatures.ps1') -PublishDirectory $extract
+}
 $trace = Join-Path $evidence 'startup.json'
 $note = Join-Path $evidence 'release-smoke.md'
 [IO.File]::WriteAllText($note, "# Release smoke`n`nLocal **Markdown** startup fixture.`n", [Text.UTF8Encoding]::new($false))

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -12,6 +13,16 @@ namespace Tern.Desktop.Views;
 public partial class MainWindow
 {
     private bool _tabNavigationWired;
+
+    private void OnTabBarDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is not Visual source ||
+            source.GetSelfAndVisualAncestors().TakeWhile(visual => !ReferenceEquals(visual, sender))
+                .Any(visual => visual is ListBoxItem or Button or Avalonia.Controls.Primitives.ScrollBar))
+            return;
+        _shell.NewDocument();
+        e.Handled = true;
+    }
 
     private async void OnDocumentContextClick(object? sender, RoutedEventArgs e)
     {

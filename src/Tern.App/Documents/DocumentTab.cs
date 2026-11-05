@@ -380,7 +380,9 @@ public sealed partial class DocumentTab : ObservableObject, IDisposable
         var path = Session.FilePath ?? throw new InvalidOperationException("The document has no file.");
         var disk = await _files.LoadAsync(path, null, cancellationToken).ConfigureAwait(true);
         _pendingMerge = (disk.Baseline, disk.Text, Session.Revision);
-        return ThreeWayMerger.Merge(_mergeBase, CurrentText, disk.Text);
+        var mergeBase = _mergeBase;
+        var currentText = CurrentText;
+        return await Task.Run(() => ThreeWayMerger.Merge(mergeBase, currentText, disk.Text), cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>Puts the user-approved merged text into the buffer, anchored to the current disk version so a save succeeds.</summary>
@@ -521,7 +523,8 @@ public sealed partial class DocumentTab : ObservableObject, IDisposable
             Publish(new MarkdownAnalysis { Profile = profile, Lines = new LineIndex(string.Empty) }, snapshot.Revision, generation);
             return;
         }
-        _ = Task.Run(async () =>
+        var previous = _analysisWork;
+        _analysisWork = Task.Run(async () =>
         {
             try
             {
@@ -530,6 +533,8 @@ public sealed partial class DocumentTab : ObservableObject, IDisposable
                     await Task.Delay(delay, token).ConfigureAwait(false);
                 }
 
+                await previous.ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
                 var result = MarkdownAnalyzer.Analyze(snapshot.Text, profile);
                 token.ThrowIfCancellationRequested();
                 Publish(result, snapshot.Revision, generation);
@@ -537,8 +542,11 @@ public sealed partial class DocumentTab : ObservableObject, IDisposable
             catch (OperationCanceledException)
             {
             }
+            catch (ArgumentException) { /* Parser rejected excessively nested input. */ }
         });
     }
+
+    private Task _analysisWork = Task.CompletedTask;
 
     private void Publish(MarkdownAnalysis result, long revision, long generation)
     {

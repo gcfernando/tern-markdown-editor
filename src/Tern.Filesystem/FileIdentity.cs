@@ -46,7 +46,9 @@ public static class FileIdentity
                 continue;
             }
             FileSystemInfo info = (attributes & FileAttributes.Directory) != 0 ? new DirectoryInfo(current) : new FileInfo(current);
-            if (info.LinkTarget is { } target)
+            // Querying LinkTarget opens a reparse-point handle on Windows. Ordinary
+            // components need only the attribute check above, including during scans.
+            if ((attributes & FileAttributes.ReparsePoint) != 0 && info.LinkTarget is { } target)
             {
                 var fullTarget = Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current)!, target));
                 if (OperatingSystem.IsWindows() && fullTarget.StartsWith(@"\\", StringComparison.Ordinal))

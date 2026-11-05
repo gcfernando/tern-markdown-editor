@@ -49,6 +49,7 @@ public static class LineSplitter
 public static class LineDiff
 {
     private const int MaxEditDistance = 4000;
+    private const long MaxTraceBytes = 8L * 1024 * 1024;
 
     /// <summary>For each index in <paramref name="a"/>, the matching index in <paramref name="b"/> or -1.</summary>
     public static int[] MatchLines(IReadOnlyList<string> a, IReadOnlyList<string> b)
@@ -90,6 +91,8 @@ public static class LineDiff
         var found = false;
         for (var d = 0; d <= max && !found; d++)
         {
+            // Fall back to an entirely changed middle before exceeding the budget.
+            if ((long)(trace.Count + 1) * v.Length * sizeof(int) > MaxTraceBytes) return;
             trace.Add((int[])v.Clone());
             for (var k = -d; k <= d; k += 2)
             {

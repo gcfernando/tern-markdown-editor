@@ -4,12 +4,16 @@ using Tern.Workspaces;
 
 namespace Tern.Desktop.ViewModels;
 
-public sealed record OutlineRow(string Text, Thickness Indent, int Line, string Anchor)
+public sealed record OutlineRow(string Text, Thickness Indent, int Line, string Anchor, int Level)
 {
+    public string LevelLabel => $"H{Level}";
     public override string ToString() => Text;
 }
 
-public sealed record LinkRowView(string Text, string Destination, int Line, bool IsBroken, string Glyph);
+public sealed record LinkRowView(string Text, string Destination, int Line, bool IsBroken, bool IsExternal)
+{
+    public string Status => IsBroken ? "Broken" : IsExternal ? "External" : "Internal";
+}
 
 /// <summary>One line in the sidebar list panels (recent files, search hits, backlinks, tasks...).</summary>
 public sealed record SideRow(string Title, string Detail, string? Path, int Line, string Glyph = "", bool IsMissing = false, bool CanRemoveReference = false, bool IsOnline = false)

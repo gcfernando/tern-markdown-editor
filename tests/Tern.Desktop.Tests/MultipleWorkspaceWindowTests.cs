@@ -139,7 +139,7 @@ public sealed class MultipleWorkspaceWindowTests
         Assert.True(await fixture.Window.CreateWorkspaceAtAsync(fixture.Docs, "Second"));
         var unrelated = Path.Combine(fixture.Shell.Workspace!.Root, "other.md");
         await File.WriteAllTextAsync(unrelated, "# Other\n");
-        var row = new LinkRowView("Target", "missing.md", 1, true, "!");
+        var row = new LinkRowView("Target", "missing.md", 1, true, false);
         await fixture.Window.RepairLinkAsync(document, row, unrelated);
         Assert.Equal("[Target](missing.md)\n", document.CurrentText);
         await fixture.Window.RepairLinkAsync(document, row, target);

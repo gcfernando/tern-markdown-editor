@@ -81,7 +81,7 @@ public sealed class SettingsWindow : Window
             var profiles = workspaceConnections?.Invoke() ?? (aiProfiles?.Invoke() ?? []).Select(p => new WorkspaceConnection(p.Id, p.Name, "api", p.Model, p.Endpoint)).ToArray();
             var shortcut = Gesture.Describe(registry.GetGesture(CommandIds.AskAI));
             var writingAction = shortcut.Length > 0 ? "Press " + shortcut : "Choose Edit → Write with AI";
-            aiWritingDescription.Text = "Choose a connection in the main toolbar. " + writingAction + " in Source, Reading preview or the Reference pane, then describe your change. AI updates the active note in one undoable edit. For an MCP connection, choose Open MCP tools to review and run a tool separately.";
+            aiWritingDescription.Text = "Choose a connection in the main toolbar. " + writingAction + " in Source, Reading preview or the Reference pane. Choose what to share, generate a suggestion and review it before applying changes. For an MCP connection, choose Open MCP tools to review and run a tool separately.";
             aiSummary.Text = profiles.Count == 0 ? "Connect a service once. Your saved connections will be ready throughout Tern."
                 : $"{profiles.Count} saved {(profiles.Count == 1 ? "connection" : "connections")} · Switch between them from the main toolbar.";
             aiList.Children.Clear();

@@ -12,6 +12,34 @@ namespace Tern.Desktop.Tests;
 public sealed class UnifiedWorkspaceConnectionTests
 {
     [Fact]
+    public async Task Recent_Copilot_check_is_reused_but_credential_changes_require_a_new_probe()
+    {
+        using var folder = new Folder();
+        var vault = new Vault();
+        var profile = Profile(folder, "copilot");
+        File.WriteAllText(profile.Destination, "synthetic");
+        var store = new IntegrationProfileStore(folder.Path, vault);
+        store.Save(profile, "first-token");
+        var probes = 0;
+        var generations = 0;
+        var service = new AIWorkspaceService(folder.Path, vault, createCopilotClient: () => new CopilotTextClient((start, _) =>
+        {
+            if (start.ArgumentList.Contains("--prompt=" + AIConnectionClient.ValidationMessage)) probes++;
+            else generations++;
+            return Task.FromResult(new CopilotProcessResult(0, "OK"));
+        }));
+        service.Reload();
+        await service.SendWritingAsync(profile.Id, "Rewrite this", () => true, TestContext.Current.CancellationToken);
+        await service.SendWritingAsync(profile.Id, "Summarize this", () => true, TestContext.Current.CancellationToken);
+        Assert.Equal(1, probes);
+        Assert.Equal(2, generations);
+        store.Save(profile, "second-token");
+        await service.SendWritingAsync(profile.Id, "Explain this", () => true, TestContext.Current.CancellationToken);
+        Assert.Equal(2, probes);
+        Assert.Equal(3, generations);
+    }
+
+    [Fact]
     public void All_connection_kinds_reload_and_remember_the_selected_connection()
     {
         using var folder = new Folder(); var vault = new Vault();
@@ -95,10 +123,14 @@ public sealed class UnifiedWorkspaceConnectionTests
         f.Window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
         var panel = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIPromptPanel>());
         panel.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "AI writing question").Text = "Improve";
-        panel.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Generate and update Markdown")
+        panel.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Generate AI suggestion")
             .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        for (var i = 0; i < 150 && f.Window.IsOverlayOpen; i++)
+        for (var i = 0; i < 150 && !f.Window.OverlayLayer.Children.OfType<AIEditReview>().Any(); i++)
         { await Task.Delay(20, TestContext.Current.CancellationToken); Dispatcher.UIThread.RunJobs(); }
+        var review = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIEditReview>());
+        Assert.Equal("# Original", note.CurrentText);
+        review.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Apply"))
+            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.False(f.Window.IsOverlayOpen); Assert.Equal("# Better draft", note.CurrentText); Assert.Equal(2, calls);
         await f.Window.RunCommandAsync(Tern.App.Commands.CommandIds.Undo); Assert.Equal("# Original", note.CurrentText);
     }
@@ -115,6 +147,13 @@ public sealed class UnifiedWorkspaceConnectionTests
         Assert.Equal("Open MCP tools", f.Window.AIConnectionAction.Content);
         store.Save(profile with { Name = "Renamed tools" }, ""); Dispatcher.UIThread.RunJobs();
         Assert.Equal("Renamed tools", Assert.IsType<WorkspaceConnection>(f.Window.AIConnectionPicker.SelectedItem).Name);
+        f.Shell.NewDocument("Text for writing");
+        f.Window.ShowAIWritingPrompt();
+        f.Window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+        var writing = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIPromptPanel>());
+        Assert.Contains(writing.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && Equals(b.Content, "Set up connection"));
+        Assert.Empty(f.Window.OwnedWindows);
+        f.Window.HideOverlay();
         f.Window.AIConnectionAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Dispatcher.UIThread.RunJobs();
         var tools = Assert.Single(f.Window.OwnedWindows.OfType<MCPConnectionsWindow>());
         Assert.Equal(profile.Destination, tools.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "MCP server endpoint").Text);

@@ -12,11 +12,19 @@ public sealed class AIConnectionClient : IDisposable
     public const int MaximumMessageCharacters = 32_768;
     private const int MaximumResponseBytes = 1_048_576;
 
-    public AIConnectionClient() : this(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false, Credentials = null }) { }
-
-    internal AIConnectionClient(HttpMessageHandler handler)
+    private static readonly Lazy<HttpMessageHandler> SharedTransport = new(() => new HttpClientHandler
     {
-        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+        AllowAutoRedirect = false, UseCookies = false, UseProxy = false, Credentials = null,
+        MaxConnectionsPerServer = 4,
+    });
+
+    public AIConnectionClient() : this(SharedTransport.Value, false) { }
+
+    internal AIConnectionClient(HttpMessageHandler handler) : this(handler, true) { }
+
+    private AIConnectionClient(HttpMessageHandler handler, bool disposeHandler)
+    {
+        _http = new HttpClient(handler, disposeHandler) { Timeout = TimeSpan.FromSeconds(60) };
     }
 
     public static bool IsAllowedEndpoint(Uri endpoint) => endpoint.IsAbsoluteUri && string.IsNullOrEmpty(endpoint.UserInfo)

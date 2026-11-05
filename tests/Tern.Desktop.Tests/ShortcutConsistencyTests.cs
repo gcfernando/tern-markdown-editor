@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
@@ -151,6 +152,47 @@ public sealed class ShortcutConsistencyTests
         Assert.False(f.Window.ReferencePane.IsVisible);
         Press(f.Window, Key.Escape, KeyModifiers.None);
         Assert.False(f.Window.IsFocusMode);
+    }
+
+    [AvaloniaFact]
+    public async Task F6_reaches_the_active_inspector_tab_library_and_document_tabs()
+    {
+        using var f = new DesktopFixture();
+        f.Shell.NewDocument("# Heading");
+        await f.Window.RunCommandAsync(CommandIds.ViewSplit);
+        f.Window.InspectorContent.SelectedIndex = 1;
+        Pump(f);
+        Assert.True(f.Window.Editor.TextArea.Focus());
+        Press(f.Window.Editor.TextArea, Key.F6, KeyModifiers.None);
+        Assert.True(f.Window.PreviewControl.IsKeyboardFocusWithin);
+        Press(f.Window.PreviewControl, Key.F6, KeyModifiers.None);
+        var selectedInspector = Assert.Single(f.Window.InspectorContent.Items.OfType<TabItem>(), item => item.IsSelected);
+        Assert.True(selectedInspector.IsKeyboardFocusWithin);
+        Press(selectedInspector, Key.F6, KeyModifiers.None);
+        Assert.True(f.Window.SearchBox.IsKeyboardFocusWithin);
+        Press(f.Window.SearchBox, Key.F6, KeyModifiers.None);
+        Assert.True(f.Window.WorkspaceAddButton.IsKeyboardFocusWithin);
+        Press(f.Window.WorkspaceAddButton, Key.F6, KeyModifiers.None);
+        Assert.True(f.Window.TabStrip.IsKeyboardFocusWithin);
+        var tab = Assert.Single(f.Window.TabStrip.GetVisualDescendants().OfType<ListBoxItem>(), item => item.IsSelected);
+        Press(tab, Key.F6, KeyModifiers.Shift);
+        Assert.True(f.Window.WorkspaceAddButton.IsKeyboardFocusWithin);
+    }
+
+    [AvaloniaFact]
+    public void Focused_splitter_resizes_the_library_with_arrow_keys()
+    {
+        using var f = new DesktopFixture();
+        f.Shell.NewDocument("Note");
+        Pump(f);
+        var splitter = Assert.Single(f.Window.GetVisualDescendants().OfType<GridSplitter>(),
+            control => AutomationProperties.GetName(control) == "Resize sidebar");
+        var width = f.Window.Body.ColumnDefinitions[0].ActualWidth;
+        Assert.True(splitter.IsTabStop);
+        Assert.True(splitter.Focus(NavigationMethod.Tab));
+        f.Window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
+        Pump(f);
+        Assert.True(f.Window.Body.ColumnDefinitions[0].ActualWidth > width);
     }
 
     private static void Press(InputElement target, Key key, KeyModifiers modifiers) =>

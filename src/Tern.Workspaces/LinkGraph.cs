@@ -124,6 +124,7 @@ public sealed class LinkGraph
 
         lock (_gate)
         {
+            _docs.Clear();
             foreach (var entry in entries)
             {
                 _docs[entry.Path] = entry;
@@ -134,11 +135,12 @@ public sealed class LinkGraph
     }
 
     /// <summary>Adds or replaces a document from its current text (saved or not).</summary>
-    public void Update(string path, string text)
+    public void Update(string path, string text, Func<bool>? isCurrent = null)
     {
         var entry = BuildEntry(WorkspacePaths.Normalize(path), text);
         lock (_gate)
         {
+            if (isCurrent?.Invoke() == false) return;
             var structuralChange = !_docs.TryGetValue(entry.Path, out var previous) || previous.Signature != entry.Signature;
             if (previous is not null)
             {

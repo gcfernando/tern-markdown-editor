@@ -29,7 +29,8 @@ public sealed class DuplicateTaskOverlayTests
         Pump(fixture);
         await fixture.Window.ShowNavAsync("Tasks");
         Assert.Equal("First task", Assert.Single(fixture.Window.FindControl<ListBox>("SideList")!.Items.OfType<SideRow>()).Title);
-        Assert.Equal("First buffer", Assert.Single(fixture.Shell.Workspace!.Graph.GetHeadings()).Heading.Text);
+        await fixture.Shell.Workspace!.GraphIdle;
+        Assert.Equal("First buffer", Assert.Single(fixture.Shell.Workspace.Graph.GetHeadings()).Heading.Text);
         Assert.Equal(original, await File.ReadAllTextAsync(path));
         Assert.True(first.IsDirty);
         Assert.True(second.IsDirty);
@@ -50,6 +51,7 @@ public sealed class DuplicateTaskOverlayTests
         Pump(fixture);
 
         Assert.True(await fixture.Shell.SaveTabAsync(second));
+        await fixture.Shell.Workspace!.GraphIdle;
         Pump(fixture);
 
         Assert.False(second.IsDirty);

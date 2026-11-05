@@ -14,10 +14,63 @@ namespace Tern.Desktop.Tests;
 public sealed class MarkdownUrlBundleTests
 {
     [Fact]
+    public async Task Dependencies_overlap_but_never_exceed_four_active_transfers()
+    {
+        var active = 0;
+        var peak = 0;
+        var fourStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var loader = Loader(async (uri, token) =>
+        {
+            if (uri.AbsolutePath.EndsWith(".md", StringComparison.Ordinal))
+                return Text(string.Join('\n', Enumerable.Range(0, 12).Select(i => $"![{i}]({i}.png)")));
+            var count = Interlocked.Increment(ref active);
+            int previous;
+            do { previous = Volatile.Read(ref peak); } while (count > previous && Interlocked.CompareExchange(ref peak, count, previous) != previous);
+            if (count == 4) fourStarted.TrySetResult();
+            try
+            {
+                await fourStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+                await Task.Delay(10, token);
+                return Binary([1, 2, 3]);
+            }
+            finally { Interlocked.Decrement(ref active); }
+        });
+        var bundle = await loader.LoadBundleAsync("https://example.com/note.md", TestContext.Current.CancellationToken);
+        Assert.Equal(4, peak);
+        Assert.Equal(12, bundle.Assets.Count);
+        Assert.Empty(bundle.Warnings);
+    }
+
+    [Fact]
+    public async Task Metadata_only_cache_read_and_pruning_preserve_leased_snapshots()
+    {
+        using var folder = new TestFolder();
+        const string url = "https://example.com/note.md";
+        var asset = "assets/" + new string('a', 64) + ".png";
+        var source = new MarkdownUrlDocument(new Uri(url), "note.md", $"![image]({asset})")
+            { Assets = new Dictionary<string, byte[]> { [asset] = new byte[1_000_000] } };
+        var first = await MarkdownUrlCache.WriteAsync(folder.Path, url, source);
+        var second = await MarkdownUrlCache.WriteAsync(folder.Path, url, source);
+        var lazy = await MarkdownUrlCache.ReadAsync(folder.Path, url, includeAssets: false);
+        Assert.NotNull(lazy);
+        Assert.Empty(lazy.Assets);
+        Assert.True(File.Exists(Path.Combine(Path.GetDirectoryName(lazy.CachedPath!)!, asset)));
+        using (MarkdownUrlCache.AcquireLease(first.CachedPath!))
+        {
+            Directory.SetLastWriteTimeUtc(Path.GetDirectoryName(first.CachedPath!)!, DateTime.UtcNow.AddDays(-10));
+            await MarkdownUrlCache.PruneAsync(folder.Path);
+            Assert.True(File.Exists(first.CachedPath));
+        }
+        await MarkdownUrlCache.PruneAsync(folder.Path);
+        Assert.False(File.Exists(first.CachedPath));
+        Assert.True(File.Exists(second.CachedPath));
+    }
+
+    [Fact]
     public async Task Redirect_relative_reference_HTML_assets_and_query_collisions_cache_and_save_portably()
     {
         using var folder = new TestFolder();
-        var requests = new List<string>();
+        var requests = new System.Collections.Concurrent.ConcurrentBag<string>();
         const string original = "![one](<images/a%20b.png?q=1#part>)\n![same][pic]\n[pic]: images/a%20b.png?q=1\n![different](images/a%20b.png?q=2)\n<img src='images/html.png'>\n[PDF](../file.pdf)\n[Website](../guide)\n`![code](ignored.png)`";
         using var loader = Loader((uri, _) =>
         {

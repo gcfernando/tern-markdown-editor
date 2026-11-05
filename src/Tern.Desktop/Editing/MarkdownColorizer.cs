@@ -21,6 +21,11 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
     private LineKind[] _kinds = [];
     private TextDocument? _tracked;
     private bool _stale = true;
+    private string?[] _fenceAfter = [];
+    private int _dirtyStart;
+    private int _dirtyEnd;
+    private int _frontMatterEnd;
+    internal int StateLinesVisited { get; private set; }
 
     [GeneratedRegex(@"^ {0,3}(#{1,6})(\s.*)?$")]
     private static partial Regex Heading();
@@ -53,18 +58,31 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
     {
         if (_tracked is not null)
         {
-            _tracked.TextChanged -= OnTextChanged;
+            _tracked.Changed -= OnTextChanged;
         }
 
         _tracked = document;
         _stale = true;
+        _kinds = [];
+        _fenceAfter = [];
+        _dirtyStart = 0;
+        _dirtyEnd = int.MaxValue;
+        _frontMatterEnd = 0;
         if (document is not null)
         {
-            document.TextChanged += OnTextChanged;
+            document.Changed += OnTextChanged;
         }
     }
 
-    private void OnTextChanged(object? sender, EventArgs e) => _stale = true;
+    private void OnTextChanged(object? sender, DocumentChangeEventArgs e)
+    {
+        if (_tracked is null) return;
+        var first = _tracked.GetLineByOffset(Math.Min(e.Offset, _tracked.TextLength)).LineNumber - 1;
+        var last = _tracked.GetLineByOffset(Math.Min(e.Offset + e.InsertionLength, _tracked.TextLength)).LineNumber - 1;
+        _dirtyStart = _stale ? Math.Min(_dirtyStart, first) : first;
+        _dirtyEnd = _stale ? Math.Max(_dirtyEnd, last) : last;
+        _stale = true;
+    }
 
     protected override void ColorizeLine(DocumentLine line)
     {
@@ -77,6 +95,10 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
         var index = line.LineNumber - 1;
         var kind = index < _kinds.Length ? _kinds[index] : LineKind.Normal;
         var text = CurrentContext.Document.GetText(line);
+
+        // Source text stays intact; skip cosmetic regex passes on pathological
+        // single lines instead of letting them monopolize the UI thread.
+        if (text.Length > 32_768) return;
 
         switch (kind)
         {
@@ -168,16 +190,26 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
 
     private void EnsureKinds(TextDocument document)
     {
+        StateLinesVisited = 0;
         if (!_stale && _kinds.Length == document.LineCount)
         {
             return;
         }
 
-        var kinds = new LineKind[document.LineCount];
-        var i = 0;
-        if (document.LineCount > 0 && document.GetText(document.GetLineByNumber(1)).TrimEnd() == "---")
+        if (_kinds.Length != document.LineCount)
         {
+            Array.Resize(ref _kinds, document.LineCount);
+            Array.Resize(ref _fenceAfter, document.LineCount);
+            _dirtyEnd = int.MaxValue;
+        }
+        var i = Math.Clamp(_dirtyStart, 0, document.LineCount - 1);
+        if (i <= _frontMatterEnd)
+        {
+            var previousEnd = _frontMatterEnd;
+            i = 0;
+            _frontMatterEnd = 0;
             var close = -1;
+            if (document.GetText(document.GetLineByNumber(1)).TrimEnd() == "---")
             for (var n = 2; n <= document.LineCount; n++)
             {
                 var t = document.GetText(document.GetLineByNumber(n)).TrimEnd();
@@ -190,16 +222,23 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
 
             if (close > 0)
             {
+                _frontMatterEnd = close;
                 for (; i < close; i++)
                 {
-                    kinds[i] = LineKind.FrontMatter;
+                    _kinds[i] = LineKind.FrontMatter;
+                    _fenceAfter[i] = null;
                 }
             }
+            if (previousEnd != _frontMatterEnd) _dirtyEnd = int.MaxValue;
         }
 
-        string? open = null;
-        for (; i < kinds.Length; i++)
+        string? open = i == 0 ? null : _fenceAfter[i - 1];
+        for (; i < _kinds.Length; i++)
         {
+            StateLinesVisited++;
+            var oldKind = _kinds[i];
+            var oldFence = _fenceAfter[i];
+            var kind = LineKind.Normal;
             var text = document.GetText(document.GetLineByNumber(i + 1));
             var fence = Fence().Match(text);
             if (open is null)
@@ -207,21 +246,23 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
                 if (fence.Success)
                 {
                     open = fence.Groups[1].Value;
-                    kinds[i] = LineKind.FenceEdge;
+                    kind = LineKind.FenceEdge;
                 }
             }
             else if (fence.Success && fence.Groups[1].Value[0] == open[0] && fence.Groups[1].Length >= open.Length)
             {
-                kinds[i] = LineKind.FenceEdge;
+                kind = LineKind.FenceEdge;
                 open = null;
             }
             else
             {
-                kinds[i] = LineKind.FenceBody;
+                kind = LineKind.FenceBody;
             }
+            _kinds[i] = kind;
+            _fenceAfter[i] = open;
+            if (i >= _dirtyEnd && oldKind == kind && oldFence == open) break;
         }
 
-        _kinds = kinds;
         _stale = false;
     }
 }

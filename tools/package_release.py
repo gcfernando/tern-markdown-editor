@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
@@ -178,10 +179,19 @@ def verify_archive(archive: Path) -> dict:
             or manifest.get("project") != "Tern"
             or manifest.get("runtimeIdentifier") != "win-x64"
             or manifest.get("selfContained") is not True
-            or manifest.get("signing") != "Unsigned preview candidate"
+            or manifest.get("signing") not in ("Unsigned preview candidate", "Verified Authenticode signatures")
         ):
             raise PackageError("Unsupported package manifest")
         expected = {record["path"]: record for record in manifest["files"]}
+        if manifest.get("signing") == "Verified Authenticode signatures":
+            signatures = manifest.get("signatures", [])
+            first_party = {name for name in names if name in ("Tern.exe", "Tern.dll")
+                           or name.startswith("Tern.") and name.endswith(".dll") and "/" not in name}
+            if not isinstance(signatures, list) or {item.get("file") for item in signatures} != first_party:
+                raise PackageError("Incomplete signature evidence")
+            for item in signatures:
+                if item.get("sha256") != expected.get(item["file"], {}).get("sha256") or not item.get("publisher") or not item.get("thumbprint"):
+                    raise PackageError("Signature evidence disagrees with package files")
         if (
             len(expected) != len(manifest["files"])
             or set(expected) != set(names) - {"package-manifest.json"}
@@ -202,7 +212,26 @@ def verify_archive(archive: Path) -> dict:
         return manifest
 
 
-def package(publish: Path, output: Path, commit: str) -> Path:
+def verified_signatures(publish: Path) -> list[dict]:
+    if os.name != "nt":
+        raise PackageError("Trusted release signatures must be verified on Windows")
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+         str(ROOT / "tools/VerifyReleaseSignatures.ps1"), "-PublishDirectory", str(publish.resolve())],
+        check=True, capture_output=True, text=True,
+    )
+    evidence = json.loads(result.stdout)
+    required = {path.name for path in publish.iterdir() if path.is_file()
+                and (path.name in ("Tern.exe", "Tern.dll") or path.name.startswith("Tern.") and path.suffix == ".dll")}
+    if not isinstance(evidence, list) or {item.get("file") for item in evidence} != required:
+        raise PackageError("Signing evidence does not cover every first-party binary")
+    for item in evidence:
+        if item.get("sha256") != sha256(publish / item["file"]) or not item.get("publisher") or not item.get("thumbprint"):
+            raise PackageError("Signing evidence does not match the published binary")
+    return evidence
+
+
+def package(publish: Path, output: Path, commit: str, require_signed: bool = False) -> Path:
     if output.exists():
         raise PackageError("Preserve existing output; choose a fresh release directory")
     if not re.fullmatch(r"[a-f0-9]{40}|local", commit):
@@ -258,11 +287,14 @@ def package(publish: Path, output: Path, commit: str) -> Path:
         else:
             shutil.copy2(source, staging / name)
     portable_documentation(staging, commit if commit != "local" else "main")
+    signatures = verified_signatures(publish) if require_signed else []
+    signing_notice = ("First-party binaries have verified, timestamped Authenticode signatures. SmartScreen reputation warnings may still appear.\n"
+                      if signatures else "This is an unsigned preview candidate. Windows may show Unknown publisher or SmartScreen warnings.\n")
     (staging / "START-HERE.txt").write_text(
         f"Tern {version()} — Windows x64\n\nExtract the complete ZIP and run Tern.exe.\n"
         "The .NET 10 runtime and required companion files are bundled.\n"
         "Keep this entire folder together. No installer or administrator access is required.\n\n"
-        "This is an unsigned preview candidate. Windows may show Unknown publisher or SmartScreen warnings.\n"
+        + signing_notice +
         "A checksum is an integrity check, not a trusted publisher signature.\n"
         "See README.md, documentation.md, LICENSE, THIRD-PARTY-NOTICES.md and licenses/.\n"
         "Automated tests/startup smoke do not replace manual printing, accessibility or offline acceptance.\n",
@@ -276,8 +308,9 @@ def package(publish: Path, output: Path, commit: str) -> Path:
         "sourceCommit": commit,
         "runtimeIdentifier": "win-x64",
         "selfContained": True,
-        "sdk": json.loads((ROOT / "global.json").read_text())["sdk"]["version"],
-        "signing": "Unsigned preview candidate",
+        "sdk": subprocess.check_output(["dotnet", "--version"], cwd=ROOT, text=True).strip(),
+        "signing": "Verified Authenticode signatures" if signatures else "Unsigned preview candidate",
+        "signatures": signatures,
         "acceptance": {
             "requiredAutomatedScope": "Eight test projects excluding exactly eight external/interactive acceptance cases",
             "manualTestClasses": [
@@ -328,12 +361,13 @@ def main() -> None:
     parser.add_argument("--publish", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify", type=Path)
+    parser.add_argument("--require-signed", action="store_true")
     parser.add_argument("--commit", default=os.environ.get("GITHUB_SHA", "local"))
     args = parser.parse_args()
     if args.verify:
         print(json.dumps(verify_archive(args.verify)))
     elif args.publish and args.output:
-        print(package(args.publish, args.output, args.commit))
+        print(package(args.publish, args.output, args.commit, require_signed=args.require_signed))
     else:
         parser.error(
             "Use --verify ARCHIVE or both --publish FOLDER and --output FOLDER"

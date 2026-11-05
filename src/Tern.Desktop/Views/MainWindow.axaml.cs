@@ -31,6 +31,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private readonly ShellViewModel _shell;
     private readonly Dictionary<DocumentTab, TabContext> _contexts = [];
+    private readonly Dictionary<DocumentTab, IDisposable> _cacheLeases = [];
     private readonly MarkdownColorizer _colorizer = new();
     private readonly DispatcherTimer _previewTimer = new() { Interval = PreviewDelay };
     private readonly SystemLauncher _launcher = new();
@@ -50,6 +51,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _checkingExternalChanges;
     private GridLength _wideInspectorWidth = new(240);
     private Task _previewWork = Task.CompletedTask;
+    private CancellationTokenSource? _previewCancellation;
     private bool _focusMode;
     private bool _focusSidebar;
     private bool _focusInspector;
@@ -184,8 +186,12 @@ public sealed partial class MainWindow : Window, IDisposable
         foreach (var prompt in OverlayLayer.Children.OfType<AIPromptPanel>()) prompt.Dispose();
         _previewGeneration++;
         _previewTimer.Stop();
+        _previewCancellation?.Cancel();
         Preview.Document = null;
         _remoteImages?.Dispose();
+        _findCancellation?.Cancel();
+        foreach (var lease in _cacheLeases.Values) lease.Dispose();
+        _cacheLeases.Clear();
         foreach (var (tab, context) in _contexts)
         {
             context.Monitor?.Dispose();
@@ -197,7 +203,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _shell.PropertyChanged -= OnShellPropertyChanged;
         _shell.NavigationRequested -= OnNavigationRequested;
         _colorizer.Attach(null);
-        foreach (var workspace in _observedWorkspaces) workspace.FilesChanged -= OnWorkspaceFilesChanged;
+        foreach (var workspace in _observedWorkspaces) { workspace.FilesChanged -= OnWorkspaceFilesChanged; workspace.GraphChanged -= OnWorkspaceGraphChanged; }
         GC.SuppressFinalize(this);
     }
 
@@ -234,6 +240,7 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             if (ReferenceEquals(tab, _shown))
             {
+                _previewCancellation?.Cancel();
                 _previewGeneration++;
                 _previewTimer.Stop();
                 _previewTimer.Start();
@@ -316,6 +323,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 tab.PropertyChanged -= OnTabPropertyChanged;
                 if (_contexts.TryGetValue(tab, out var context)) context.Monitor?.Dispose();
                 _contexts.Remove(tab);
+                if (_cacheLeases.Remove(tab, out var lease)) lease.Dispose();
             }
         }
 
@@ -440,6 +448,7 @@ public sealed partial class MainWindow : Window, IDisposable
         RemoveNativeHistoryBindings(Editor.TextArea.KeyBindings);
         RemoveNativeHistoryBindings(Editor.TextArea.DefaultInputHandler);
         Editor.TextArea.TextView.LineTransformers.Add(_colorizer);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(_findHighlight);
         Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateStatus();
         Editor.TextArea.TextView.ScrollOffsetChanged += OnEditorScrolled;
         Editor.TextArea.SelectionChanged += (_, _) => UpdateStatus();
@@ -568,11 +577,28 @@ public sealed partial class MainWindow : Window, IDisposable
 
     internal Task RebuildPreviewAsync()
     {
-        _previewWork = BuildPreviewAsync(_previewWork, ++_previewGeneration);
+        _previewCancellation?.Cancel();
+        var generation = ++_previewGeneration;
+        if (_shell.ViewMode == ViewMode.Source) return Task.CompletedTask;
+        var cancellation = _previewCancellation = new CancellationTokenSource();
+        _previewWork = RunPreviewAsync(_previewWork, generation, cancellation);
         return _previewWork;
     }
 
-    private async Task BuildPreviewAsync(Task previous, long generation)
+    private async Task RunPreviewAsync(Task previous, long generation, CancellationTokenSource cancellation)
+    {
+        try { await BuildPreviewAsync(previous, generation, cancellation.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { if (!_windowClosed && generation == _previewGeneration) _shell.StatusMessage = "Preview could not be updated: " + ex.Message; }
+        finally
+        {
+            if (ReferenceEquals(_previewCancellation, cancellation)) _previewCancellation = null;
+            cancellation.Dispose();
+        }
+    }
+
+    private async Task BuildPreviewAsync(Task previous, long generation, CancellationToken token)
     {
         if (_shown is null)
         {
@@ -582,8 +608,17 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if (_shown is { FilePath: null, ResourceDocumentPath: null, SourceUrl: { } remoteSource } online)
         {
-            var cached = await MarkdownUrlCache.ReadAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), remoteSource);
-            if (cached is not null) { online.ResourceDocumentPath = cached.CachedPath; online.ResourceFiles = cached.Assets; }
+            var cached = await MarkdownUrlCache.ReadAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), remoteSource, includeAssets: false);
+            if (cached is not null && !_windowClosed && generation == _previewGeneration && ReferenceEquals(online, _shown))
+            {
+                online.ResourceDocumentPath = cached.CachedPath;
+                online.ResourceFiles = new Dictionary<string, byte[]>();
+                if (cached.CachedPath is { } cachedPath)
+                {
+                    if (_cacheLeases.Remove(online, out var previousLease)) previousLease.Dispose();
+                    _cacheLeases[online] = MarkdownUrlCache.AcquireLease(cachedPath);
+                }
+            }
         }
         if (_shown is null || _windowClosed || generation != _previewGeneration) return;
         var options = new PreviewOptions
@@ -604,7 +639,7 @@ public sealed partial class MainWindow : Window, IDisposable
             // Supersede queued generations without throwing expected cancellation into
             // the parser. Bounded work already running finishes off the UI thread;
             // generation/revision checks discard obsolete results before presentation.
-            var document = await Task.Run(() => PreviewBuilder.Build(snapshot.Text, options));
+            var document = await Task.Run(() => PreviewBuilder.Build(snapshot.Text, options, null, token), token);
             if (_windowClosed || generation != _previewGeneration || !ReferenceEquals(tab, _shown)
                 || !tab.Session.IsCurrent(snapshot.Revision)) return;
             // A navigation request may arrive while this build is awaiting parsing.
@@ -701,7 +736,7 @@ public sealed partial class MainWindow : Window, IDisposable
         Dispatcher.UIThread.Post(() => _syncingScroll = false, DispatcherPriority.Background);
     }
 
-    internal void GoToLine(int line, int column)
+    internal void GoToLine(int line, int column, bool focusEditor = true)
     {
         if (_shown is { } tab) ContextFor(tab).PendingAnchor = null;
         var document = Editor.Document;
@@ -712,7 +747,7 @@ public sealed partial class MainWindow : Window, IDisposable
         Editor.TextArea.Caret.BringCaretToView();
         if (_shell.ViewMode == ViewMode.Reading)
             NavigateReadingPreviewTo(clamped);
-        else
+        else if (focusEditor)
         {
             Editor.Focus();
         }
@@ -788,6 +823,9 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void UpdateChrome()
     {
+        var hasSavedFile = _shown?.FilePath is not null;
+        this.FindControl<Button>("HistoryOpenButton")!.IsEnabled = hasSavedFile;
+        this.FindControl<TextBlock>("HistoryStartHint")!.IsVisible = !hasSavedFile;
         var tab = _shown;
         var hasTab = tab is not null;
         var online = tab is { IsExternalDraft: true, FilePath: null };

@@ -31,6 +31,7 @@ public static class Startup
         }
 
         await OfferRecoveryAsync(window, shell);
+        _ = MarkdownUrlCache.PruneAsync(MarkdownUrlCache.Root(shell.Paths.StateDirectory));
         if (!window.IsVisible) return;
         if (shell.Tabs.Count == 0)
         {
@@ -68,7 +69,7 @@ public static class Startup
 
     public static async Task OfferRecoveryAsync(Window owner, ShellViewModel shell)
     {
-        var scan = shell.FindRecoverable();
+        var scan = await Task.Run(shell.FindRecoverable);
         var entries = scan.Entries;
         if (scan.Corrupt.Count > 0)
             await PromptWindow.AskAsync(owner, "Some recovery files could not be read",

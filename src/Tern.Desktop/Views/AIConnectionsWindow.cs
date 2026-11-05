@@ -357,6 +357,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
 
     private void SetPage(int page)
     {
+        var previous = _page;
         _page = Math.Clamp(page, 0, 2); _scroll.Offset = default;
         for (var i = 0; i < _pages.Length; i++) _pages[i].IsVisible = i == _page;
         _step.Text = _page switch { 0 => "Step 1 of 3 · Choose service", 1 => "Step 2 of 3 · Configure connection", _ => "Step 3 of 3 · Validate and save" };
@@ -371,6 +372,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _validate.IsVisible = _save.IsVisible = _page == 2;
         _back.IsVisible = _page > 0;
         UpdateControls();
+        if (IsActive && _page != previous) DialogParts.FocusPage(_pages[_page], _validate);
     }
 
     private void UpdateControls()
@@ -403,6 +405,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     }
 
     private string Summary() => $"Service: {Service.Name}\nProtocol: {AIProviders.Get(Protocol).Name}\nDestination: {_endpoint.Text}\nModel: {_model.Text}\nCredential: {(EffectiveKey.Length > 0 ? "provided; hidden" : "not provided")}"
+        + (Uri.TryCreate(_endpoint.Text, UriKind.Absolute, out var endpoint) ? (endpoint.IsLoopback ? "\nConnection: Local endpoint" : "\nConnection: Remote endpoint") : "")
         + (Protocol == "anthropic-messages" && !string.IsNullOrWhiteSpace(_workspace.Text) ? "\nWorkspace: " + _workspace.Text : "");
 
     private void SetProtocols(string serviceId, string selected)

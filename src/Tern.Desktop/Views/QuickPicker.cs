@@ -26,6 +26,8 @@ public sealed class QuickPicker : Border
     private Action? _dismiss;
     private string _emptyText = "No matches";
     private Func<string, string>? _emptyTextProvider;
+    private Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? _asyncProvider;
+    private CancellationTokenSource? _queryCancellation;
 
     public QuickPicker()
     {
@@ -102,7 +104,8 @@ public sealed class QuickPicker : Border
         });
 
         _input.TextChanged += (_, _) => Refresh();
-        _input.AddHandler(KeyDownEvent, OnInputKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        DetachedFromVisualTree += (_, _) => { _queryCancellation?.Cancel(); };
+        AddHandler(KeyDownEvent, OnPickerKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _list.DoubleTapped += (_, e) =>
         {
             if (e.Source is Control source && (source is Button || source.GetVisualAncestors().OfType<Button>().Any()))
@@ -118,12 +121,16 @@ public sealed class QuickPicker : Border
     internal TextBox Input => _input;
 
     internal ListBox Results => _list;
+    internal Task QueryWork { get; private set; } = Task.CompletedTask;
 
     /// <summary>Refresh current rows without accepting one or dismissing the picker.</summary>
     public void RefreshResults() => Refresh();
 
-    public void Open(string watermark, string initialText, Func<string, IReadOnlyList<PickerItem>> provider, Action<PickerItem> accept, Action dismiss, string emptyText = "No matches", Func<string, string>? emptyTextProvider = null)
+    public void Open(string watermark, string initialText, Func<string, IReadOnlyList<PickerItem>> provider, Action<PickerItem> accept, Action dismiss, string emptyText = "No matches", Func<string, string>? emptyTextProvider = null,
+        Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? asyncProvider = null)
     {
+        _queryCancellation?.Cancel();
+        _asyncProvider = asyncProvider;
         _provider = provider;
         _accept = accept;
         _dismiss = dismiss;
@@ -139,7 +146,30 @@ public sealed class QuickPicker : Border
     private void Refresh()
     {
         var query = _input.Text ?? string.Empty;
+        if (_asyncProvider is not null) { QueryWork = RefreshAsync(query); return; }
         var items = _provider(query);
+        Present(query, items);
+    }
+
+    private async Task RefreshAsync(string query)
+    {
+        _queryCancellation?.Cancel();
+        using var cancellation = new CancellationTokenSource();
+        _queryCancellation = cancellation;
+        Present(query, []);
+        try
+        {
+            await Task.Delay(100, cancellation.Token);
+            var items = await _asyncProvider!(query, cancellation.Token);
+            if (!cancellation.IsCancellationRequested) Present(query, items);
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { /* Workspace closed while the query ran. */ }
+        finally { if (ReferenceEquals(_queryCancellation, cancellation)) _queryCancellation = null; }
+    }
+
+    private void Present(string query, IReadOnlyList<PickerItem> items)
+    {
         _empty.Text = _emptyTextProvider?.Invoke(query) ?? _emptyText;
         _list.ItemsSource = items;
         _list.SelectedIndex = items.Count > 0 ? 0 : -1;
@@ -147,8 +177,15 @@ public sealed class QuickPicker : Border
         _list.IsVisible = items.Count > 0;
     }
 
-    private void OnInputKeyDown(object? sender, KeyEventArgs e)
+    private void OnPickerKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape)
+        {
+            _dismiss?.Invoke();
+            e.Handled = true;
+            return;
+        }
+        if (!_input.IsKeyboardFocusWithin) return;
         switch (e.Key)
         {
             case Key.Down:
@@ -161,10 +198,6 @@ public sealed class QuickPicker : Border
                 break;
             case Key.Enter:
                 AcceptSelected();
-                e.Handled = true;
-                break;
-            case Key.Escape:
-                _dismiss?.Invoke();
                 e.Handled = true;
                 break;
         }

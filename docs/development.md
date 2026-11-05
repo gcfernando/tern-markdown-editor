@@ -1,6 +1,6 @@
 # Development
 
-Develop Tern on Windows using PowerShell and the exact .NET SDK in [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json): **10.0.402**, with SDK roll-forward disabled. The application version in `Directory.Build.props` remains **1.0.2**. Current distribution targets Windows x64.
+Develop Tern on Windows using PowerShell and a stable .NET 10 SDK. [global.json](https://github.com/gcfernando/tern-markdown-editor/blob/main/global.json) selects the newest installed stable .NET 10 SDK, starting at 10.0.100. The application version in `Directory.Build.props` remains **1.0.3**. Current distribution targets Windows x64.
 
 ## Restore, build and run
 

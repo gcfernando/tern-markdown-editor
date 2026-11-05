@@ -1,4 +1,6 @@
 using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -14,6 +16,24 @@ namespace Tern.Desktop.Tests;
 
 public class WindowTests
 {
+    [AvaloniaFact]
+    public async Task Double_clicking_empty_tab_bar_opens_a_blank_document()
+    {
+        using var f = new DesktopFixture();
+        var first = f.Shell.NewDocument("Keep this tab");
+        await Settle();
+        var bar = f.Window.TabStrip;
+        var point = bar.TranslatePoint(new Point(bar.Bounds.Width - 16, bar.Bounds.Height / 2), f.Window)!.Value;
+        f.Window.MouseDown(point, MouseButton.Left);
+        f.Window.MouseUp(point, MouseButton.Left);
+        f.Window.MouseDown(point, MouseButton.Left);
+        f.Window.MouseUp(point, MouseButton.Left);
+        Assert.Equal(2, f.Shell.Tabs.Count);
+        Assert.Equal("Keep this tab", first.CurrentText);
+        Assert.Equal("New document", f.Shell.ActiveTab!.DisplayName);
+        Assert.Empty(f.Shell.ActiveTab.CurrentText);
+    }
+
     private const string Sample = "---\ntitle: Sample\ntags: [alpha, beta]\n---\n\n# Heading One\n\nSome **bold** text and a [link](https://example.com).\n\n## Second\n\n- [ ] open task\n- [x] done task\n\n```csharp\nvar x = 1;\n```\n";
 
     private static async Task Settle()
@@ -189,6 +209,29 @@ public class WindowTests
     }
 
     [AvaloniaFact]
+    public async Task Find_shortcuts_move_the_highlight_without_stealing_focus()
+    {
+        using var f = new DesktopFixture();
+        await f.Shell.OpenFileAsync(await f.WriteAsync("a.md", "cat dog cat\n"));
+        await f.Window.RunCommandAsync(CommandIds.ViewSource);
+        f.Window.ShowFindBar(false);
+        await f.Window.SearchAsync("cat");
+        await Settle();
+        var renderer = Assert.Single(f.Window.EditorControl.TextArea.TextView.BackgroundRenderers.OfType<FindMatchRenderer>());
+        Assert.Equal(0, renderer.Match?.Start);
+
+        f.Window.FindBox.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.F3 });
+        Assert.Equal(8, renderer.Match?.Start);
+        Assert.Equal("2 of 2", f.Window.FindStatusText);
+        Assert.True(f.Window.FindBox.IsKeyboardFocusWithin);
+
+        f.Window.FindBox.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.F3, KeyModifiers = KeyModifiers.Shift });
+        Assert.Equal(0, renderer.Match?.Start);
+        f.Window.FindBox.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
+        Assert.Null(renderer.Match);
+    }
+
+    [AvaloniaFact]
     public async Task Sidebar_tree_lists_workspace_and_opens_files()
     {
         using var f = new DesktopFixture();
@@ -200,6 +243,13 @@ public class WindowTests
         Assert.NotEmpty(f.Window.FileTree.Items.OfType<object>());
         await f.Window.ShowNavAsync("Files");
         Assert.Equal("Files", f.Window.ActiveNav);
+        var shortcuts = f.Window.NavPanel.FindAncestorOfType<Avalonia.Controls.Expander>()!;
+        shortcuts.IsExpanded = false;
+        Assert.False(f.Window.NavPanel.IsEffectivelyVisible);
+        Assert.True(f.Window.FileTree.IsEffectivelyVisible);
+        shortcuts.IsExpanded = true;
+        Assert.True(f.Window.NavPanel.IsEffectivelyVisible);
+        Assert.True(f.Window.NavFiles.IsChecked);
     }
 
     [AvaloniaFact]
@@ -210,10 +260,21 @@ public class WindowTests
         await Settle();
         Assert.Equal(2, f.Window.OutlineList.Items.OfType<object>().Count());
 
-        f.Window.OutlineList.SelectedIndex = 1;
+        f.Window.OutlineSearchBox.Text = "missing";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Empty(f.Window.OutlineList.Items);
+        Assert.Equal("No headings match your search.", f.Window.OutlineEmpty.Text);
+
+        f.Window.OutlineSearchBox.Text = "SECOND";
+        Dispatcher.UIThread.RunJobs();
+        Assert.Single(f.Window.OutlineList.Items);
+        f.Window.OutlineList.SelectedIndex = 0;
         await Settle();
         var line = f.Window.EditorControl.Document.GetLineByOffset(f.Window.EditorControl.CaretOffset).LineNumber;
         Assert.Equal(10, line);
+        f.Window.OutlineSearchBox.Clear();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(2, f.Window.OutlineList.Items.Count);
     }
 
     [AvaloniaFact]
@@ -468,7 +529,7 @@ public class WindowTests
         var target = await f.WriteAsync("correct target.md", "# Details\n");
         await f.Shell.OpenWorkspaceAsync(f.Docs);
         var tab = await f.Shell.OpenFileAsync(source);
-        await f.Window.RepairLinkAsync(tab!, new Tern.Desktop.ViewModels.LinkRowView("broken", "missing.md#details", 3, true, "x"), target);
+        await f.Window.RepairLinkAsync(tab!, new Tern.Desktop.ViewModels.LinkRowView("broken", "missing.md#details", 3, true, false), target);
         Assert.Equal(original.Replace("missing.md", "correct%20target.md", StringComparison.Ordinal), tab!.CurrentText);
         Assert.Equal(original, await File.ReadAllTextAsync(source));
         f.Window.EditorControl.Document.UndoStack.Undo();
@@ -490,13 +551,68 @@ public class WindowTests
         var showing = f.Window.RunCommandAsync(CommandIds.ShowHistory);
         await Settle();
         var history = Assert.Single(f.Window.OwnedWindows.OfType<HistoryWindow>());
-        history.Close(versions[1].Text);
+        var list = Assert.Single(history.GetVisualDescendants().OfType<ListBox>());
+        list.SelectedIndex = 1;
+        var historical = Assert.Single(history.GetVisualDescendants().OfType<TextBox>(),
+            box => AutomationProperties.GetName(box) == "Saved version");
+        Assert.Equal(versions[1].Text, historical.Text);
+        var openCopy = Assert.Single(history.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Open as copy"));
+        openCopy.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         await showing;
         Assert.NotSame(original, f.Shell.ActiveTab);
         Assert.True(f.Shell.ActiveTab!.IsUntitled);
         Assert.True(f.Shell.ActiveTab.IsDirty);
         Assert.Equal(versions[1].Text, f.Shell.ActiveTab.CurrentText);
         Assert.Equal(versions[0].Text, await File.ReadAllTextAsync(path));
+    }
+
+    [AvaloniaFact]
+    public async Task Empty_history_shows_save_instructions_without_comparison_panes()
+    {
+        using var f = new DesktopFixture();
+        await f.Shell.OpenFileAsync(await f.WriteAsync("new-history.md", "# New"));
+        var showing = f.Window.RunCommandAsync(CommandIds.ShowHistory);
+        await Settle();
+        var history = Assert.Single(f.Window.OwnedWindows.OfType<HistoryWindow>());
+        Assert.Contains(history.GetVisualDescendants().OfType<TextBlock>(), block => block.Text == "No saved versions yet");
+        Assert.Contains(history.GetVisualDescendants().OfType<TextBlock>(), block => block.Text?.Contains("Edit and save this file in Tern") == true);
+        Assert.Empty(history.GetVisualDescendants().OfType<TextBox>());
+        Assert.Empty(history.GetVisualDescendants().OfType<ListBox>());
+        history.Close();
+        await showing;
+    }
+
+    [AvaloniaFact]
+    public async Task Links_search_matches_labels_and_destinations_and_restores_the_full_list()
+    {
+        using var f = new DesktopFixture();
+        await f.Shell.OpenFileAsync(await f.WriteAsync("links.md",
+            "[Repository standards](https://github.com/example/project)\n\n[Repository standards](standards.md)\n\n[Python](python.md)"));
+        f.Window.InspectorContent.SelectedIndex = 1;
+        await Settle();
+        Assert.Equal(3, f.Window.LinkList.Items.Count);
+        var search = f.Window.FindControl<TextBox>("LinksSearchBox")!;
+        var count = f.Window.FindControl<TextBlock>("LinksCount")!;
+        search.Text = "GITHUB.COM";
+        await Settle();
+        var row = Assert.IsType<Tern.Desktop.ViewModels.LinkRowView>(Assert.Single(f.Window.LinkList.Items));
+        Assert.Equal("External", row.Status);
+        Assert.Equal("1 of 3 links", count.Text);
+        search.Text = "repository standards";
+        await Settle();
+        Assert.Equal(2, f.Window.LinkList.Items.Count);
+        search.Text = "no such match";
+        await Settle();
+        Assert.True(f.Window.LinksEmpty.IsVisible);
+        search.Text = "";
+        await Settle();
+        Assert.Equal(3, f.Window.LinkList.Items.Count);
+        var firstRow = f.Window.LinkList.GetVisualDescendants().OfType<ListBoxItem>().First();
+        Assert.True(firstRow.Focus());
+        f.Window.LinkList.SelectedIndex = 1;
+        Assert.True(f.Window.LinkList.IsKeyboardFocusWithin);
+        Assert.Equal(3, f.Window.EditorControl.TextArea.Caret.Line);
+        Save(f.Window, "tern-inspector-links.png");
     }
 
     [AvaloniaFact]

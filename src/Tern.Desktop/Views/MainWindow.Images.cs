@@ -155,7 +155,7 @@ public partial class MainWindow
             if ((long)bitmap.PixelSize.Width * bitmap.PixelSize.Height > ImageAttachmentImporter.MaxPixels)
             { _shell.StatusMessage = "The clipboard image exceeds 16 million pixels."; return; }
             using var bytes = new BoundedImageStream();
-            bitmap.Save(bytes, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+            await Task.Run(() => bitmap.Save(bytes, new Avalonia.Media.Imaging.PngBitmapEncoderOptions()));
             await InsertImageBytesAsync(bytes.ToArray(), "pasted-image.png");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException or System.Runtime.InteropServices.ExternalException)

@@ -33,6 +33,10 @@ public sealed class AIWorkspaceScreenshotsTests
         Find<TextBox>(f.Window, "AI writing question").Text = "Turn these notes into a clear project plan.\nKeep the existing tasks and add a short introduction.";
         await Capture(f.Window, "writing-prompt");
         f.Window.HideOverlay();
+        f.Window.Editor.Select(0, "# Project notes".Length);
+        f.Window.ShowAIWritingPrompt();
+        await Capture(f.Window, "writing-selected-text");
+        f.Window.HideOverlay();
         var settings = new SettingsWindow(f.Shell.Settings, f.Shell.Registry, configureAI: _ => Task.CompletedTask,
             aiProfiles: () => f.Window.AIWorkspace.Profiles, initialCategory: "AI connections");
         settings.Show(f.Window);

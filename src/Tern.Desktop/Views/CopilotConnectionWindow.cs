@@ -87,6 +87,7 @@ public sealed class CopilotConnectionWindow : Window
             steps.Content = GuideParts.ConnectionSteps(page, "Configure", "Validate and save", "Try connection");
             next.IsVisible = page < 2; next.Content = page == 0 ? "Continue" : "Save connection";
             back.IsVisible = page > 0; send.IsVisible = page == 2; cancel.IsVisible = operation is not null; scroll.Offset = default;
+            if (IsActive) DialogParts.FocusPage(pages[page], validate);
         }
         next.Click += (_, _) =>
         {

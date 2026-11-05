@@ -107,6 +107,15 @@
       </DataTemplate>
     </Setter>
   </Style>
+  <Style Selector="Expander.library-shortcuts /template/ ToggleButton#ExpanderHeader">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="MinHeight" Value="32" />
+  </Style>
+  <Style Selector="Expander.library-shortcuts /template/ ToggleButton#ExpanderHeader:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Tern.Hover}" />
+  </Style>
   <Style Selector="ToggleButton.seg">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Muted}" />
@@ -203,6 +212,11 @@
 
   <Style Selector="GridSplitter">
     <Setter Property="Background" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="Focusable" Value="True" />
+    <Setter Property="IsTabStop" Value="True" />
+  </Style>
+  <Style Selector="GridSplitter:focus-visible">
+    <Setter Property="Background" Value="{DynamicResource Tern.Accent}" />
   </Style>
   <Style Selector="ScrollViewer">
     <Setter Property="AllowAutoHide" Value="False" />

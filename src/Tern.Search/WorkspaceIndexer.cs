@@ -87,6 +87,15 @@ public sealed class WorkspaceIndexer : IDisposable
         }
     }
 
+    /// <summary>Indexes a fresh caller-owned scan without walking the directory tree again.</summary>
+    public async Task<IndexingSummary> IndexSnapshotAsync(WorkspaceSnapshot snapshot, IProgress<IndexProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (!WorkspacePaths.PathsEqual(snapshot.Root, _root)) throw new ArgumentException("Snapshot belongs to another workspace.", nameof(snapshot));
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { return await ReconcileAsync(progress, cancellationToken, snapshot).ConfigureAwait(false); }
+        finally { _gate.Release(); }
+    }
+
     /// <summary>Applies a batch of watcher changes. File events are re-verified against the disk; folder events and overflow trigger a reconcile.</summary>
     public async Task<IndexingSummary> ApplyChangesAsync(WorkspaceChangeSet changes, CancellationToken cancellationToken = default)
     {
@@ -140,11 +149,11 @@ public sealed class WorkspaceIndexer : IDisposable
         });
     }
 
-    private async Task<IndexingSummary> ReconcileAsync(IProgress<IndexProgress>? progress, CancellationToken ct)
+    private async Task<IndexingSummary> ReconcileAsync(IProgress<IndexProgress>? progress, CancellationToken ct, WorkspaceSnapshot? snapshot = null)
     {
         var started = DateTime.UtcNow;
         var recreated = _index.WasRecreated;
-        var snapshot = await new WorkspaceScanner(_options).ScanAsync(_root, null, ct).ConfigureAwait(false);
+        snapshot ??= await new WorkspaceScanner(_options).ScanAsync(_root, null, ct).ConfigureAwait(false);
         var files = snapshot.Files;
         var stamps = ReadStamps(out var reset);
         recreated |= reset;
@@ -267,6 +276,9 @@ public sealed class WorkspaceIndexer : IDisposable
                 continue;
             }
 
+            if (_options.MaxFileSizeBytes is { } cap && info.Length > cap)
+            { removalFiles.Add(relative); continue; }
+
             // A watcher event is an explicit hint that something changed, so coarse timestamps must not hide an edit.
             var outcome = Evaluate(relative, full, info.Length, info.LastWriteTimeUtc, stamps.GetValueOrDefault(relative), trustStat: false);
             if (outcome.Document is not null)
@@ -350,6 +362,11 @@ public sealed class WorkspaceIndexer : IDisposable
         {
             return new FileOutcome(relative, null, null, true);
         }
+        // A shared scan can precede graph preparation. Refresh this file's stamp
+        // before deciding that the cached content is still current.
+        var info = new FileInfo(fullPath);
+        try { length = info.Length; lastWriteUtc = info.LastWriteTimeUtc; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return new FileOutcome(relative, null, null, true); }
         var ticks = lastWriteUtc.Ticks;
         if (trustStat && stored is not null && stored.MtimeTicks == ticks && stored.Size == length)
         {
@@ -360,6 +377,8 @@ public sealed class WorkspaceIndexer : IDisposable
         try
         {
             using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (stream.Length > (_options.MaxFileSizeBytes ?? DocumentFileService.MaximumEagerLoadBytes))
+                return new FileOutcome(relative, null, null, true);
             bytes = new byte[stream.Length];
             stream.ReadExactly(bytes);
         }

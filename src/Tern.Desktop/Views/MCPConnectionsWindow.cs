@@ -131,6 +131,7 @@ public sealed class MCPConnectionsWindow : Window
             steps.Content = GuideParts.ConnectionSteps(page, "Configure", "Validate and save", "Review tools");
             next.IsVisible = page < 2; next.Content = page == 0 ? "Continue" : "Save connection";
             back.IsVisible = page > 0; connect.IsVisible = page >= 1; reviewTools.IsVisible = page == 1; call.IsVisible = page == 2; cancel.IsVisible = operation is not null; scroll.Offset = default;
+            if (IsActive) DialogParts.FocusPage(pages[page], connect);
         }
         reviewTools.Click += (_, _) =>
         {

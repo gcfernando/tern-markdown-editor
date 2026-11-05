@@ -72,6 +72,7 @@ public sealed class PreviewView : Decorator
     private bool _programmatic;
     private bool _correctionQueued;
     private Control? _flashed;
+    private DispatcherTimer? _flashTimer;
     private bool _rebuildOnAttach;
     private Task _imageCleanup = Task.CompletedTask;
 
@@ -258,6 +259,13 @@ public sealed class PreviewView : Decorator
         ExpandDetailsForLine(slot, line);
         UpdateLayout();
         ApplyAnchor();
+    }
+
+    /// <summary>Briefly highlights the rendered block containing a source line.</summary>
+    public void HighlightSourceBlock(int line)
+    {
+        if (!ReduceMotion && Document?.FindBlockIndexAtLine(line) is >= 0 and var index)
+            Flash(index, new SolidColorBrush(Color.Parse("#55FFB300")));
     }
 
     /// <summary>Scrolls to a heading or safe explicit HTML anchor, with or without leading '#'.</summary>
@@ -769,7 +777,7 @@ public sealed class PreviewView : Decorator
         }
     }
 
-    private void Flash(int blockIndex)
+    private void Flash(int blockIndex, IBrush? highlight = null)
     {
         Dispatcher.UIThread.Post(
             () =>
@@ -779,14 +787,17 @@ public sealed class PreviewView : Decorator
                     return;
                 }
 
+                _flashTimer?.Stop();
                 _flashed?.ClearValue(Border.BackgroundProperty);
-                host.Background = PreviewTheme.Resolve(this, PreviewKeys.Selection);
+                host.Background = highlight ?? PreviewTheme.Resolve(this, PreviewKeys.Selection);
                 _flashed = host;
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+                var timer = _flashTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
                 timer.Tick += (_, _) =>
                 {
                     timer.Stop();
                     host.ClearValue(Border.BackgroundProperty);
+                    _flashed = null;
+                    _flashTimer = null;
                 };
                 timer.Start();
             },
