@@ -40,7 +40,8 @@ public class FeatureDiscoveryTests
         Assert.Contains("1 setting ·", Find<TextBlock>(window, "Settings result count").Text, StringComparison.Ordinal);
         var original = settings.WordWrap;
         Find<CheckBox>(window, "Wrap long lines").IsChecked = !original;
-        Assert.Equal(!original, settings.WordWrap);
+        Assert.Equal(original, settings.WordWrap);
+        Assert.Equal(!original, window.WorkingSettings.WordWrap);
         Click(Find<Button>(window, "Help for Wrap long lines"));
         await Settle();
         var guide = Assert.Single(window.OwnedWindows.OfType<HelpWindow>());

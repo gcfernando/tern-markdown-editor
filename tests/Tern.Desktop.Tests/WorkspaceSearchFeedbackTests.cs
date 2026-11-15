@@ -79,11 +79,14 @@ public sealed class WorkspaceSearchFeedbackTests
     public void Reusing_picker_resets_custom_empty_feedback_for_the_next_feature()
     {
         var picker = new QuickPicker();
+        var window = new Window { Width = 800, Height = 600, Content = picker };
+        window.Show();
         picker.Open("Search workspace", "missing", _ => [], _ => { }, () => { }, emptyTextProvider: _ => "No workspace documents");
         var status = Assert.Single(picker.GetVisualDescendants().OfType<TextBlock>(), block => AutomationProperties.GetName(block) == "Search result status");
         Assert.Equal("No workspace documents", status.Text);
         picker.Open("Go to file", "missing", _ => [], _ => { }, () => { });
         Assert.Equal("No matches", status.Text);
+        window.Close();
     }
 
     private static async Task WaitForQueryAsync(Window window)

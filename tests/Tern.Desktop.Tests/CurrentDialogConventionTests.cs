@@ -56,8 +56,9 @@ public class CurrentDialogConventionTests
     public async Task All_configurable_settings_have_controls_and_new_preferences_edit_real_values()
     {
         using var fixture = new DesktopFixture();
-        var settings = new AppSettings();
-        var window = new SettingsWindow(settings, fixture.Shell.Registry);
+        var live = new AppSettings();
+        var window = new SettingsWindow(live, fixture.Shell.Registry);
+        var settings = window.WorkingSettings;
         window.Show(fixture.Window);
         await Settle();
         Assert.All(FeatureCatalog.SettingsFeatures, f => Assert.NotNull(Find<Control>(window, f.Name)));
@@ -78,7 +79,11 @@ public class CurrentDialogConventionTests
         Find<Button>(window, "Close settings").Focus();
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(new[] { "drafts/", "private/**" }, settings.WorkspaceExclusions);
-        window.Close();
+        Assert.Empty(live.WorkspaceExclusions);
+        Assert.True(live.PreviewFullWidth);
+        Find<Button>(window, "Close settings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Equal(settings.WorkspaceExclusions, live.WorkspaceExclusions);
+        Assert.False(live.PreviewFullWidth);
     }
 
     [AvaloniaFact]

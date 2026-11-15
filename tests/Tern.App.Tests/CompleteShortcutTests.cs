@@ -83,7 +83,7 @@ public sealed class CompleteShortcutTests
             [CommandIds.Save] = "Ctrl+Shift+E", [CommandIds.ViewSource] = "",
         }));
         Assert.Equal("Ctrl+Shift+E", registry.GetGesture(CommandIds.Save));
-        Assert.Null(registry.GetGesture(CommandIds.ExportPdf));
+        Assert.Null(registry.GetGesture(CommandIds.ExportAs));
         Assert.Null(registry.GetGesture(CommandIds.ViewSource));
         Assert.True(Gesture.TryParse("Ctrl+Shift+E", out var gesture));
         Assert.Equal(CommandIds.Save, registry.FindCommandFor(gesture));

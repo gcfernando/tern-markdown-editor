@@ -2,11 +2,14 @@ using PdfSharp.Fonts;
 
 namespace Tern.Export;
 
-/// <summary>Resolves the two font families used by <see cref="PdfExporter"/> from fonts already installed on the machine. Nothing is bundled.</summary>
+/// <summary>Resolves document and glyph-fallback font families from fonts already installed on the machine. Nothing is bundled.</summary>
 internal sealed class SystemFontResolver : IFontResolver
 {
     public const string SansFamily = "Tern Sans";
     public const string MonoFamily = "Tern Mono";
+    public const string SymbolFamily = "Tern Symbols";
+    public const string ExtendedSymbolFamily = "Tern Extended Symbols";
+    public const string InternationalFamily = "Tern International";
 
     private static readonly object InstallLock = new();
     private static SystemFontResolver? _installed;
@@ -39,6 +42,16 @@ internal sealed class SystemFontResolver : IFontResolver
     {
         Register(SansFamily, SansCandidates, directories);
         Register(MonoFamily, MonoCandidates, directories);
+        var symbols = new[] { "seguiemj.ttf", "seguisym.ttf", "NotoSansSymbols2-Regular.ttf", "DejaVuSans.ttf" }
+            .Select(file => Find(directories, file)).FirstOrDefault(path => path is not null);
+        _files[Key(SymbolFamily, false, false)] = symbols ?? _files[Key(SansFamily, false, false)];
+        foreach (var (family, candidates) in new[]
+        {
+            (ExtendedSymbolFamily, new[] { "seguisym.ttf", "DejaVuSans.ttf", "NotoSansSymbols2-Regular.ttf" }),
+            (InternationalFamily, new[] { "malgun.ttf", "NotoSansJP-Regular.ttf", "NotoSansSC-Regular.ttf", "DroidSansFallback.ttf", "arialuni.ttf" }),
+        })
+            _files[Key(family, false, false)] = candidates.Select(file => Find(directories, file)).FirstOrDefault(path => path is not null)
+                ?? _files[Key(SansFamily, false, false)];
     }
 
     /// <summary>The display name of the sans font that was found, for diagnostics.</summary>
@@ -71,7 +84,10 @@ internal sealed class SystemFontResolver : IFontResolver
 
     public FontResolverInfo? ResolveTypeface(string familyName, bool bold, bool italic)
     {
-        var family = string.Equals(familyName, MonoFamily, StringComparison.OrdinalIgnoreCase) ? MonoFamily : SansFamily;
+        var family = string.Equals(familyName, ExtendedSymbolFamily, StringComparison.OrdinalIgnoreCase) ? ExtendedSymbolFamily
+            : string.Equals(familyName, InternationalFamily, StringComparison.OrdinalIgnoreCase) ? InternationalFamily
+            : string.Equals(familyName, SymbolFamily, StringComparison.OrdinalIgnoreCase) ? SymbolFamily
+            : string.Equals(familyName, MonoFamily, StringComparison.OrdinalIgnoreCase) ? MonoFamily : SansFamily;
         if (_files.ContainsKey(Key(family, bold, italic)))
         {
             return new FontResolverInfo(Key(family, bold, italic));

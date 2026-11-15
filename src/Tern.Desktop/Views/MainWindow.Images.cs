@@ -12,6 +12,61 @@ internal enum ImageImportChoice { Link, Copy, Cancel }
 
 public partial class MainWindow
 {
+    private bool _repairingImage;
+
+    private async Task RepairPreviewImageAsync(Tern.PreviewView.ImageActionEventArgs request)
+    {
+        var tab = _renderedPreviewTab;
+        var revision = _renderedPreviewRevision;
+        bool Current() => !_windowClosed && tab is not null && _shell.Tabs.Contains(tab) && ReferenceEquals(tab, _shown)
+            && tab.Session.IsCurrent(revision) && ReferenceEquals(request.Document, Preview.Document);
+        if (_repairingImage || !Current()) { _shell.StatusMessage = "The image preview changed. Wait for Reading to update, then try again."; return; }
+        if (request.Action == Tern.PreviewView.ImageAction.Retry)
+        {
+            // The view retains its original approved loader; retry cannot change destination or policy.
+            request.RetryApprovedLoad(); return;
+        }
+        if (request.Action == Tern.PreviewView.ImageAction.ReviewAccess)
+        {
+            var reason = request.Resolution is Tern.Rendering.Resources.Blocked blocked ? blocked.Detail : "Review this image's source location.";
+            _dialogs?.ShowMessage("Image access", reason + "\nTern keeps its resource restrictions. Edit the source or explicitly choose a local image to use another location.");
+            GoToLine(request.Line, 0); return;
+        }
+        if (tab is not { IsReadOnly: false, FilePath: not null })
+        { _shell.StatusMessage = "Save a writable note before locating a replacement image."; return; }
+        _repairingImage = true;
+        try
+        {
+            var analysis = tab.Analysis ?? Tern.Markdown.MarkdownAnalyzer.Analyze(tab.CurrentText, tab.Profile);
+            var matches = analysis.Links.Where(link => link.Kind == LinkKind.Image && link.Line == request.Line && link.Label == request.Alt).ToArray();
+            if (matches.Length != 1) { GoToLine(request.Line, 0); _shell.StatusMessage = "Choose the exact image destination in Source to repair this reference."; return; }
+            var link = matches[0];
+            var options = new FilePickerOpenOptions { Title = "Locate replacement image", AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("Raster images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp"] }] };
+            if (ImageFilePicker is null && !StorageProvider.CanOpen) { _shell.StatusMessage = "The file picker is unavailable. Edit the image destination in Source."; return; }
+            var files = await (ImageFilePicker?.Invoke(options) ?? StorageProvider.OpenFilePickerAsync(options));
+            if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
+            if (!Current() || tab.IsReadOnly) { _shell.StatusMessage = "The note changed while locating the image. Your text was kept."; return; }
+            await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, true);
+            if (input.Length > ImageAttachmentImporter.MaxBytes) throw new IOException("Images must be at most 16 MiB.");
+            using var bytes = new MemoryStream();
+            var chunk = new byte[65536]; int count;
+            while ((count = await input.ReadAsync(chunk)) > 0)
+            { if (bytes.Length + count > ImageAttachmentImporter.MaxBytes) throw new IOException("Images must be at most 16 MiB."); bytes.Write(chunk, 0, count); }
+            ImageAttachmentImporter.ValidateImage(bytes.ToArray(), Path.GetFileName(path));
+            if (!Current() || tab.IsReadOnly) { _shell.StatusMessage = "The note changed while reading the image. Your text was kept."; return; }
+            var selected = Tern.Filesystem.FileIdentity.ResolvePhysicalPath(path);
+            var relative = Path.GetRelativePath(Path.GetDirectoryName(tab.FilePath)!, selected).Replace(Path.DirectorySeparatorChar, '/');
+            var destination = string.Join('/', relative.Split('/').Select(Uri.EscapeDataString));
+            ImageAttachmentImporter.RegisterSelectedImage(tab, selected);
+            tab.ApplyEdits([new TextEdit(link.Range.Start, link.Range.Length, destination)]);
+            _shell.StatusMessage = "Image destination updated. Undo restores the old link; Save keeps the change.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        { _shell.StatusMessage = "Could not locate image: " + ex.Message; }
+        finally { _repairingImage = false; }
+    }
+
     internal Func<FilePickerOpenOptions, Task<IReadOnlyList<IStorageFile>>>? ImageFilePicker { get; set; }
     internal Func<FilePickerSaveOptions, Task<IStorageFile?>>? ImageAttachmentPicker { get; set; }
     internal Func<string, Task<ImageImportChoice>>? ImageImportChoicePicker { get; set; }
@@ -92,6 +147,8 @@ public partial class MainWindow
             { _shell.StatusMessage = "The document changed while reading the image. Insert it again."; return false; }
             var imageBytes = bytes.ToArray();
             ImageAttachmentImporter.ValidateImage(imageBytes, Path.GetFileName(path));
+            if (ImageImportChoicePicker is null && ImageAttachmentPicker is null)
+                return await ShowImageInsertionAsync(imageBytes, Path.GetFileName(path), path);
             var choice = ImageAttachmentImporter.IsBesideDocument(tab, path) ? ImageImportChoice.Link
                 : ImageImportChoicePicker is { } choose ? await choose(path)
                 : (await PromptWindow.AskAsync(this, "Add image",
@@ -169,6 +226,7 @@ public partial class MainWindow
         var revision = tab.Session.Revision;
         var offset = Editor.CaretOffset;
         var directory = Path.GetDirectoryName(tab.FilePath)!;
+        if (ImageAttachmentPicker is null) return await ShowImageInsertionAsync(bytes, suggestedName, null);
         if (ImageAttachmentPicker is null && !StorageProvider.CanSave)
         {
             _shell.StatusMessage = "The attachment save picker is unavailable. Your document and existing images were kept.";
@@ -197,6 +255,27 @@ public partial class MainWindow
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException or System.Runtime.InteropServices.ExternalException)
         { _shell.StatusMessage = "Could not insert image: " + ex.Message; }
         return false;
+    }
+
+    private async Task<bool> ShowImageInsertionAsync(byte[] bytes, string name, string? original)
+    {
+        if (_shown is not { IsReadOnly: false, FilePath: not null } tab) return false;
+        ImageAttachmentImporter.ValidateImage(bytes, name);
+        var revision = tab.Session.Revision; var offset = Editor.CaretOffset; var source = tab.FilePath;
+        bool Current() => !_windowClosed && _shell.Tabs.Contains(tab) && ReferenceEquals(tab, _shown) && tab.Session.IsCurrent(revision) && !tab.IsReadOnly && tab.FilePath == source;
+        var result = await new InsertImageWindow(bytes, name, source, original, async choice =>
+        {
+            if (!Current()) return "The document changed while choosing the image. Close this form and insert it again.";
+            if (choice.Copy)
+                await ImageAttachmentImporter.InsertAsync(tab, bytes, choice.Folder, choice.Name, offset, revision, allowExternalDestination: true, altText: choice.Alt, isCurrent: Current);
+            else if (original is not null)
+                ImageAttachmentImporter.LinkExisting(tab, bytes, original, offset, revision, choice.Alt);
+            return null;
+        }).ShowDialog<ImageInsertion?>(this);
+        if (result is null) return false;
+        _shell.StatusMessage = result.Copy ? "Image copied and linked. Undo removes the link; the attachment stays on disk." : "Original image linked. Moving the original will break the link.";
+        ReportLinkedImagePermissionFailure();
+        return true;
     }
 
     private async Task<bool> EnsureImageDocumentAsync()

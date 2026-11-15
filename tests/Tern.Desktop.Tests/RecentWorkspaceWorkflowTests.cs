@@ -63,8 +63,8 @@ public sealed class RecentWorkspaceWorkflowTests
         var menuOwner = Assert.Single(container.GetVisualDescendants().OfType<Grid>(), c => c.ContextMenu is not null);
         var menu = menuOwner.ContextMenu!;
         menu.Open(menuOwner); Pump(fixture.Window);
-        Assert.Equal(["Open Workspace", "Remove from Recent"], menu.Items.OfType<MenuItem>().Where(i => i.IsVisible).Select(i => i.Header?.ToString() ?? string.Empty).ToArray());
-        Assert.Single(menu.Items.OfType<MenuItem>(), i => Equals(i.Header, "Remove from Recent")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Equal(["Open Workspace", "Forget recent entry"], menu.Items.OfType<MenuItem>().Where(i => i.IsVisible).Select(i => i.Header?.ToString() ?? string.Empty).ToArray());
+        Assert.Single(menu.Items.OfType<MenuItem>(), i => Equals(i.Header, "Forget recent entry")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         menu.Close(); Pump(fixture.Window);
         Assert.Empty(fixture.Shell.Recent.Workspaces);
         Assert.Empty(new RecentItemsStore(fixture.Shell.Paths.StateDirectory).Workspaces);
@@ -88,22 +88,14 @@ public sealed class RecentWorkspaceWorkflowTests
         Assert.Single(fixture.Shell.Recent.Workspaces);
     }
 
-    [AvaloniaTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Opening_workspace_as_folder_requires_explicit_workspace_choice(bool accept)
+    [AvaloniaFact]
+    public async Task Opening_a_directory_detects_its_existing_workspace_without_a_second_prompt()
     {
         using var fixture = new DesktopFixture();
         Assert.True(await fixture.Window.CreateWorkspaceAtAsync(fixture.Docs, "Company"));
         var workspace = fixture.Shell.Workspace!;
-        var task = fixture.Window.OpenFolderSelectionAsync(workspace.Root);
-        await Until(fixture.Window, () => fixture.Window.OwnedWindows.OfType<PromptWindow>().Any());
-        Assert.Same(workspace, Assert.Single(fixture.Shell.OpenWorkspaces));
-        Assert.True(workspace.IsNamedWorkspace);
-        var prompt = Assert.Single(fixture.Window.OwnedWindows.OfType<PromptWindow>());
-        var button = Assert.Single(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, accept ? "Open Workspace" : "Cancel"));
-        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await task;
+        await fixture.Window.OpenFolderSelectionAsync(workspace.Root);
+        Assert.Empty(fixture.Window.OwnedWindows);
         Assert.Same(workspace, Assert.Single(fixture.Shell.OpenWorkspaces));
         Assert.True(workspace.IsNamedWorkspace);
         Assert.False(await fixture.Shell.OpenFolderAsync(workspace.Root));

@@ -95,8 +95,8 @@ public sealed class HandbookReadingTests(ITestOutputHelper output)
             window.MouseUp(point + new Vector(0, 80), MouseButton.Left); Harness.Pump(window, 8);
             var released = view.Scroller.Offset.Y; Harness.Pump(window, 10);
             Assert.InRange(Math.Abs(view.Scroller.Offset.Y - released), 0, 2);
-            Assert.True(bar.Bounds.Width >= 24);
-            Assert.True(thumb.Bounds.Height >= 56);
+            Assert.InRange(bar.Bounds.Width, 16, 22);
+            Assert.InRange(thumb.Bounds.Height, 24, bar.Bounds.Height);
         }
         finally { window.Close(); }
     }

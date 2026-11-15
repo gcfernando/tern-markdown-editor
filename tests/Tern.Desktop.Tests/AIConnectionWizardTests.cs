@@ -114,7 +114,8 @@ public sealed class AIConnectionWizardTests
         Assert.Single(store.Load()); Assert.Equal("test-stored-secret", vault.Read(profile.Id));
         delete = true; Click(Find<Button>(window, "Delete AI connection"));
         Assert.Empty(store.Load()); Assert.Null(vault.Read(profile.Id));
-        Assert.False(f.Window.AIBar.IsVisible);
+        Assert.Null(f.Window.AIConnectionPicker.SelectedItem);
+        Assert.Contains("set up", f.Window.FindControl<Button>("AIEntryButton")!.Content!.ToString());
         window.Close();
     }
 

@@ -32,6 +32,9 @@ code,kbd,samp{font:.875em/1.4 ui-monospace,SFMono-Regular,Consolas,"Liberation M
 code{padding:.15em .35em;background:var(--code-bg);border-radius:4px}
 pre{padding:1em;overflow:auto;background:var(--soft);border:1px solid var(--border);border-radius:6px;line-height:1.45}
 pre code{padding:0;background:none;font-size:.85em}
+.syntax-keyword{color:#cf222e}.syntax-string{color:#0a3069}.syntax-function{color:#8250df}.syntax-type{color:#953800}.syntax-constant{color:#0550ae}.syntax-comment{color:#59636e}
+:root[data-theme=dark] .syntax-keyword{color:#ff7b72}:root[data-theme=dark] .syntax-string{color:#a5d6ff}:root[data-theme=dark] .syntax-function{color:#d2a8ff}:root[data-theme=dark] .syntax-type{color:#ffa657}:root[data-theme=dark] .syntax-constant{color:#79c0ff}:root[data-theme=dark] .syntax-comment{color:#9198a1}
+@media(prefers-color-scheme:dark){:root[data-theme=auto] .syntax-keyword{color:#ff7b72}:root[data-theme=auto] .syntax-string{color:#a5d6ff}:root[data-theme=auto] .syntax-function{color:#d2a8ff}:root[data-theme=auto] .syntax-type{color:#ffa657}:root[data-theme=auto] .syntax-constant{color:#79c0ff}:root[data-theme=auto] .syntax-comment{color:#9198a1}}
 kbd{padding:.15em .4em;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;background:var(--soft)}
 mark{background:var(--mark);color:inherit;padding:0 .15em}
 hr{height:1px;margin:1.5em 0;border:0;background:var(--border)}
@@ -77,6 +80,7 @@ svg.diagram{max-width:100%;height:auto}
 .d-frame{fill:none;stroke:var(--frame);stroke-width:1.2}
 .notice{margin:.4em 0 0;color:var(--muted);font-size:.9em;font-style:italic}
 .truncated{padding:.6em 1em;border:1px solid var(--warning);border-radius:6px;color:var(--warning)}
-@media print{body{background:#fff;color:#000}.markdown-body{max-width:none;padding:0}pre,table,blockquote,.alert,svg.diagram{break-inside:avoid}a{color:inherit}}
+@media print{:root,:root[data-theme]{color-scheme:light;--bg:#fff;--fg:#000;--muted:#444;--soft:#f6f8fa;--border:#bbb;--code-bg:#eff1f3;--link:#000}body{background:#fff;color:#000}.markdown-body{max-width:none;padding:0}h1,h2,h3,h4,h5,h6{break-after:avoid}table{display:table;width:100%;overflow:visible;table-layout:fixed}thead{display:table-header-group}tr,svg.diagram,img{break-inside:avoid}th,td{overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow:visible;overflow-wrap:anywhere}a{color:inherit}}
+@media print{:root[data-theme] .syntax-keyword{color:#cf222e}:root[data-theme] .syntax-string{color:#0a3069}:root[data-theme] .syntax-function{color:#8250df}:root[data-theme] .syntax-type{color:#953800}:root[data-theme] .syntax-constant{color:#0550ae}:root[data-theme] .syntax-comment{color:#59636e}}
 """;
 }

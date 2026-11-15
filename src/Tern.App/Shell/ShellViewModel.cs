@@ -57,6 +57,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Task previous;
         lock (_identityGate) { previous = _identityTail; _identityTail = completion.Task; }
+        using var activity = Activities.Begin(operation == DocumentOperation.Saving ? "Saving document" : "Opening document", document?.Session.Id.ToString());
         try
         {
             await previous.ConfigureAwait(true);
@@ -65,8 +66,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             _operationDocument = document;
             OnPropertyChanged(nameof(IsBusy));
             OnPropertyChanged(nameof(ActiveDocumentState));
-            return await action().ConfigureAwait(true);
+            var result = await action().ConfigureAwait(true);
+            if (result is SaveFailed failed) activity.Fail(failed.Reason);
+            else if (result is SaveConflict) activity.Fail("The file changed on disk. Review the conflict before saving.");
+            else if (result is false) activity.Cancel();
+            return result;
         }
+        catch (OperationCanceledException) { activity.Cancel(); throw; }
+        catch (Exception ex) { activity.Fail(ex.Message); throw; }
         finally
         {
             IsBusy = false;
@@ -122,6 +129,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _recovery.CheckpointWriteFailed += (_, failure) =>
         {
             if (Tabs.FirstOrDefault(t => t.Session.Id == failure.SessionId) is { } tab) tab.RecoveryError = failure.Exception.Message;
+            using var activity = Activities.Begin("Recovery checkpoint", failure.SessionId.ToString());
+            activity.Fail(failure.Exception.Message);
         };
         _viewMode = Settings.DefaultViewMode;
     }
@@ -149,6 +158,15 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         Settings.KeyBindings = new Dictionary<string, string>(Registry.Overrides);
         _settingsStore.Save(Settings);
+    }
+
+    public async Task<bool> RetryRecoveryAsync(DocumentTab tab)
+    {
+        if (_disposed || !Tabs.Contains(tab)) return false;
+        using var operation = BeginStatusOperation("Retrying recovery checkpoint", tab.DisplayName);
+        var saved = await _recovery.RetryAsync(tab.Session).ConfigureAwait(true);
+        if (!saved) operation.Fail(tab.RecoveryError ?? "The recovery checkpoint could not be written. Your open text is kept.");
+        return saved;
     }
 
     // ---- Tabs ---------------------------------------------------------------------------------------------------

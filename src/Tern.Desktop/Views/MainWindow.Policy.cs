@@ -10,10 +10,20 @@ public partial class MainWindow
 {
     private void OnFeatureHelpClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Control { Tag: string featureId }) new HelpWindow(_shell.Registry, featureId, RunCommandAsync, AskGuideAIAsync, AnswerGuideQuestionAsync).Show(this);
+        if (sender is Control { Tag: string featureId }) CreateHelpWindow(featureId).Show(this);
     }
-    private Task AskGuideAIAsync(string question) => new HelpWindow(_shell.Registry, openFeature: RunCommandAsync,
-        answerAI: AnswerGuideQuestionAsync, initialQuestion: question).ShowDialog(this);
+    private Task AskGuideAIAsync(string question) => CreateHelpWindow(question: question).ShowDialog(this);
+    internal Task ShowContextGuidanceAsync(string topic, Window owner)
+    {
+        var feature = string.IsNullOrWhiteSpace(topic) ? null : Tern.App.Help.FeatureCatalog.Search(_shell.Registry, topic).FirstOrDefault();
+        CreateHelpWindow(feature?.Id).Show(owner);
+        return Task.CompletedTask;
+    }
+
+    private HelpWindow CreateHelpWindow(string? feature = null, string? question = null) => new(_shell.Registry, feature,
+        RunCommandAsync, AskGuideAIAsync, AnswerGuideQuestionAsync, question, _aiWorkspace,
+        () => ShowAIConnectionsAsync(this), CanRunCommand, text => _shell.NewDocument(text), BeginWalkthroughAsync,
+        () => _shown is not null && Editor.SelectionStart + Editor.SelectionLength <= Editor.Document.TextLength ? Editor.SelectedText : null);
     private void OnTabRename(object? sender, Avalonia.Input.TappedEventArgs e)
     {
         if (sender is TextBlock { Parent: StackPanel panel, DataContext: Tern.App.Documents.DocumentTab tab } label)
@@ -26,7 +36,7 @@ public partial class MainWindow
         }
     }
 
-    private static void OnInlineRenameLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnInlineRenameLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     { if (sender is TextBox input) EndInlineRename(input); }
 
     private static void EndInlineRename(TextBox input)

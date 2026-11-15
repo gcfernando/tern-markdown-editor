@@ -73,6 +73,7 @@ public partial class MainWindow
 
     private void UpdateTabNavigation()
     {
+        UpdateTabTitles();
         if (TabScroller is not { } scroll) return;
         var left = this.FindControl<Button>("TabsPrevious");
         var right = this.FindControl<Button>("TabsNext");
@@ -83,6 +84,46 @@ public partial class MainWindow
         if (left is not null) { left.IsVisible = overflow; left.IsEnabled = scroll.Offset.X > 0.5; }
         if (right is not null) { right.IsVisible = overflow; right.IsEnabled = scroll.Offset.X + scroll.Viewport.Width < scroll.Extent.Width - 0.5; }
     }
+
+    private string TabTitle(DocumentTab tab)
+    {
+        var peers = _shell.Tabs.Where(t => string.Equals(t.DisplayName, tab.DisplayName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (peers.Length <= 1) return tab.DisplayName;
+        var location = tab.FilePath is { } path ? Path.GetDirectoryName(path) : tab.SourceUrl ?? "Unsaved draft";
+        if (tab.FilePath is not null)
+        {
+            var parts = (location ?? string.Empty).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            for (var depth = 1; depth <= parts.Length; depth++)
+            {
+                var suffix = string.Join(Path.DirectorySeparatorChar, parts.TakeLast(depth));
+                if (!peers.Any(other => !ReferenceEquals(other, tab) && other.FilePath != tab.FilePath
+                    && (Path.GetDirectoryName(other.FilePath) ?? "").EndsWith(suffix, StringComparison.OrdinalIgnoreCase)))
+                { location = suffix; break; }
+            }
+        }
+        var sameSource = peers.Where(t => t.FilePath == tab.FilePath && t.SourceUrl == tab.SourceUrl).ToArray();
+        var copy = sameSource.Length > 1 ? $" · copy {Array.IndexOf(sameSource, tab) + 1}" : string.Empty;
+        return tab.DisplayName + " · " + location + copy;
+    }
+
+    private void UpdateTabTitles()
+    {
+        foreach (var item in TabStrip.GetVisualDescendants().OfType<ListBoxItem>())
+        {
+            if (item.DataContext is not DocumentTab tab) continue;
+            if (item.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.Name == "TabTitleText") is not { } title) continue;
+            title.SetCurrentValue(TextBlock.TextProperty, TabTitle(tab));
+            ToolTip.SetTip(title, "Double-click to rename; " + CommandHint(Tern.App.Commands.CommandIds.Rename) + "\n" + (tab.FilePath ?? tab.SourceUrl ?? "Unsaved draft"));
+        }
+    }
+
+    private void OnOpenDocumentsClick(object? sender, RoutedEventArgs e) => ShowPicker("Open documents", string.Empty,
+        query => _shell.Tabs.Where(t => t.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || (t.FilePath?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
+            .Select(tab => new PickerItem(TabTitle(tab), tab.FilePath ?? tab.SourceUrl ?? "Unsaved draft",
+                (ReferenceEquals(tab, _shown) ? "Active · " : "") + (tab.IsReadOnly ? "Read-only" : tab.IsDirty ? "Unsaved" : "Saved"), tab,
+                CloseDocument: async () => { if (_shell.Tabs.Contains(tab)) await _shell.CloseTabAsync(tab); })).ToArray(),
+        item => { if (item.Payload is DocumentTab tab && _shell.Tabs.Contains(tab)) _shell.ActiveTab = tab; HideOverlay(); }, "No open documents");
 
     private void OnTabScrollClick(object? sender, RoutedEventArgs e)
     {

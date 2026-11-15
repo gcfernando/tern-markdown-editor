@@ -63,7 +63,7 @@ public sealed class ContextCoverageTests
         var title = Assert.Single(container.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == online.Title);
         var detail = Assert.Single(container.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == online.Detail);
         var download = Assert.Single(container.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "Download online file");
-        var remove = Assert.Single(container.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "Remove file reference");
+        var remove = Assert.Single(container.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "File reference actions");
         foreach (var (control, point) in new (Control, Point)[]
         {
             (container, new Point(2, container.Bounds.Height / 2)),

@@ -49,10 +49,7 @@ public partial class MainWindow
     {
         e.Handled = true;
         if (_focusMode) ToggleFocusMode();
-        _compactInspector = false;
-        RightPanel.IsVisible = true;
-        Body.ColumnDefinitions[4].Width = new GridLength(260);
-        UpdatePanelRestoreButtons();
+        SetInspectorVisibility(true);
         InspectorContent.Focus();
     }
 
@@ -186,6 +183,7 @@ public partial class MainWindow
         if (workspace is null)
         {
             _tasksOpen = 0;
+            _tasks = [];
             return;
         }
 
@@ -194,7 +192,7 @@ public partial class MainWindow
         var files = workspace.Snapshot.Files;
         var profile = _shell.Settings.DefaultProfile;
         var entries = await Task.Run(() => TaskIndex.ScanAsync(files, profile, buffers));
-        if (generation == _taskScanGeneration)
+        if (generation == _taskScanGeneration && ReferenceEquals(workspace, _shell.Workspace) && _shell.OpenWorkspaces.Contains(workspace))
         {
             _tasks = entries;
             _tasksOpen = TaskIndex.OpenCount(entries);
@@ -203,6 +201,11 @@ public partial class MainWindow
     }
 
     private IReadOnlyList<TaskEntry> _tasks = [];
+
+    private void OnTaskFilterChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_nav == "Tasks" && SideList is not null) SideList.ItemsSource = RowsFor("Tasks");
+    }
 
     internal async Task ShowNavAsync(string nav)
     {
@@ -217,6 +220,8 @@ public partial class MainWindow
     private void ShowNav(string nav)
     {
         _nav = nav;
+        TaskFilterBar.IsVisible = nav == "Tasks";
+        TaskScopeCount.Text = $"{_shell.Workspace?.Root ?? "No workspace"} · {_tasks.Count(t => !t.Checked)} open · {_tasks.Count(t => t.Checked)} completed";
         NavRecent.IsChecked = nav == "Recent";
         NavSearch.IsChecked = nav == "Search";
         NavFiles.IsChecked = nav == "Files";
@@ -249,7 +254,7 @@ public partial class MainWindow
         switch (nav)
         {
             case "Recent":
-                return FileReferenceRows(includeWorkspaces: true);
+                return FileReferenceRows(includeWorkspaces: true).Select(row => row with { IsRecentEntry = true }).ToArray();
             case "Search":
                 if (workspace is null || _lastSearch.Length == 0)
                 {
@@ -271,7 +276,7 @@ public partial class MainWindow
                     ? []
                     : [.. _shell.GetBrokenLinks(workspace).Select(l => new SideRow(l.Link.Destination, $"{Path.GetFileName(l.SourcePath)}:{l.Line}", l.SourcePath, l.Line))];
             case "Tasks":
-                return [.. _tasks.Where(t => !t.Checked).Select(t => new SideRow(t.Text, $"{t.RelativePath}:{t.Line}", t.Path, t.Line))];
+                return [.. _tasks.Where(t => TaskFilter.SelectedIndex == 2 || t.Checked == (TaskFilter.SelectedIndex == 1)).Select(t => new SideRow(t.Text, $"{(t.Checked ? "Completed" : "Open")} · {t.RelativePath}:{t.Line}", t.Path, t.Line))];
             case "Files":
                 return workspace is null ? FileReferenceRows() : [];
             default:
@@ -376,15 +381,7 @@ public partial class MainWindow
 
     internal async Task OpenFolderSelectionAsync(string folder)
     {
-        if (_shell.IsKnownWorkspace(folder))
-        {
-            var choice = await PromptWindow.AskAsync(this, "Open as workspace",
-                "This folder is a workspace. Use Open Workspace to load it correctly.\n\n" + folder,
-                ["Open Workspace", "Cancel"], 0, 1);
-            if (choice == 0) await OpenRecentWorkspaceAsync(folder);
-            return;
-        }
-        if (await _shell.OpenFolderAsync(folder)) await ShowNavAsync("Files");
+        if (await _shell.OpenDirectoryAsync(folder)) await ShowNavAsync("Files");
     }
 
     private async void OnShowTreeClick(object? sender, RoutedEventArgs e) => await ShowNavAsync("Files");
@@ -446,8 +443,10 @@ public partial class MainWindow
     private void OnLinkListSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         RepairLinkButton.IsEnabled = false;
+        LinkDetails.IsVisible = LinkList.SelectedItem is LinkRowView;
         if (LinkList.SelectedItem is LinkRowView row)
         {
+            LinkDetails.Text = $"{row.Status}\nSource: {_shown?.FilePath ?? "Unsaved note"}, line {row.Line}\nDestination: {row.Destination}\n" + (row.IsBroken ? "The workspace could not resolve this file or heading. Choose the correct target below." : row.IsExternal ? "External target; opening is a separate action." : "Local target or heading; checked within the workspace when available.");
             GoToLine(row.Line, 1, focusEditor: false);
             RepairLinkButton.IsEnabled = row.IsBroken && _shown is { IsReadOnly: false, FilePath: { } path }
                 && _shell.WorkspaceForPath(path) is not null;
@@ -462,6 +461,7 @@ public partial class MainWindow
         var rows = _documentLinks.Where(row => row.Text.Contains(query, StringComparison.OrdinalIgnoreCase)
             || row.Destination.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         RepairLinkButton.IsEnabled = false;
+        LinkDetails.IsVisible = false;
         LinkList.SelectedItem = null;
         LinkList.ItemsSource = rows;
         this.FindControl<TextBlock>("LinksCount")!.Text = query.Length == 0 ? $"{rows.Length} links" : $"{rows.Length} of {_documentLinks.Count} links";
@@ -478,6 +478,7 @@ public partial class MainWindow
         _outline = panel.Outline;
         RefreshOutline();
         TagsEmpty.IsVisible = panel.Tags.Count == 0;
+        EditTagsButton.IsEnabled = _shown is { IsReadOnly: false };
         RepairLinkButton.IsVisible = panel.Links.Any(link => link.IsBroken);
         _documentLinks = panel.Links.Select(l => new LinkRowView(l.Label, l.Destination, l.Line, l.IsBroken, l.IsExternal)).ToArray();
         RefreshLinks();
@@ -496,6 +497,15 @@ public partial class MainWindow
     private void UpdateStatus()
     {
         var tab = _shown;
+        ContextGuidance.Message = tab is null ? "Open a note or choose File → New document to start writing."
+            : tab.IsReadOnly ? "This note is read-only. Use Save As to create an editable copy, or Export as to share it."
+            : _shell.ViewMode == Tern.App.Settings.ViewMode.Reading ? "Use Outline or Find to move through this note. Choose Source or Split to edit it."
+            : tab.IsDirty ? "Review your changes in Reading or Split, then choose File → Save to keep them."
+            : "Write in Source, check the result in Reading, or use Find to locate text. Export as creates a separate sharing copy.";
+        UpdateCurrentSection();
+        UpdateProtection(tab);
+        UpdateFirstNoteChecklist();
+        RefreshAuthoringState();
         StatusEncoding.IsVisible = StatusLineEnding.IsVisible = StatusProfile.IsVisible = tab is not null;
         if (tab is null)
         {
@@ -522,11 +532,7 @@ public partial class MainWindow
             Tern.Markdown.MarkdownProfile.Extended => "Extended",
             _ => "CommonMark",
         };
-        StatusSaved.Text = tab.IsReadOnly ? "Read-only"
-            : tab.IsDirty ? (tab.IsRecovered && tab.IsUntitled ? "Recovered · " : string.Empty) + (tab.RecoveryError is not null ? "Unsaved · recovery failed"
-                : tab.CheckpointRevision == tab.Session.Revision ? "Unsaved · recovery checkpointed" : "Unsaved · recovery pending"
-                )
-            : tab.IsUntitled ? "Not saved to file" : "Saved locally";
+        UpdateResponsiveStatus();
     }
 
     private void OnEncodingClick(object? sender, RoutedEventArgs e) => ShowEncodingPicker(_shown?.IsReadOnly == true);

@@ -17,7 +17,8 @@ public sealed record FindOptions(
     int ContextLines = 1,
     int MaxMatchesPerFile = 5000,
     int MaxTotalMatches = 50000,
-    TimeSpan? RegexTimeout = null);
+    TimeSpan? RegexTimeout = null,
+    bool IncludePreview = true);
 
 /// <param name="Line">1-based line where the match starts.</param>
 /// <param name="Replacement">The text this match would be replaced with (capture groups already expanded).</param>
@@ -117,7 +118,7 @@ public sealed class FindReplace
                     return;
                 }
 
-                var file = Scan(path, text, matcher, options);
+                var file = Scan(path, text, matcher, options, token);
                 if (file is not null)
                 {
                     results.Add(file);
@@ -166,7 +167,7 @@ public sealed class FindReplace
         return results;
     }
 
-    private static FileMatches? Scan(string path, string text, Matcher matcher, FindOptions options)
+    private static FileMatches? Scan(string path, string text, Matcher matcher, FindOptions options, CancellationToken cancellationToken)
     {
         var perFile = Math.Max(1, options.MaxMatchesPerFile);
         var raw = new List<RawMatch>();
@@ -176,16 +177,11 @@ public sealed class FindReplace
         {
             foreach (var match in matcher.Matches(text))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (raw.Count >= perFile)
                 {
                     truncated = true;
                     break;
-                }
-
-                // A replacement that leaves empty text empty is a no-op, not a match worth listing.
-                if (match.Length == 0 && match.Replacement.Length == 0)
-                {
-                    continue;
                 }
 
                 raw.Add(match);
@@ -206,7 +202,8 @@ public sealed class FindReplace
         var edits = new List<TextEdit>(raw.Count);
         foreach (var m in raw)
         {
-            matches.Add(Describe(text, lines, m, options.ContextLines));
+            cancellationToken.ThrowIfCancellationRequested();
+            matches.Add(Describe(text, lines, m, options.ContextLines, options.IncludePreview));
             if (!text.AsSpan(m.Start, m.Length).SequenceEqual(m.Replacement))
             {
                 edits.Add(new TextEdit(m.Start, m.Length, m.Replacement));
@@ -216,9 +213,12 @@ public sealed class FindReplace
         return new FileMatches(path, text, matches, edits, truncated, timedOut);
     }
 
-    private static FindMatch Describe(string text, LineIndex lines, RawMatch m, int contextLines)
+    private static FindMatch Describe(string text, LineIndex lines, RawMatch m, int contextLines, bool includePreview)
     {
         var startLine = lines.LineOf(m.Start);
+        if (!includePreview)
+            return new FindMatch(m.Start, m.Length, startLine, m.Start - lines.LineStart(startLine) + 1,
+                text.Substring(m.Start, m.Length), m.Replacement, string.Empty, string.Empty, [], []);
         var endLine = lines.LineOf(Math.Max(m.Start, m.Start + m.Length - (m.Length > 0 ? 1 : 0)));
         var blockStart = lines.LineStart(startLine);
         // LineEnd excludes its terminator. A match may consume that terminator (or start
@@ -274,8 +274,8 @@ public sealed class FindReplace
             }
 
             var pattern = options.UseRegex
-                ? (options.WholeWord ? @"(?<![\p{L}\p{N}_])(?:" + options.Pattern + @")(?![\p{L}\p{N}_])" : options.Pattern)
-                : @"(?<![\p{L}\p{N}_])" + Regex.Escape(options.Pattern) + @"(?![\p{L}\p{N}_])";
+                ? (options.WholeWord ? @"(?<![\p{L}\p{N}\p{M}_])(?:" + options.Pattern + @")(?![\p{L}\p{N}\p{M}_])" : options.Pattern)
+                : @"(?<![\p{L}\p{N}\p{M}_])" + Regex.Escape(options.Pattern) + @"(?![\p{L}\p{N}\p{M}_])";
 
             try
             {

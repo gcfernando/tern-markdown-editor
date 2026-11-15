@@ -29,7 +29,7 @@ public sealed class UrlErrorLayoutTests
         {
             window.Show(fixture.Window);
             Dispatcher.UIThread.RunJobs();
-            var open = Assert.Single(window.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Open"));
+            var open = Assert.Single(window.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Open working copy"));
             var status = Assert.Single(window.GetVisualDescendants().OfType<TextBlock>(),
                 t => AutomationProperties.GetName(t) == "Markdown URL status");
             open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -41,7 +41,7 @@ public sealed class UrlErrorLayoutTests
             window.UpdateLayout();
             Assert.True(open.IsEnabled);
             Assert.Contains("web page", status.Text, StringComparison.OrdinalIgnoreCase);
-            foreach (var button in window.GetVisualDescendants().OfType<Button>().Where(b => Equals(b.Content, "Open") || Equals(b.Content, "Close")))
+            foreach (var button in window.GetVisualDescendants().OfType<Button>().Where(b => Equals(b.Content, "Open working copy") || Equals(b.Content, "Close")))
             {
                 var point = button.TranslatePoint(default, window)!.Value;
                 Assert.InRange(point.X, 0, window.Bounds.Width - button.Bounds.Width);

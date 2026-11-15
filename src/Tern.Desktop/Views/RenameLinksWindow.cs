@@ -27,7 +27,7 @@ public sealed class RenameLinksWindow : Window
         apply.Click += (_, _) => Close(true); skip.Click += (_, _) => Close(false);
         var layout = new Grid { Margin = new Thickness(28), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 18 };
         layout.Children.Add(new TextBlock { Text = "Keep your links connected", FontSize = GuideParts.Scaled(22), FontWeight = FontWeight.Bold });
-        layout.Children.Add(new TextBlock { Text = "The file has been renamed. Review these exact link changes before applying. Open documents receive undoable edits and need Save; closed files are saved only if their reviewed contents still match. Skipping keeps the rename and leaves links unchanged.", TextWrapping = TextWrapping.Wrap });
+        layout.Children.Add(new TextBlock { Text = $"{plan.Files.Count} affected files, {plan.Files.Sum(f => f.Previews.Count)} link changes. The file has been renamed. Review these exact link changes before applying. Open documents receive undoable edits and need Save; closed files are saved only if their reviewed contents still match. Skipping keeps the rename and leaves links unchanged.", TextWrapping = TextWrapping.Wrap });
         layout.Children.Add(new ScrollViewer { Content = changes });
         layout.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { skip, apply } });
         for (var i = 0; i < layout.Children.Count; i++) Grid.SetRow(layout.Children[i], i);

@@ -81,12 +81,13 @@ public sealed class GuideQuestionTests
             Capture(window, "ai-markdown-question");
             search.Text = "quantumplatypus";
             await Settle(window);
-            Assert.Equal("Ask about anything", Find<TextBlock>(window, "Lesson title").Text);
+            Assert.Equal("Find help with Tern", Find<TextBlock>(window, "Lesson title").Text);
             Assert.DoesNotContain("Print", Find<TextBlock>(window, "Tutorial step").Text, StringComparison.Ordinal);
             Assert.False(Find<Button>(window, "Open guided feature").IsVisible);
             Capture(window, "no-match-ai-fallback");
             Find<Button>(window, "Ask question").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.Equal("quantumplatypus", Assert.Single(questions));
+            Assert.Empty(questions);
+            Assert.Contains("Ask about using Tern", Find<SelectableTextBlock>(window, "Guide AI answer").Text);
             Assert.Empty(fixture.Shell.Tabs);
         }
         finally { window.Close(); }

@@ -13,9 +13,9 @@ public partial class MainWindow
         var start = Editor.SelectionStart;
         var length = Editor.SelectionLength;
         var dimensions = TableDimensionsPicker is { } picker ? await picker()
-            : await new InsertTableWindow().ShowDialog<TableDimensions?>(this);
+            : await new InsertTableWindow(length > 0).ShowDialog<TableDimensions?>(this);
         if (dimensions is null) return;
-        if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision))
+        if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || !CanRunCommand(Tern.App.Commands.CommandIds.InsertTable))
         { _shell.StatusMessage = "The document changed while choosing table dimensions. Insert the table again."; return; }
         ApplyEdit(FormattingService.InsertTable(tab.CurrentText, start, length, tab.Session.Format.NewLineText,
             dimensions.Columns, dimensions.Rows - 1));

@@ -55,7 +55,7 @@ public sealed class DialogContentHeightTests
         {
             dialog.Show(fixture.Window); await Task.Delay(100); Pump(dialog);
             var cleanHeight = dialog.ClientSize.Height;
-            Assert.True(cleanHeight < 260);
+            Assert.True(cleanHeight < 520); // Dimensions, bounded preview and replacement guidance are visible.
             dialog.RowsInput.Text = "0"; await Task.Delay(100); Pump(dialog);
             Assert.False(dialog.InsertButton.IsEnabled);
             Assert.True(dialog.ClientSize.Height > cleanHeight);

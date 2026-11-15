@@ -5,3 +5,10 @@ artifacts/
 TestResults/
 **/TestResults/
 /docs/review/*/after/
+
+# Local development and agent scratch files
+/.runtime/
+/tmp/
+/.idea/
+**/__pycache__/
+*.pyc

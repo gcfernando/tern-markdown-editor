@@ -60,11 +60,7 @@ public partial class MainWindow
 
     private async Task CreateWorkspaceFromPickerAsync()
     {
-        if (!StorageProvider.CanPickFolder) { _shell.StatusMessage = "A Windows folder picker is required to choose the workspace's parent folder."; return; }
-        var parents = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Choose the parent folder for a NEW workspace", AllowMultiple = false });
-        if (parents.Count == 0 || parents[0].TryGetLocalPath() is not { } parent) return;
-        var name = await new FileNameWindow(true, "Create a new workspace folder inside " + parent, initialName: "New workspace", dialogTitle: "Create workspace").ShowDialog<string?>(this);
-        if (name is not null) await CreateWorkspaceAtAsync(parent, name);
+        await ShowCreationFormAsync(CreateItemKind.Workspace);
     }
 
     private async Task OpenExistingWorkspaceAsync()
@@ -98,9 +94,7 @@ public partial class MainWindow
         FileTree.SelectedItem = row;
         if (action == "workspace")
         {
-            var name = await new FileNameWindow(true, "Create a named workspace in a NEW directory inside " + row.FullPath,
-                initialName: "New workspace", dialogTitle: "Create workspace").ShowDialog<string?>(this);
-            if (name is not null) await CreateWorkspaceAtAsync(row.FullPath, name);
+            await ShowCreationFormAsync(CreateItemKind.Workspace, row.FullPath, owner);
         }
         else await CreateWorkspaceEntryAsync(action == "folder");
     }
@@ -128,63 +122,16 @@ public partial class MainWindow
     private async Task CreateFromGlobalAddAsync(string id)
     {
         if (id is not (CommandIds.NewFile or CommandIds.NewWorkspaceFile or CommandIds.NewFolder or CommandIds.CreateWorkspace)) return;
-        // Capture once, before any dialog. A tab/selection change cannot redirect creation.
-        var selected = _shell.Workspace;
-        var kind = id == CommandIds.CreateWorkspace ? CreateItemKind.Workspace : id == CommandIds.NewFolder ? CreateItemKind.Folder : CreateItemKind.File;
-        var label = kind switch { CreateItemKind.Workspace => "Create workspace", CreateItemKind.Folder => "Create folder", _ => "Create document" };
-        var choice = selected is null ? AddDestinationChoice.Outside
-            : await AddDestinationWindow.AskAsync(this, selected.Name, selected.Root, selected.IsNamedWorkspace, label);
-        if (choice == AddDestinationChoice.Cancel || _windowClosed) return;
-        var outside = choice == AddDestinationChoice.Outside;
-        if (!outside && (selected is null || !_shell.OpenWorkspaces.Contains(selected)))
-        { _shell.StatusMessage = "The selected location was closed. Nothing was created; choose a destination again."; return; }
-        if (outside && id == CommandIds.NewFile)
+        if (id == CommandIds.NewFile)
         {
             _shell.NewDocument(standalone: true);
             RefreshLibraryContents();
             await ShowNavAsync("Files");
-            _shell.StatusMessage = "New document outside workspaces. Save As chooses its location.";
+            _shell.StatusMessage = "New unsaved document. Save As chooses its location.";
             return;
         }
-        var parent = outside ? OutsideCreationParent() : selected!.Root;
-        var request = await new CreateItemWindow(kind, parent, outside,
-            candidate => outside ? OutsideCreationError(candidate) : null).ShowDialog<CreatedItemRequest?>(this);
-        if (request is null || _windowClosed) return;
-        if (!outside && (selected is null || !_shell.OpenWorkspaces.Contains(selected)
-            || !WorkspacePaths.PathsEqual(request.Parent, selected.Root)))
-        { _shell.StatusMessage = "The selected location changed. Nothing was created; choose a destination again."; return; }
-        if (outside && OutsideCreationError(request.Parent) is { } problem)
-        { _shell.StatusMessage = problem; _dialogs?.ShowMessage("Choose an outside location", problem); return; }
-        using var activity = _shell.BeginStatusOperation();
-        _shell.StatusMessage = label + "…";
-        if (kind == CreateItemKind.Workspace)
-        {
-            if (await CreateWorkspaceAtAsync(request.Parent, request.Name) && outside) _outsideCreationParent = request.Parent;
-            return;
-        }
-        var operations = outside ? new WorkspaceFileOperations(request.Parent) : selected!.FileOperations;
-        var result = await Task.Run(() => kind == CreateItemKind.Folder
-            ? operations.CreateFolder(request.Parent, request.Name) : operations.CreateFile(request.Parent, request.Name));
-        if (!result.Succeeded)
-        {
-            _shell.StatusMessage = "Could not create item: " + (result.Message ?? "The location is unavailable.");
-            _dialogs?.ShowMessage("Could not create item", _shell.StatusMessage); return;
-        }
-        if (outside) _outsideCreationParent = request.Parent;
-        if (kind == CreateItemKind.Folder && outside)
-            await _shell.OpenFolderAsync(result.Path!);
-        else if (kind == CreateItemKind.File)
-        {
-            // Keep the created file discoverable even if opening is subsequently cancelled.
-            _shell.Recent.AddFile(result.Path!);
-            await _shell.OpenFileAsync(result.Path!);
-        }
-        foreach (var root in _shell.OpenWorkspaces.Where(w => w.IsInside(result.Path!)).ToArray())
-            await root.RescanTreeAsync();
-        if (selected is not null && _shell.OpenWorkspaces.Contains(selected)) _shell.SelectWorkspace(selected);
-        RefreshWorkspace();
-        await ShowNavAsync("Files");
-        _shell.StatusMessage = "Created " + result.Path;
+        var kind = id == CommandIds.CreateWorkspace ? CreateItemKind.Workspace : id == CommandIds.NewFolder ? CreateItemKind.Folder : CreateItemKind.File;
+        await ShowCreationFormAsync(kind);
     }
 
     private string OutsideCreationParent()

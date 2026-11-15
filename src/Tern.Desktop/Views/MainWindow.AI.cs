@@ -26,8 +26,9 @@ public partial class MainWindow
             _refreshingAI = true;
             AIConnectionPicker.ItemsSource = _aiWorkspace.Connections;
             AIConnectionPicker.SelectedItem = _aiWorkspace.SelectedConnection;
-            AIBar.IsVisible = _aiWorkspace.Connections.Count > 0;
-            MainToolbarGrid.RowSpacing = AIBar.IsVisible ? 4 : 0;
+            AIBar.IsVisible = true;
+            UpdateAIEntryCaption();
+            AIConnectionAction.IsEnabled = _aiWorkspace.SelectedConnection is not null;
             AIConnectionAction.Content = _aiWorkspace.SelectedConnection is { Kind: "mcp" } ? "Open MCP tools" : "Write with AI";
             Avalonia.Automation.AutomationProperties.SetName(AIConnectionAction, AIConnectionAction.Content.ToString());
             RefreshAISummary();
@@ -38,9 +39,24 @@ public partial class MainWindow
         finally { _refreshingAI = false; }
     }
 
-    private void RefreshAISummary() => AIConnectionSummary.Text = _aiWorkspace.SelectedConnection is { } profile
-        ? profile.Summary + (profile.CanWrite ? " · " + _aiWorkspace.ValidationStatus(profile) : "")
-        : "Set up once in Settings, then ask from any writing pane.";
+    private void RefreshAISummary()
+    {
+        var summary = _aiWorkspace.SelectedConnection is { } profile ? _aiWorkspace.Summary(profile) : null;
+        AIConnectionSummary.Text = summary is null
+            ? "Add a connection to start writing or asking questions."
+            : $"{summary.Capabilities} · Model: {summary.Model}\n{summary.State}"
+                + (summary.TestedAt is { } time ? $" · {time.LocalDateTime:g}" : "");
+        AIConnectionDetails.IsVisible = summary is not null;
+        AIConnectionDetailsText.Text = summary?.Description ?? string.Empty;
+    }
+
+    private void UpdateAIEntryCaption()
+    {
+        var profile = _aiWorkspace.SelectedConnection;
+        var tight = Width < 1180 * _shell.Settings.UiScale && _shell.Settings.UiScale >= 1.5;
+        AIEntryButton.Content = tight ? "AI" : profile is null ? "AI · set up" : $"AI · {profile.Name} · {(profile.CanWrite ? "Text" : "Tools")}";
+        ToolTip.SetTip(AIEntryButton, profile?.DisplaySummary ?? "AI connection setup and optional writing tools");
+    }
 
     private void ObserveAIConnections()
     {
@@ -96,6 +112,7 @@ public partial class MainWindow
 
     private async void OnAIPrimaryActionClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        _aiEntryFlyout?.Hide();
         if (_aiWorkspace.SelectedConnection is { Kind: "mcp" } profile) await ShowMCPToolsAsync(profile.Id);
         else ShowAIWritingPrompt();
     }
@@ -128,19 +145,15 @@ public partial class MainWindow
         var snapshot = tab.Session.GetSnapshot();
         var selection = (Start: Editor.SelectionStart, Length: Editor.IsEffectivelyVisible ? Editor.SelectionLength : 0);
         var caret = Editor.CaretOffset;
-        ComboBox? scope = null;
-        if (selection.Length > 0)
-        {
-            var scopes = new[] { "Selected text", "Entire note" };
-            scope = new ComboBox { ItemsSource = scopes, SelectedIndex = Math.Max(0, Array.IndexOf(scopes, preferredScope)) };
-            AutomationProperties.SetName(scope, "AI text scope");
-        }
+        var scopes = selection.Length > 0 ? new[] { "Selected text", "Entire note", "Instruction only" } : new[] { "Entire note", "Instruction only" };
+        var scope = new ComboBox { ItemsSource = scopes, SelectedIndex = Math.Max(0, Array.IndexOf(scopes, preferredScope)) };
+        AutomationProperties.SetName(scope, "AI text scope");
         var action = initialAction;
-        (int Start, int Length) Range() => Equals(scope?.SelectedItem, "Selected text")
-            ? selection : (0, snapshot.Text.Length);
+        (int Start, int Length) Range() => Equals(scope.SelectedItem, "Instruction only") ? (caret, 0)
+            : Equals(scope.SelectedItem, "Selected text") ? selection : (0, snapshot.Text.Length);
         bool TargetIsCurrent() => !_windowClosed && _shell.Tabs.Contains(tab) && ReferenceEquals(_shell.ActiveTab, tab)
             && !tab.IsReadOnly && tab.Session.IsCurrent(snapshot.Revision);
-        bool InsertsResult() => action is "Summarize" or "Explain" or "Extract action items";
+        bool InsertsResult() => Equals(scope.SelectedItem, "Instruction only") || action is "Summarize" or "Explain" or "Extract action items";
         string Message(string question, string text) => AIWorkspaceService.WritingMessage(question, text, InsertsResult());
         var panel = new AIPromptPanel(tab.DisplayName, _aiWorkspace, async (profileId, question, token) =>
         {
@@ -217,11 +230,19 @@ public partial class MainWindow
 
     private string WritingShortcut() => Gesture.Describe(_shell.Registry.GetGesture(CommandIds.AskAI)) is { Length: > 0 } shortcut ? shortcut : "Edit → Write with AI";
 
-    private Task<string> AnswerGuideQuestionAsync(string question, CancellationToken token)
+    private async Task<string> AnswerGuideQuestionAsync(string question, CancellationToken token)
     {
-        if (_aiWorkspace.SelectedConnection is not { } profile)
-            throw new InvalidOperationException("Choose an AI connection on Tern's main screen. Add one in Edit → Settings → AI connections if you have not set one up yet.");
+        if (!GuideQuestionPrompt.CanAnswer(_shell.Registry, question)) return GuideQuestionPrompt.ScopeMessage;
+        if (_aiWorkspace.HelpSelectedConnection is not { } profile)
+            return "Installed Tern guide · offline answer\n\n" + GuideQuestionPrompt.OfflineAnswer(_shell.Registry, question);
         var message = GuideQuestionPrompt.Build(_shell.Registry, question, forCopilot: profile.Kind == "copilot");
-        return _aiWorkspace.SendAsync(profile.Id, message, token);
+        try { return await _aiWorkspace.SendAsync(profile.Id, message, token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { return "Provider timed out. Installed Tern guide · offline answer\n\n" + GuideQuestionPrompt.OfflineAnswer(_shell.Registry, question); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or PlatformNotSupportedException or System.ComponentModel.Win32Exception)
+        {
+            token.ThrowIfCancellationRequested();
+            return "AI unavailable. Recovered from the installed Tern guide · offline answer\n\n" + GuideQuestionPrompt.OfflineAnswer(_shell.Registry, question);
+        }
     }
 }

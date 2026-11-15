@@ -33,8 +33,16 @@ public sealed class ScrollbarInteractionTests
             ? scroller!.GetVisualDescendants().OfType<ScrollBar>().Single(b => b.Orientation == Orientation.Vertical && b.GetVisualAncestors().OfType<ScrollViewer>().First() == scroller)
             : fixture.Window.EditorControl.GetVisualDescendants().OfType<ScrollBar>().Single(b => b.Orientation == Orientation.Vertical);
         var thumb = bar.GetVisualDescendants().OfType<Thumb>().Single();
-        Assert.True(bar.Bounds.Width >= 20);
-        Assert.True(thumb.Bounds.Height >= 40);
+        if (preview)
+        {
+            Assert.InRange(bar.Bounds.Width, 16, 22);
+            Assert.True(thumb.Bounds.Height >= 24);
+        }
+        else
+        {
+            Assert.True(bar.Bounds.Width >= 20);
+            Assert.True(thumb.Bounds.Height >= 40);
+        }
         double Offset() => preview ? scroller!.Offset.Y : fixture.Window.EditorControl.VerticalOffset;
         var point = thumb.TranslatePoint(thumb.Bounds.Center, fixture.Window)!.Value;
         fixture.Window.MouseMove(point); fixture.Window.MouseDown(point, MouseButton.Left);

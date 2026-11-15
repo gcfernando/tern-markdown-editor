@@ -79,7 +79,7 @@ public sealed class PromptSafetyTests
             prompt.Show();
             prompt.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
-            var buttons = prompt.GetVisualDescendants().OfType<Button>().Where(b => b.Content is string).ToArray();
+            var buttons = prompt.GetVisualDescendants().OfType<Button>().Where(b => b.Content is "Keep mine" or "Use disk" or "Merge" or "Save copy" or "Cancel").ToArray();
             Assert.Equal(5, buttons.Length);
             foreach (var button in buttons)
             {

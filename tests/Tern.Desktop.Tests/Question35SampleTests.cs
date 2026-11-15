@@ -8,16 +8,56 @@ using Tern.Domain.Text;
 
 namespace Tern.Desktop.Tests;
 
-/// <summary>Exercises the exact supplied normal-size file behind the question 35 debugger screenshots.</summary>
+/// <summary>Exercises the currently supplied Markdown, falling back to the original question 35 fixture.</summary>
 public sealed class Question35SampleTests
 {
     [AvaloniaFact]
-    public async Task Supplied_supervised_learning_file_switches_Source_Split_Reading_without_parser_cancellation_or_source_changes()
+    public async Task Supplied_workbook_search_keeps_all_results_and_current_match_across_modes()
+    {
+        var supplied = SamplePath();
+        var bytes = await File.ReadAllBytesAsync(supplied);
+        var text = await File.ReadAllTextAsync(supplied);
+        using var fixture = new DesktopFixture();
+        var copy = await fixture.WriteAsync("search-workbook.md", text);
+        var tab = (await fixture.Shell.OpenFileAsync(copy))!;
+        var revision = tab.Session.Revision;
+        var expected = 0;
+        for (var offset = 0; (offset = text.IndexOf("regression", offset, StringComparison.OrdinalIgnoreCase)) >= 0; offset += 10)
+            expected++;
+        Assert.True(expected > 1);
+        await fixture.Window.RunCommandAsync(CommandIds.ViewSource);
+        fixture.Window.EditorControl.Select(0, 0);
+        fixture.Window.ShowFindBar(false);
+        await fixture.Window.SearchAsync("regression");
+        foreach (var mode in new[] { CommandIds.ViewSource, CommandIds.ViewSplit, CommandIds.ViewReading })
+        {
+            await fixture.Window.RunCommandAsync(mode);
+            await fixture.Window.RebuildPreviewAsync();
+            await Settle(fixture);
+            Assert.Equal(expected, fixture.Window.FindResults.ItemCount);
+            var renderer = Assert.Single(fixture.Window.EditorControl.TextArea.TextView.BackgroundRenderers.OfType<Tern.Desktop.Views.FindMatchRenderer>());
+            Assert.Equal(expected, renderer.Matches.Count);
+            var before = fixture.Window.EditorControl.SelectionStart;
+            fixture.Window.FindNext(true);
+            await Settle(fixture);
+            Assert.NotEqual(before, fixture.Window.EditorControl.SelectionStart);
+            Assert.Equal("regression", fixture.Window.EditorControl.SelectedText, ignoreCase: true);
+            Assert.True(fixture.Window.FindBox.IsKeyboardFocusWithin);
+        }
+        Assert.Equal(text, tab.CurrentText);
+        Assert.Equal(revision, tab.Session.Revision);
+        Assert.False(tab.IsDirty);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(supplied));
+        Assert.Equal(text, await File.ReadAllTextAsync(copy));
+    }
+
+    [AvaloniaFact]
+    public async Task Supplied_document_switches_Source_Split_Reading_without_parser_cancellation_or_source_changes()
     {
         var supplied = SamplePath(); var originalBytes = await File.ReadAllBytesAsync(supplied); var originalHash = SHA256.HashData(originalBytes);
         var text = await File.ReadAllTextAsync(supplied);
         using var fixture = new DesktopFixture();
-        var copy = await fixture.WriteAsync("supervised_learning.md", text);
+        var copy = await fixture.WriteAsync(Path.GetFileName(supplied), text);
         var observed = new ConcurrentQueue<string>();
         void Observe(object? sender, FirstChanceExceptionEventArgs e)
         {
@@ -88,8 +128,9 @@ public sealed class Question35SampleTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Tern.slnx"))) directory = directory.Parent;
         Assert.NotNull(directory);
-        var path = Path.Combine(directory.FullName, "MD Files Samples 02", "supervised_learning.md");
-        Assert.True(File.Exists(path), "The user-supplied question 35 fixture must be available; this test does not silently skip it.");
+        var current = Path.Combine(directory.FullName, "inputs", "Data-Science-and-Machine-Learning.md");
+        var path = File.Exists(current) ? current : Path.Combine(directory.FullName, "MD Files Samples 02", "supervised_learning.md");
+        Assert.True(File.Exists(path), "Supply inputs/Data-Science-and-Machine-Learning.md or the original question 35 fixture; this test does not silently skip it.");
         return path;
     }
     private static async Task Settle(DesktopFixture fixture)

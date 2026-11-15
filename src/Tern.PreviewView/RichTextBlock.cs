@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Tern.Rendering.Resources;
 
 namespace Tern.PreviewView;
@@ -26,6 +27,77 @@ internal sealed class LinkInvokedEventArgs(LinkTarget target) : EventArgs
 /// </summary>
 internal sealed class RichTextBlock : SelectableTextBlock
 {
+    private readonly List<(int SourceStart, int SourceLength, int Start, int Length)> _searchSources = [];
+
+    internal string DisplayText => Inlines is { Count: > 0 } ? ReadText(Inlines) : Text ?? string.Empty;
+
+    private static string ReadText(IEnumerable<Inline> inlines) => string.Concat(inlines.Select(inline => inline switch
+    {
+        Run run => run.Text,
+        LineBreak => "\n",
+        Span span => ReadText(span.Inlines),
+        InlineUIContainer => "\uFFFC",
+        _ => string.Empty,
+    }));
+
+    internal void AddSearchSource(int sourceStart, int sourceLength, int start, int length) =>
+        _searchSources.Add((sourceStart, sourceLength, start, length));
+
+    private readonly Dictionary<(int Start, int Length, int DisplayStart), SearchTextProjection> _searchProjections = [];
+    private string? _projectionSource;
+    private int _projectionBase;
+
+    internal IReadOnlyList<(int Start, int Length)> SearchRanges(bool activeOnly = false)
+    {
+        var ancestors = this.GetVisualAncestors().ToArray();
+        if (ancestors.OfType<PreviewView>().FirstOrDefault() is not { } preview
+            || ancestors.OfType<BlockHost>().FirstOrDefault() is not { } host) return [];
+        var matches = activeOnly ? (preview.SearchMatch is { } active ? new[] { active } : []) : preview.SearchMatches;
+        if (matches.Count == 0) return [];
+        var source = matches[0].Source;
+        var sourceBase = host.Slot.Node.Source.StartOffset;
+        if (!ReferenceEquals(source, _projectionSource) || sourceBase != _projectionBase)
+        {
+            _searchProjections.Clear();
+            _projectionSource = source;
+            _projectionBase = sourceBase;
+        }
+        var text = DisplayText;
+        var ranges = new List<(int, int)>();
+        foreach (var span in _searchSources)
+        {
+            var sourceStart = sourceBase + span.SourceStart;
+            if (sourceStart < 0 || sourceStart + span.SourceLength > source.Length
+                || span.Start + span.Length > text.Length) continue;
+            // Source-ordered non-overlapping matches permit a binary lookup per leaf.
+            var low = 0;
+            var high = matches.Count;
+            while (low < high)
+            {
+                var mid = low + (high - low) / 2;
+                if (matches[mid].Start + matches[mid].Length <= sourceStart) low = mid + 1;
+                else high = mid;
+            }
+            for (var index = low; index < matches.Count; index++)
+            {
+                var match = matches[index];
+                if (match.Start >= sourceStart + span.SourceLength) break;
+                var start = Math.Max(sourceStart, match.Start);
+                var end = Math.Min(sourceStart + span.SourceLength, match.Start + match.Length);
+                if (end <= start) continue;
+                var key = (sourceStart, span.SourceLength, span.Start);
+                if (!_searchProjections.TryGetValue(key, out var projection))
+                {
+                    projection = new SearchTextProjection(source.Substring(sourceStart, span.SourceLength), text.Substring(span.Start, span.Length));
+                    _searchProjections[key] = projection;
+                }
+                var range = projection.Project(start - sourceStart, end - sourceStart);
+                if (range.Length > 0) ranges.Add((span.Start + range.Start, range.Length));
+            }
+        }
+        return ranges;
+    }
+
     protected override AutomationPeer OnCreateAutomationPeer() => new RichTextAutomationPeer(this);
 
     private sealed class RichTextAutomationPeer(RichTextBlock owner) : TextBlockAutomationPeer(owner)

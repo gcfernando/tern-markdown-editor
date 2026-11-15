@@ -13,10 +13,10 @@ Write notes, maintain project documentation and organize folders of ordinary Mar
 - Native preview without a browser engine: tables, task lists, footnotes, code, images, front matter, bounded math and supported Mermaid diagrams.
 - Library folders and workspaces, outline, backlinks, broken-link repair, statistics, Quick Open and SQLite full-text workspace search.
 - Encoding and line-ending preservation, atomic saves, external-change comparison and merge, local saved-text history and recovery checkpoints.
-- HTML, PDF and text export, Windows text printing, image insertion and portable local attachment copies on Save As.
+- HTML, PDF and text export, formatted print preview with PDF-reader printing, image insertion and portable local attachment copies on Save As.
 - Fifteen beginner lessons and optional, explicitly reviewed AI writing and MCP tool requests.
 
-![Tern in Split view with Markdown source, native reading preview, Library and Outline inspector](Images/main.png)
+![Tern in Split view with Markdown source, native reading preview, Library and Outline inspector](docs/images/gui/split-midnight.png)
 
 The screenshot shows an existing note in Split view. See the [user guide](docs/user-guide.md) for interface details and supported rendering limits.
 
@@ -46,7 +46,7 @@ Press `Ctrl+N`, write a heading and a few sentences, then press `Ctrl+S` to choo
 | Search text | Find (`Ctrl+F`), Replace (`Ctrl+H`) or workspace search (`Ctrl+Shift+F`) |
 | Add a link or picture | Insert Link (`Ctrl+Shift+K`) or the Format menu |
 | Learn or configure a feature | `F1` opens the guide; `Ctrl+,` opens Settings |
-| Export or print | File export commands, or Print (`Ctrl+P`) for plain-text printing |
+| Export or print | Export as… (`Ctrl+Shift+E`), or Print preview… (`Ctrl+P`) followed by printing in your PDF reader |
 
 Closing a tab, folder or workspace asks about unsaved changes and does not delete its files. Separate file-management actions can change files on disk. Save As can carry attachments inside the original note's folder; check the [copy rules](docs/user-guide.md#save-as-and-portable-attachments) before moving a collection.
 
@@ -73,7 +73,7 @@ Dependencies and lockfiles are pinned, and warnings are errors. Eight test proje
 
 ## Automated releases
 
-The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.3**. A failed check must not be described as a verified release.
+The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.4**. A failed check must not be described as a verified release.
 
 For a local candidate, use `./tools/BuildRelease.ps1`; it publishes, invokes the packaging helper and smokes the extracted application. The legacy `./scripts/publish.ps1` remains available for a local self-contained publish. These have different output directories; the [release guide](docs/releases.md) explains each and the unsigned/manual-acceptance limitations.
 
@@ -104,3 +104,23 @@ Developed by Gehan Fernando and released under the [MIT License](LICENSE). Depen
 <a id="known-limitations-summary"></a>
 
 The previous README's detailed workflow and architecture reference is preserved and clarified in the [user guide](docs/user-guide.md) and [development guide](docs/development.md).
+
+The [current GUI task guide](docs/gui-tasks.md) documents the implemented controls and synthetic screenshots. Native screen-reader, physical-DPI, printer, clipboard and clean-machine startup checks still require verification on Windows.
+
+Version **1.0.4** improves export and print-preview layout, search in all document modes, and conversational Tern help with automatic offline recovery. See the [user guide](docs/user-guide.md#version-104-workflows) and [release notes](docs/release-notes-1.0.4.md).
+
+### Help, export and guidance improvements
+
+- **Ask & learn:** AI connection and conversation actions sit above the larger question box. Answers render Markdown headings, emphasis, lists, code and tables in one reading area, with the newest answer revealed first. Copy conversation and Start new conversation become available when an answer is visible. What is shared? explains the submitted data. Without a writing connection, Tern answers from installed guides; provider failures also recover to an explicitly labelled offline answer.
+- **Export state:** changing Choose a format clears the destination, resets format options and clears completion status and notes. Open file and Show in folder appear only for the current complete successful result. Editing the destination or options, starting another export, or an export failure hides them. Actions share an aligned footer; Export notes start collapsed and only appear when needed.
+- **Readable TXT:** paragraphs wrap to a preferred 80-character width. Compact tables stay aligned; wide tables become labelled records. Numbered link references keep long URLs out of prose and retain relative and section destinations. Code indentation, nested lists and Unicode remain intact. Text files cannot display fonts, colours or actual images.
+- **PDF badges:** supported inert SVG images use the same bounded native renderer as preview and are embedded as PNG images. Unsupported SVG features still produce an export note instead of silently dropping content. HTML retains permitted SVG images.
+- **Next step guidance:** the main window and shared dialog shell show a contextual tip and installed Learn more help. Export tips change for destination selection, progress, success and failure. Ask & learn has its own question and answer guidance.
+
+### Latest screen usability improvements
+
+Ask & learn gives the answer more space once it is ready; the question editor stays available in a compact form for follow-ups. Click a picker result once to choose it, or use Up/Down and Enter. The welcome panel is larger and centered.
+
+In Write with AI, highlight text before opening the panel to use the selection actions. Create content appears only with no selection and Entire note selected. Review the sharing scope and connection, write your instruction, then choose Generate for review. The raw request/JSON section has been removed.
+
+In Review AI suggestion, compare the complete BEFORE and AFTER text. Use Back to improve the instruction, Copy result to copy the full suggestion, Apply changes to accept the proposal, or Close to keep your note unchanged. Insert result preserves the original text and adds the generated content. Applied edits remain unsaved and can be undone. Narrow screens stack the comparison vertically. Disclosure sections use the same themed appearance and keyboard focus cues throughout the app.

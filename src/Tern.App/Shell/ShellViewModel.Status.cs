@@ -2,25 +2,30 @@ namespace Tern.App.Shell;
 
 public sealed partial class ShellViewModel
 {
+    public ActivityFeed Activities { get; } = new();
     private int _statusGeneration;
     private int _activeStatusOperations;
     public bool HasActiveStatusOperations => Volatile.Read(ref _activeStatusOperations) > 0;
 
     /// <summary>Keeps the status active across asynchronous work, including nested remote operations.</summary>
-    public IDisposable BeginStatusOperation()
+    public StatusOperation BeginStatusOperation(string kind = "Working", string? identity = null, Action? cancel = null)
     {
         if (Interlocked.Increment(ref _activeStatusOperations) == 1)
             OnPropertyChanged(nameof(HasActiveStatusOperations));
-        return new StatusOperation(this);
+        return new StatusOperation(this, Activities.Begin(kind, identity, cancel));
     }
 
-    private sealed class StatusOperation(ShellViewModel owner) : IDisposable
+    public sealed class StatusOperation(ShellViewModel owner, ActivityScope activity) : IDisposable
     {
+        public void Report(string phase, long? completed = null, long? total = null) => activity.Report(phase, completed, total);
+        public void Fail(string details) => activity.Fail(details);
+        public void Cancel() => activity.Cancel();
         private ShellViewModel? _owner = owner;
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _owner, null) is { } shell)
             {
+                activity.Dispose();
                 if (Interlocked.Decrement(ref shell._activeStatusOperations) == 0)
                     shell.OnPropertyChanged(nameof(HasActiveStatusOperations));
             }

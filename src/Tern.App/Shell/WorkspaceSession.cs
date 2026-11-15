@@ -150,6 +150,12 @@ public sealed class WorkspaceSession : IDisposable
     public string ToFullPath(string relativePath) => Path.GetFullPath(Path.Combine(Root, relativePath));
     public bool HasUnsavedSearchBuffers => _indexer?.Overlay.Count > 0;
 
+    public Task<IndexingSummary> RebuildSearchAsync(IProgress<IndexProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return (_indexer ?? throw new InvalidOperationException("This folder has no search index.")).RebuildAsync(Snapshot, progress, cancellationToken);
+    }
+
     /// <summary>Layers unsaved editor text over disk so search and the link graph see what the user sees.</summary>
     public void SetUnsavedText(string path, string text)
     {

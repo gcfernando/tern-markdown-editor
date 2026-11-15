@@ -84,7 +84,7 @@ public sealed class SettingsViewportTests
         var search = Assert.Single(window.GetVisualDescendants().OfType<TextBox>(), t => AutomationProperties.GetName(t) == "Find a setting");
         search.Text = "wrap";
         Pump(window);
-        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "1 setting · Changes apply when Settings closes");
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "1 setting · Apply or Done commits changes; Cancel discards pending changes");
         var folder = Path.Combine(Screenshots.Folder, "settings-viewport");
         Directory.CreateDirectory(folder);
         using var frame = window.CaptureRenderedFrame();

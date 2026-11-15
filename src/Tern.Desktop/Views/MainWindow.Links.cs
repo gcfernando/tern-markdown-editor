@@ -1,0 +1,27 @@
+using Tern.App.Commands;
+using Tern.Domain.Text;
+using Tern.Markdown;
+
+namespace Tern.Desktop.Views;
+
+public partial class MainWindow
+{
+    internal Func<string, Task<LinkInput?>>? LinkInputPicker { get; set; }
+
+    private async Task InsertLinkAsync()
+    {
+        if (_shown is not { IsReadOnly: false } tab) return;
+        var revision = tab.Session.Revision;
+        var start = Editor.SelectionStart; var length = Editor.SelectionLength;
+        var input = LinkInputPicker is { } picker ? await picker(Editor.SelectedText)
+            : await new InsertLinkWindow(Editor.SelectedText, tab.FilePath, tab.Analysis?.Headings ?? []).ShowDialog<LinkInput?>(this);
+        if (input is null) return;
+        if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || !CanRunCommand(CommandIds.InsertLink))
+        { _shell.StatusMessage = "The document changed while choosing the link. Insert the link again."; return; }
+        var label = input.Label.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("[", "\\[", StringComparison.Ordinal).Replace("]", "\\]", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        var destination = input.Destination.Replace(" ", "%20", StringComparison.Ordinal).Replace("(", "%28", StringComparison.Ordinal).Replace(")", "%29", StringComparison.Ordinal).Replace("<", "%3C", StringComparison.Ordinal).Replace(">", "%3E", StringComparison.Ordinal);
+        if (destination.Any(char.IsControl) || destination.Length == 0) { _shell.StatusMessage = "Enter a valid link destination."; return; }
+        var markdown = $"[{label}]({destination})";
+        ApplyEdit(new EditResult([new TextEdit(start, length, markdown)], start + markdown.Length, 0));
+    }
+}

@@ -6,6 +6,9 @@ namespace Tern.Desktop.Services;
 /// <summary>Hands links and files to the operating system. The shell has already asked the user before an external URL reaches here.</summary>
 public sealed class SystemLauncher : IExternalLauncher
 {
+    public string? TryOpenFile(string path) => TryStart(path);
+    public string? TryRevealInFileManager(string path) => OperatingSystem.IsWindows()
+        ? TryStart("explorer.exe", $"/select,\"{path}\"") : TryStart("xdg-open", $"\"{Path.GetDirectoryName(path)}\"");
     public void OpenUri(Uri uri) => Start(uri.AbsoluteUri);
 
     public void RevealInFileManager(string path)
@@ -25,14 +28,19 @@ public sealed class SystemLauncher : IExternalLauncher
     }
 
     private static void Start(string target, string? arguments = null)
+        => _ = TryStart(target, arguments);
+
+    private static string? TryStart(string target, string? arguments = null)
     {
         try
         {
             using var process = Process.Start(new ProcessStartInfo(target, arguments ?? string.Empty) { UseShellExecute = true });
+            return null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException)
         {
             Trace.TraceWarning("External launch failed ({0}).", ex.GetType().Name);
+            return ex.Message;
         }
     }
 }

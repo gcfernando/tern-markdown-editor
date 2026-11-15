@@ -57,6 +57,16 @@ internal sealed class DiagramControl : Control, IWidthAware
         Focusable = false;
     }
 
+    internal DiagramControl(DiagramControl original)
+    {
+        _flow = original._flow; _sequence = original._sequence; _chart = original._chart;
+        Description = original.Description;
+    }
+
+    internal double? Zoom { get; set; }
+
+    internal void SetZoom(double? value) { Zoom = value; InvalidateMeasure(); }
+
     public string Description { get; }
     public double DiagramWidth => _flow?.Width ?? _sequence?.Width ?? _chart?.Width ?? 0;
 
@@ -85,18 +95,16 @@ internal sealed class DiagramControl : Control, IWidthAware
         }
 
         var available = double.IsFinite(_availableWidth) ? _availableWidth : double.IsInfinity(availableSize.Width) ? DiagramWidth : availableSize.Width;
-        _scale = FitToWidth ? Math.Min(1, available / DiagramWidth) : Math.Clamp(available / DiagramWidth, MinScale, 1);
+        _scale = Zoom ?? (FitToWidth ? Math.Min(1, available / DiagramWidth) : Math.Clamp(available / DiagramWidth, MinScale, 1));
         return new Size(Math.Ceiling(DiagramWidth * _scale), Math.Ceiling(DiagramHeight * _scale));
     }
 
     public override void Render(DrawingContext context)
     {
         var foreground = PreviewTheme.Resolve(this, PreviewKeys.Foreground);
-        var background = PreviewTheme.Resolve(this, PreviewKeys.Background);
-        var dark = background is ISolidColorBrush solid && solid.Color.R + solid.Color.G + solid.Color.B < 384;
-        var border = new SolidColorBrush(Color.Parse(dark ? "#8B949E" : "#57606A"));
+        var border = PreviewTheme.Resolve(this, PreviewKeys.Muted);
         var accent = border;
-        var fill = new SolidColorBrush(Color.Parse(dark ? "#21262D" : "#FFFFFF"));
+        var fill = PreviewTheme.Resolve(this, PreviewKeys.CodeBackground);
         var muted = PreviewTheme.Resolve(this, PreviewKeys.Muted);
         var palette = new Palette(foreground, border, accent, fill, muted);
 

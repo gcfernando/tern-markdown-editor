@@ -96,6 +96,21 @@ public sealed class WorkspaceIndexer : IDisposable
         finally { _gate.Release(); }
     }
 
+    /// <summary>Recreates only this workspace's disposable search cache, preserving unsaved overlays.</summary>
+    public async Task<IndexingSummary> RebuildAsync(WorkspaceSnapshot snapshot, IProgress<IndexProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (!WorkspacePaths.PathsEqual(snapshot.Root, _root)) throw new ArgumentException("Snapshot belongs to another workspace.", nameof(snapshot));
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            _index.Reset("Rebuilt at the user's request");
+            return await ReconcileAsync(progress, cancellationToken, snapshot).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
     /// <summary>Applies a batch of watcher changes. File events are re-verified against the disk; folder events and overflow trigger a reconcile.</summary>
     public async Task<IndexingSummary> ApplyChangesAsync(WorkspaceChangeSet changes, CancellationToken cancellationToken = default)
     {
@@ -127,7 +142,7 @@ public sealed class WorkspaceIndexer : IDisposable
 
         _disposed = true;
         Detach();
-        _gate.Dispose();
+        // Queued/in-flight work can still release the semaphore after the view closes.
     }
 
     private void OnWatcherChanged(object? sender, WorkspaceChangeSet changes)

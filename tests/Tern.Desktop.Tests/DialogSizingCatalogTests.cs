@@ -26,13 +26,19 @@ public sealed class DialogSizingCatalogTests
     private sealed record DialogMeasurement(string Dialog, double Scale, string State, double Width, double Height, double ClientWidth, double ClientHeight);
 
     [AvaloniaTheory]
-    [InlineData(1.0)]
-    [InlineData(1.5)]
-    [InlineData(2.0)]
-    public async Task Every_custom_dialog_uses_its_content_specific_default_and_keeps_primary_actions_inside_the_screen(double scale)
+    [InlineData(1.0, ThemeChoice.Paper)]
+    [InlineData(1.5, ThemeChoice.Paper)]
+    [InlineData(2.0, ThemeChoice.Paper)]
+    [InlineData(1.0, ThemeChoice.Midnight)]
+    [InlineData(1.5, ThemeChoice.Midnight)]
+    [InlineData(2.0, ThemeChoice.Midnight)]
+    public async Task Every_custom_dialog_uses_its_content_specific_default_and_keeps_primary_actions_inside_the_screen(double scale, ThemeChoice theme)
     {
         using var fixture = new DesktopFixture();
         SetScale(fixture, scale);
+        fixture.Shell.Settings.Theme = theme; fixture.Window.ApplyTheme();
+        Assert.Equal(theme == ThemeChoice.Paper ? Avalonia.Styling.ThemeVariant.Light : Avalonia.Styling.ThemeVariant.Dark,
+            Avalonia.Application.Current!.ActualThemeVariant);
         var catalog = Catalog(fixture);
         var measurements = new List<DialogMeasurement>();
         var covered = new HashSet<Type>();
@@ -55,6 +61,7 @@ public sealed class DialogSizingCatalogTests
                     }
                     else if (dialog is AboutWindow) AssertInsideViewport(Named<Expander>(dialog, "Third-party details"));
                     Capture(dialog, entry.Id, scale, "default");
+                    Capture(dialog, entry.Id, scale, "default-" + theme);
                     measurements.Add(Measure(dialog, entry.Id, scale, "default"));
                 }
                 finally { dialog.Close(); Dispatcher.UIThread.RunJobs(); }
@@ -121,7 +128,7 @@ public sealed class DialogSizingCatalogTests
                 Assert.True(dialog.ClientSize.Height > collapsed + 16,
                     "Expanding URL details must visibly increase the default dialog instead of consuming an unchanged empty box.");
                 AssertBounded(dialog, "expanded URL");
-                AssertActionInside(dialog, "Download and Open");
+                AssertActionInside(dialog, "Save portable copy…");
                 AssertActionInside(dialog, "Close");
                 measurements.Add(Measure(dialog, "open-url", scale, "expanded-" + cycle));
                 Capture(dialog, "open-url", scale, "details-expanded");
@@ -205,14 +212,17 @@ public sealed class DialogSizingCatalogTests
             new("copilot", () => new CopilotConnectionWindow(), "Continue", "Close"),
             new("create-item", () => new CreateItemWindow(CreateItemKind.Workspace, fixture.Docs, true), "Create", "Cancel creation"),
             new("export", () => new ExportWindow("meeting.md", null, current, MarkdownProfile.Extended, null, ExportFormat.Html), "Export document", "Close export"),
+            new("print-preview", () => new PrintPreviewWindow("meeting.md", current, Tern.Export.ExportDefaults.PreviewOptions), "Open printable PDF…", "Close"),
             new("insert-table", () => new InsertTableWindow(), "Insert table", "Cancel"),
+            new("insert-link", () => new InsertLinkWindow("Useful reference", Path.Combine(fixture.Docs, "meeting.md"), []), "Insert link", "Cancel"),
+            new("insert-image", () => new InsertImageWindow(SyntheticImage(), "diagram.png", Path.Combine(fixture.Docs, "meeting.md"), null), "Insert image", "Cancel"),
             new("version-history", () => new HistoryWindow("meeting.md", versions, current), "Open selected version as unsaved copy", "Close"),
             new("version-history-empty", () => new HistoryWindow("meeting.md", [], current), "Close"),
             new("feature-guide", () => new HelpWindow(fixture.Shell.Registry), "Exit guide", "Next"),
             new("filename", () => new FileNameWindow(false, fixture.Docs, true, "meeting.md"), "Rename", "Cancel"),
             new("mcp", () => new MCPConnectionsWindow(), "Continue", "Close"),
             new("merge", () => new MergeWindow("meeting.md", ThreeWayMerger.Merge("one\ntwo\n", "one\nmy change\n", "one\ndisk change\n")), "Accept merged text", "Cancel"),
-            new("open-url", () => new OpenUrlWindow(), "Download and Open", "Close"),
+            new("open-url", () => new OpenUrlWindow(), "Save portable copy…", "Close"),
             new("prompt", () => new PromptWindow("Close document", "Save changes to meeting.md before closing?", ["Save", "Don't save", "Cancel"], 0, 2), "Save", "Cancel"),
             new("rename-links", () => new RenameLinksWindow(repair), "Apply reviewed link updates", "Keep links unchanged"),
             new("recovery", () => new RecoveryReviewWindow(record, current), "Restore as unsaved copy", "Ask later"),
@@ -220,6 +230,14 @@ public sealed class DialogSizingCatalogTests
             new("settings", () => new SettingsWindow(new AppSettings { UiScale = fixture.Shell.Settings.UiScale }, fixture.Shell.Registry), "Close settings"),
             new("shortcuts", () => new ShortcutsWindow(fixture.Shell.Registry), "Close shortcuts"),
         ];
+    }
+
+    private static byte[] SyntheticImage()
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(32, 20); bitmap.Erase(SkiaSharp.SKColors.SteelBlue);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
     }
 
     [AvaloniaTheory]
@@ -235,8 +253,7 @@ public sealed class DialogSizingCatalogTests
         {
             dialog.Show(fixture.Window);
             await Settle(dialog);
-            var summary = Assert.Single(dialog.GetVisualDescendants().OfType<TextBlock>(),
-                label => label.Text?.StartsWith("1 conflicting region", StringComparison.Ordinal) == true);
+            var summary = Named<TextBlock>(dialog, "Merge review progress");
             var panes = new[] { "Common ancestor", "My version", "Version on disk" }.Select(name => Named<TextBox>(dialog, name)).ToArray();
             var choices = new[] { "Keep mine", "Take disk", "Both", "Original" }.Select(name => Named<Button>(dialog, name)).ToArray();
             var resultLabel = Assert.Single(dialog.GetVisualDescendants().OfType<TextBlock>(), label => label.Text == "Merged result (editable)");

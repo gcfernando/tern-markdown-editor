@@ -45,8 +45,8 @@ public sealed class BeginnerLibraryTests
         Pump(fixture);
         var recentPath = Path.Combine(AppPaths.Under(fixture.AppData).StateDirectory, RecentItemsStore.FileName);
         using var preventReplacement = new FileStream(recentPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var button = Assert.Single(fixture.Window.FindControl<ListBox>("SideList")!.GetVisualDescendants().OfType<Button>(), b => AutomationProperties.GetName(b) == "Remove file reference");
-        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var button = Assert.Single(fixture.Window.FindControl<ListBox>("SideList")!.GetVisualDescendants().OfType<Button>(), b => AutomationProperties.GetName(b) == "File reference actions");
+        GuiContractActions.InvokeFileReferenceAction(button, fixture.Window);
         Pump(fixture);
         Assert.NotNull(fixture.Shell.Recent.LastSaveError);
         Assert.Contains("for this session", fixture.Shell.StatusMessage, StringComparison.Ordinal);
@@ -127,9 +127,9 @@ public sealed class BeginnerLibraryTests
         var row = Assert.Single(list.Items.OfType<SideRow>(), r => r.Path == path);
         Assert.True(row.CanRemoveReference);
         Assert.Equal(missing, row.IsMissing);
-        var button = Assert.Single(list.GetVisualDescendants().OfType<Button>(), b => Equals(b.DataContext, row) && AutomationProperties.GetName(b) == "Remove file reference");
+        var button = Assert.Single(list.GetVisualDescendants().OfType<Button>(), b => Equals(b.DataContext, row) && AutomationProperties.GetName(b) == "File reference actions");
         Assert.True(button.IsEffectivelyVisible);
-        Assert.NotNull(Assert.IsType<Avalonia.Controls.Shapes.Path>(button.Content).Data);
+        Assert.Equal("⋯", button.Content);
         Assert.True(button.Bounds.Width >= 32 && button.Bounds.Height >= 36);
         if (nav == "Files" && !missing)
         {
@@ -145,6 +145,7 @@ public sealed class BeginnerLibraryTests
         fixture.Window.MouseDown(point, MouseButton.Left);
         fixture.Window.MouseUp(point, MouseButton.Left);
         Pump(fixture);
+        GuiContractActions.InvokeFileReferenceAction(button, fixture.Window);
         Assert.Same(second, fixture.Shell.ActiveTab);
         Assert.Equal(nav == "Recent", fixture.Shell.Tabs.Contains(first));
         Assert.Equal("unsaved # Original\n", first.CurrentText);
@@ -173,7 +174,7 @@ public sealed class BeginnerLibraryTests
         var list = fixture.Window.FindControl<ListBox>("SideList")!;
         Assert.NotEmpty(list.Items.OfType<SideRow>());
         Assert.All(list.Items.OfType<SideRow>(), r => Assert.False(r.CanRemoveReference));
-        Assert.DoesNotContain(list.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Remove file reference");
+        Assert.DoesNotContain(list.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "File reference actions");
     }
 
     [AvaloniaFact]

@@ -54,8 +54,8 @@ public sealed class WorkspaceContextMenuTests
         Assert.Equal(directory
             ? ["Create File…", "Create Folder…", "Create Workspace…", "Close Folder Documents", "Collapse Folder"]
             : open
-                ? ["Open", "Rename…", "Delete…", "Close all", "Close tabs to the right", "Close other tabs", "Close Document"]
-                : ["Open", "Rename…", "Delete…", "Close all", "Close tabs to the right", "Close other tabs"], labels);
+                ? ["Open", "Rename…", "Move file to Recycle Bin…", "Close all", "Close tabs to the right", "Close other tabs", "Close Document"]
+                : ["Open", "Rename…", "Move file to Recycle Bin…", "Close all", "Close tabs to the right", "Close other tabs"], labels);
         Assert.Same(tab, fixture.Shell.ActiveTab);
         Assert.Equal(tabs, fixture.Shell.Tabs.Count);
         Assert.Same(company, fixture.Shell.Workspace);
@@ -90,16 +90,17 @@ public sealed class WorkspaceContextMenuTests
         command.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         menu.Close();
         await UntilAsync(fixture, () => fixture.Window.OwnedWindows.Any());
-        var dialog = Assert.IsType<FileNameWindow>(Assert.Single(fixture.Window.OwnedWindows));
+        var dialog = Assert.IsType<CreateItemWindow>(Assert.Single(fixture.Window.OwnedWindows));
         Assert.DoesNotContain(fixture.Window.OwnedWindows, window => window is AddDestinationWindow);
         Assert.Contains(dialog.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == company.Root
             || text.Text is { } detail && detail.EndsWith(company.Root, StringComparison.Ordinal));
-        var input = Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), text => AutomationProperties.GetName(text) == fieldName);
+        var input = Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), text => AutomationProperties.GetName(text) == (action == "workspace" ? "Workspace name" : fieldName));
         input.Text = itemName;
         var create = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Create"));
         create.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var target = Path.Combine(company.Root, itemName);
-        await UntilAsync(fixture, () => action == "file" ? File.Exists(target) : fixture.Shell.OpenWorkspaces.Any(workspace => WorkspacePaths.PathsEqual(workspace.Root, target)));
+        await UntilAsync(fixture, () => !fixture.Window.OwnedWindows.Any()
+            && (action == "file" ? File.Exists(target) : fixture.Shell.OpenWorkspaces.Any(workspace => WorkspacePaths.PathsEqual(workspace.Root, target))));
         Assert.False(File.Exists(Path.Combine(diagrams.Root, itemName)));
         Assert.False(Directory.Exists(Path.Combine(diagrams.Root, itemName)));
         if (action == "workspace") Assert.NotNull(WorkspaceDefinition.Load(target));
@@ -110,7 +111,7 @@ public sealed class WorkspaceContextMenuTests
     {
         for (var attempt = 0; attempt < 160; attempt++)
         { Pump(fixture); if (completed()) return; await Task.Delay(10, TestContext.Current.CancellationToken); }
-        Assert.True(completed(), "The contextual creation did not finish.");
+        Assert.True(completed(), "The contextual creation did not finish. " + fixture.Shell.StatusMessage);
     }
 
     private static void Pump(DesktopFixture fixture)

@@ -49,7 +49,7 @@ public sealed class AIWritingWorkflowTests
         Pump(f.Window);
         Assert.True(f.Window.IsOverlayOpen);
         var panel = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIPromptPanel>());
-        Assert.DoesNotContain(panel.GetVisualDescendants().OfType<ComboBox>(), box => AutomationProperties.GetName(box) == "AI text scope");
+        Assert.Equal("Entire note", Find<ComboBox>(panel, "AI text scope").SelectedItem);
         var question = Find<TextBox>(panel, "AI writing question");
         await Until(() => question.IsFocused);
         question.Text = "Make the draft clearer";
@@ -58,7 +58,7 @@ public sealed class AIWritingWorkflowTests
         else Click(Find<Button>(panel, "Generate AI suggestion"));
         var review = await WaitForReview(f);
         Assert.Equal("# Original", active.CurrentText);
-        Click(review.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Apply")));
+        Click(review.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Apply changes")));
         Assert.False(f.Window.IsOverlayOpen);
         Assert.Equal("# Updated\r\nA clearer draft.", active.CurrentText);
         Assert.Equal("# Reference stays unchanged", reference.CurrentText);
@@ -152,7 +152,7 @@ public sealed class AIWritingWorkflowTests
         var instruction = Find<TextBox>(prompt, "AI writing question");
         Assert.True(instruction.Bounds.Height >= 260);
         await Until(() => instruction.IsFocused);
-        Click(ButtonNamed(prompt, "Rewrite"));
+        Click(ButtonNamed(prompt, "Improve selected text"));
         Assert.Contains("Rewrite this for clarity", instruction.Text, StringComparison.Ordinal);
         instruction.Text = "Improve this";
         Click(Find<Button>(prompt, "Generate AI suggestion"));
@@ -169,7 +169,7 @@ public sealed class AIWritingWorkflowTests
         Click(Find<Button>(reopened, "Generate AI suggestion"));
         review = await WaitForReview(f);
         note.ApplyEdits([Tern.Domain.Text.TextEdit.Insert(0, "New edit\n")]);
-        Click(review.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Apply")));
+        Click(review.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Apply changes")));
         Assert.StartsWith("New edit\nPrivate text", note.CurrentText, StringComparison.Ordinal);
         Assert.True(f.Window.IsOverlayOpen);
     }
@@ -195,10 +195,12 @@ public sealed class AIWritingWorkflowTests
             return Reply("""{"answer":"Beta was selected [1].","sources":[{"id":1,"reason":"Decision record"},{"id":99,"reason":"Invented"}]}""");
         });
         var selected = await f.WriteAsync("first/decision.md", "# Decision\nBeta was selected.");
+        await f.WriteAsync("first/excluded.md", "# Decision\nBeta is EXCLUDED PRIVATE.");
         await f.WriteAsync("second/secret.md", "# Decision\nBeta is PRIVATE.");
         Assert.True(await f.Shell.OpenFolderAsync(Path.GetDirectoryName(selected)!));
         Assert.True(await f.Shell.OpenFolderAsync(Path.Combine(f.Docs, "second")));
         var first = Assert.Single(f.Shell.OpenWorkspaces, root => root.Root == Path.GetDirectoryName(selected));
+        Click(f.Window.FindControl<Button>("AIEntryButton")!); Pump(f.Window);
         Click(Find<Button>(f.Window, "Ask your workspace with AI"));
         var window = Assert.Single(f.Window.OwnedWindows);
         Pump(window);
@@ -207,6 +209,14 @@ public sealed class AIWritingWorkflowTests
         var send = ButtonNamed(window, "Send reviewed request");
         Click(ButtonNamed(window, "Find passages"));
         await Until(() => send.IsEnabled);
+        var includes = window.GetVisualDescendants().OfType<CheckBox>()
+            .Where(c => c.Content is string label && label.StartsWith("Include [", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(2, includes.Length);
+        var excluded = includes.Single(c => c.Content!.ToString()!.Contains("excluded.md", StringComparison.Ordinal));
+        excluded.IsChecked = false;
+        var included = includes.Single(c => !ReferenceEquals(c, excluded));
+        included.IsChecked = false; Assert.False(send.IsEnabled);
+        included.IsChecked = true; Assert.True(send.IsEnabled);
         var requestPreview = window.GetLogicalDescendants().OfType<TextBox>()
             .Single(box => AutomationProperties.GetName(box) == "Exact workspace AI request");
         Assert.Contains("Beta was selected", requestPreview.Text, StringComparison.Ordinal);
@@ -266,7 +276,7 @@ public sealed class AIWritingWorkflowTests
         Pump(f.Window);
         var panel = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIPromptPanel>());
         var scope = Find<ComboBox>(panel, "AI text scope");
-        Assert.Equal(new[] { "Selected text", "Entire note" }, scope.Items.OfType<string>());
+        Assert.Equal(new[] { "Selected text", "Entire note", "Instruction only" }, scope.Items.OfType<string>());
         Click(Find<Button>(panel, "Generate AI suggestion"));
         var review = await WaitForReview(f);
         Pump(f.Window);
@@ -277,7 +287,7 @@ public sealed class AIWritingWorkflowTests
         Assert.Equal(original.Bounds.Height, result.Bounds.Height);
         Assert.Same(ButtonNamed(review, "Close").Parent, ButtonNamed(review, "Back").Parent);
         Assert.DoesNotContain("Short summary", note.CurrentText, StringComparison.Ordinal);
-        Click(ButtonNamed(review, "Apply"));
+        Click(ButtonNamed(review, "Insert result"));
         Assert.Contains("Details", note.CurrentText, StringComparison.Ordinal);
         Assert.Contains("# Second\nKeep", note.CurrentText, StringComparison.Ordinal);
         Assert.True(note.CurrentText.IndexOf("Short summary", StringComparison.Ordinal) < note.CurrentText.IndexOf("# Second", StringComparison.Ordinal));
@@ -297,7 +307,7 @@ public sealed class AIWritingWorkflowTests
         Click(Find<Button>(composer, "Generate AI suggestion"));
         var review = await WaitForReview(f);
         Pump(f.Window);
-        Assert.Equal(new[] { "Apply", "Back", "Close", "Copy result" },
+        Assert.Equal(new[] { "Apply changes", "Back", "Close", "Copy result" },
             review.GetVisualDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible && button is not CheckBox)
                 .Select(button => button.Content).OfType<string>().OrderBy(label => label, StringComparer.Ordinal));
         var before = review.GetVisualDescendants().OfType<TextBox>().First(box => AutomationProperties.GetName(box) == "Original Markdown");
@@ -305,14 +315,15 @@ public sealed class AIWritingWorkflowTests
         Assert.True(before.Bounds.Height > 0);
         Assert.Equal(before.Bounds.Height, after.Bounds.Height);
         Assert.Empty(review.GetVisualDescendants().OfType<CheckBox>());
-        var apply = ButtonNamed(review, "Apply");
+        var apply = ButtonNamed(review, "Apply changes");
         Assert.True(apply.IsEnabled);
         if (escape)
         {
             var close = ButtonNamed(review, "Close");
             Assert.True(before.IsKeyboardFocusWithin);
             var comparisons = review.GetVisualDescendants().OfType<TextBox>().ToArray();
-            Control[] order = [after, comparisons[2], comparisons[3],
+            Assert.Equal(2, comparisons.Length); // One complete before/after comparison.
+            Control[] order = [after,
                 ButtonNamed(review, "Back"), ButtonNamed(review, "Copy result"), apply, close];
             foreach (var control in order)
             {
@@ -372,7 +383,11 @@ public sealed class AIWritingWorkflowTests
                 table.KeyPress(Key.Tab, RawInputModifiers.None, PhysicalKey.Tab, null);
                 Assert.True(ButtonNamed(table, "Cancel").IsKeyboardFocusWithin);
                 table.KeyPress(Key.Tab, RawInputModifiers.None, PhysicalKey.Tab, null);
+                Assert.True(Find<Button>(table, "Learn more about this screen").IsKeyboardFocusWithin);
+                table.KeyPress(Key.Tab, RawInputModifiers.None, PhysicalKey.Tab, null);
                 Assert.True(table.RowsInput.IsKeyboardFocusWithin);
+                table.KeyPress(Key.Tab, RawInputModifiers.Shift, PhysicalKey.Tab, null);
+                Assert.True(Find<Button>(table, "Learn more about this screen").IsKeyboardFocusWithin);
                 table.KeyPress(Key.Tab, RawInputModifiers.Shift, PhysicalKey.Tab, null);
                 Assert.True(ButtonNamed(table, "Cancel").IsKeyboardFocusWithin);
             }
@@ -388,7 +403,71 @@ public sealed class AIWritingWorkflowTests
     }
 
     [AvaloniaFact]
-    public async Task Guide_answers_arbitrary_questions_inline_without_attaching_the_note()
+    public async Task Instruction_only_shares_no_note_text_and_inserts_one_undoable_result()
+    {
+        string? sent = null;
+        using var f = Fixture(async (request, token) => { sent = await request.Content!.ReadAsStringAsync(token); return Reply("New paragraph"); });
+        var tab = f.Shell.NewDocument("PRIVATE EXISTING NOTE");
+        f.Window.Editor.CaretOffset = tab.CurrentText.Length;
+        f.Window.ShowAIWritingPrompt(preferredScope: "Instruction only"); Pump(f.Window);
+        var prompt = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIPromptPanel>());
+        Find<TextBox>(prompt, "AI writing question").Text = "Create a paragraph";
+        Click(Find<Button>(prompt, "Generate AI suggestion"));
+        var review = await WaitForReview(f);
+        Assert.DoesNotContain("PRIVATE EXISTING NOTE", sent, StringComparison.Ordinal);
+        Assert.Contains("Create a paragraph", sent, StringComparison.Ordinal);
+        Click(ButtonNamed(review, "Insert result"));
+        Assert.Equal("PRIVATE EXISTING NOTE\r\n\r\nNew paragraph", tab.CurrentText);
+        await f.Window.RunCommandAsync(CommandIds.Undo);
+        Assert.Equal("PRIVATE EXISTING NOTE", tab.CurrentText);
+    }
+
+    [AvaloniaFact]
+    public async Task Tutor_followups_share_disclosed_history_but_never_attach_document_selections()
+    {
+        var requests = new List<string>();
+        using var f = Fixture(async (request, token) => { requests.Add(await request.Content!.ReadAsStringAsync(token)); return Reply("A grounded explanation"); });
+        f.Shell.NewDocument("PRIVATE BEFORE\nSelected excerpt\nPRIVATE AFTER");
+        f.Window.Editor.Select("PRIVATE BEFORE\n".Length, "Selected excerpt".Length);
+        using var tutor = new HelpTutorView(f.Window.AIWorkspace, f.Shell.Registry, () => Task.CompletedTask, null, null, _ => { }, null,
+            () => f.Window.Editor.SelectedText);
+        var window = new Window { Content = tutor }; window.Show(f.Window); Pump(window);
+        tutor.Connections.SelectedIndex = 0;
+        tutor.Question.Text = "Explain headings"; Click(tutor.SendButton);
+        await Until(() => tutor.SendButton.IsEnabled && tutor.Transcript.Text?.Contains("A grounded explanation", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain("Selected excerpt", requests[0], StringComparison.Ordinal);
+        Assert.DoesNotContain(tutor.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Use selected text"));
+        tutor.Question.Text = "How do I search a note?"; Click(tutor.SendButton);
+        await Until(() => requests.Count == 2 && tutor.SendButton.IsEnabled);
+        Assert.Contains("EARLIER CONVERSATION", requests[1], StringComparison.Ordinal);
+        Assert.Contains("Explain headings", requests[1], StringComparison.Ordinal);
+        Assert.DoesNotContain("Selected excerpt", requests[1], StringComparison.Ordinal);
+        Assert.DoesNotContain("PRIVATE BEFORE", requests[1], StringComparison.Ordinal);
+        Assert.DoesNotContain("PRIVATE AFTER", requests[1], StringComparison.Ordinal);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Failed_provider_automatically_recovers_with_installed_export_steps()
+    {
+        using var f = Fixture((_, _) => throw new InvalidOperationException("Synthetic provider unavailable"));
+        using var tutor = new HelpTutorView(f.Window.AIWorkspace, f.Shell.Registry, () => Task.CompletedTask, null, null, _ => { }, null);
+        var window = new Window { Content = tutor }; window.Show(f.Window); Pump(window);
+        try
+        {
+            tutor.Connections.SelectedIndex = 0;
+            tutor.Question.Text = "How do I export a PDF?"; Click(tutor.SendButton);
+            await Until(() => tutor.SendButton.IsEnabled && tutor.Transcript.IsVisible);
+            Assert.Contains("offline answer", tutor.Transcript.Text);
+            Assert.Contains("Export as", tutor.Transcript.Text);
+            Assert.Contains("recovered", Find<TextBlock>(tutor, "Tern help status").Text);
+            Assert.Equal("How do I export a PDF?", tutor.Question.Text);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Guide_rejects_unrelated_questions_before_any_provider_request()
     {
         string? sent = null;
         using var f = Fixture(async (request, token) =>
@@ -400,11 +479,18 @@ public sealed class AIWritingWorkflowTests
         await f.Window.RunCommandAsync(CommandIds.Help);
         var guide = Assert.Single(f.Window.OwnedWindows.OfType<HelpWindow>());
         Pump(guide);
-        Find<TextBox>(guide, "Search feature help").Text = "Explain photosynthesis simply";
-        Click(Find<Button>(guide, "Ask question"));
-        await Until(() => Find<SelectableTextBlock>(guide, "Guide AI answer").Text == "Plants use sunlight to make food.");
-        Assert.Contains("photosynthesis", sent, StringComparison.Ordinal);
-        Assert.DoesNotContain("PRIVATE NOTE NOT INCLUDED", sent, StringComparison.Ordinal);
+        var sections = Assert.Single(guide.GetLogicalDescendants().OfType<TabControl>(), t => t.Items.OfType<TabItem>().Any(i => Equals(i.Header, "Ask & learn")));
+        sections.SelectedIndex = 1; Pump(guide);
+        var tutor = Assert.Single(guide.GetLogicalDescendants().OfType<HelpTutorView>().Distinct());
+        Assert.Null(tutor.Connections.SelectedItem);
+        tutor.Connections.SelectedIndex = 0;
+        tutor.Question.Text = "Explain photosynthesis simply";
+        Click(tutor.SendButton);
+        Pump(guide);
+        Assert.Null(sent);
+        Assert.False(tutor.Transcript.IsVisible);
+        Assert.Contains("Ask about using Tern", Find<TextBlock>(tutor, "Tern help status").Text);
+        Assert.Equal("Explain photosynthesis simply", tutor.Question.Text);
         Assert.Empty(guide.OwnedWindows);
         guide.Close();
     }
@@ -584,6 +670,40 @@ public sealed class AIWritingWorkflowTests
         return new AIWorkspaceService(directory, new EmptyVault(), () => new AIConnectionClient(new Handler((request, token) =>
             request.Method == HttpMethod.Get ? check?.Invoke(request, token) ?? Task.FromResult(Models()) : send(request, token))));
     });
+
+    [AvaloniaFact]
+    public async Task Changed_credentials_invalidate_validation_status_and_cached_checks()
+    {
+        var vault = new MutableVault(); var checks = 0;
+        using var f = new DesktopFixture(directory =>
+        {
+            new AIProfileStore(directory).Save([new(FirstId, "Writing", "chat-completions", "https://example.test/v1/chat/completions", "model-one", DiscoveryEndpoint: "https://example.test/v1/models")]);
+            return new AIWorkspaceService(directory, vault, () => new AIConnectionClient(new Handler((request, _) =>
+            {
+                if (request.Method == HttpMethod.Get) { checks++; return Task.FromResult(Models()); }
+                return Task.FromResult(Reply("Answer"));
+            })));
+        });
+        vault.Save(FirstId, "synthetic-secret-one");
+        var workspace = f.Window.AIWorkspace;
+        await workspace.SendWritingAsync(FirstId, "An explicit test question", () => true, TestContext.Current.CancellationToken);
+        var profile = Assert.Single(workspace.Connections);
+        Assert.NotNull(workspace.Summary(profile).TestedAt); Assert.Equal(1, checks);
+        vault.Save(FirstId, "synthetic-secret-two"); workspace.Reload();
+        Assert.Equal("Not checked this session", workspace.Summary(profile).State);
+        Assert.Null(workspace.Summary(profile).TestedAt);
+        Assert.DoesNotContain("synthetic-secret", workspace.Summary(profile).Description, StringComparison.Ordinal);
+        await workspace.SendWritingAsync(FirstId, "Another explicit question", () => true, TestContext.Current.CancellationToken);
+        Assert.Equal(2, checks);
+    }
+
+    private sealed class MutableVault : IAICredentialStore
+    {
+        private readonly Dictionary<string, string> _values = [];
+        public string? Read(string profileId) => _values.GetValueOrDefault(profileId);
+        public void Save(string profileId, string secret) => _values[profileId] = secret;
+        public void Remove(string profileId) => _values.Remove(profileId);
+    }
 
     private static HttpResponseMessage Reply(string text, string finishReason = "stop") => new(HttpStatusCode.OK)
     {

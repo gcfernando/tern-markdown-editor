@@ -100,12 +100,14 @@ public sealed class HtmlExporterTests(ITestOutputHelper output)
             ---
             """).Html;
 
-        foreach (var fragment in new[] { "<strong>bold</strong>", "<em>em</em>", "<del>gone</del>", "<code>code</code>", "<ul", "<ol", "<blockquote", "<table", "<thead", "language-csharp", "var x = 1 &lt; 2;", "<hr" })
+        foreach (var fragment in new[] { "<strong>bold</strong>", "<em>em</em>", "<del>gone</del>", "<code>code</code>", "<ul", "<ol", "<blockquote", "<table", "<thead", "language-csharp", "<hr" })
         {
             Assert.Contains(fragment, html, StringComparison.Ordinal);
         }
 
         Assert.Contains("href=\"https://example.com/x\"", html, StringComparison.Ordinal);
+        var code = System.Text.RegularExpressions.Regex.Match(html, "<pre><code[^>]*>(.*?)</code></pre>", System.Text.RegularExpressions.RegexOptions.Singleline).Groups[1].Value;
+        Assert.Equal("var x = 1 < 2;", System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(code, "<[^>]+>", "")));
         Assert.Contains("rel=\"noopener noreferrer\"", html, StringComparison.Ordinal);
         Assert.Contains("class=\"task done\"", html, StringComparison.Ordinal);
         Assert.Contains("aria-label=\"not done\"", html, StringComparison.Ordinal);

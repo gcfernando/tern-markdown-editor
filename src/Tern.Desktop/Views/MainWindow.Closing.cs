@@ -29,7 +29,7 @@ public partial class MainWindow
         return true;
     }
 
-    private static void OnFolderCollapseClick(object? sender, RoutedEventArgs e)
+    private void OnFolderCollapseClick(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;
         if ((sender as Control)?.DataContext is TreeRow row) row.IsExpanded = false;

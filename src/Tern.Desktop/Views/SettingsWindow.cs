@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using System.Text.Json;
 using Tern.App.Commands;
 using Tern.App.Help;
 using Tern.App.Settings;
@@ -20,10 +21,28 @@ public sealed class SettingsWindow : Window
     private readonly Func<string, Task>? _openFeature;
     private readonly Func<string, Task>? _askAI;
     private readonly Func<string, CancellationToken, Task<string>>? _answerAI;
+    internal AppSettings WorkingSettings { get; private set; } = null!;
+    private TextBlock? _sourceFontSample;
+    private TextBlock? _readingFontSample;
+
+    private void RefreshTypography()
+    {
+        if (_sourceFontSample is null || _readingFontSample is null) return;
+        try { _sourceFontSample.FontFamily = new FontFamily(WorkingSettings.EditorFontFamily); } catch (ArgumentException) { }
+        _sourceFontSample.FontSize = WorkingSettings.EditorFontSize;
+        _sourceFontSample.TextWrapping = WorkingSettings.WordWrap ? TextWrapping.Wrap : TextWrapping.NoWrap;
+        _readingFontSample.FontSize = WorkingSettings.PreviewFontSize;
+    }
     public SettingsWindow(AppSettings settings, CommandRegistry? registry = null, Func<string, Task>? openFeature = null, Func<string, Task>? askAI = null,
         Func<Window, Task>? configureAI = null, Func<IReadOnlyList<AIConnectionProfile>>? aiProfiles = null, string? initialCategory = null,
-        Func<string, CancellationToken, Task<string>>? answerAI = null, Func<IReadOnlyList<WorkspaceConnection>>? workspaceConnections = null)
+        Func<string, CancellationToken, Task<string>>? answerAI = null, Func<IReadOnlyList<WorkspaceConnection>>? workspaceConnections = null,
+        Action? commit = null)
     {
+        var liveSettings = settings;
+        settings = WorkingSettings = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings))!;
+        var liveRegistry = registry ?? CommandRegistry.CreateDefault();
+        registry = new CommandRegistry(liveRegistry.Commands);
+        registry.LoadOverrides(liveRegistry.Overrides);
         _openFeature = openFeature;
         _askAI = askAI;
         _answerAI = answerAI;
@@ -40,6 +59,7 @@ public sealed class SettingsWindow : Window
         AutomationProperties.SetName(navigation, "Settings categories");
         var sections = new StackPanel { Spacing = 24 };
         var cards = new List<(SettingFeature Feature, Control Card)>();
+        var reloadEditors = new Dictionary<string, Action>();
         var groups = new Dictionary<string, (Control Heading, StackPanel Cards)>();
         var aiSection = new StackPanel { Spacing = 10 };
         var results = GuideParts.Caption("All settings");
@@ -54,7 +74,8 @@ public sealed class SettingsWindow : Window
             foreach (var feature in FeatureCatalog.SettingsFeatures.Where(f => f.Category == category))
             {
                 var editor = CreateEditor(settings, feature.Property, registry);
-                AutomationProperties.SetName(editor, feature.Name);
+                if (editor is CheckBox check) check.Content = feature.Name;
+                AutomationProperties.SetName(editor, feature.Property == nameof(AppSettings.EditorFontFamily) ? "Editor font options" : feature.Name);
                 ToolTip.SetTip(editor, feature.Description);
                 var help = new Button { Content = "How to use", HorizontalAlignment = HorizontalAlignment.Right };
                 AutomationProperties.SetName(help, "Help for " + feature.Name);
@@ -68,7 +89,14 @@ public sealed class SettingsWindow : Window
                 DockPanel.SetDock(help, Dock.Right);
                 top.Children.Add(help);
                 top.Children.Add(new TextBlock { Text = feature.Name, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
-                var card = GuideParts.Card(GuideParts.Vertical(top, GuideParts.Body(feature.Description), editor));
+                var host = new Border { Child = editor };
+                reloadEditors[feature.Property] = () =>
+                {
+                    var replacement = CreateEditor(settings, feature.Property, registry);
+                    if (replacement is CheckBox check) check.Content = feature.Name;
+                    AutomationProperties.SetName(replacement, feature.Property == nameof(AppSettings.EditorFontFamily) ? "Editor font options" : feature.Name); ToolTip.SetTip(replacement, feature.Description); host.Child = replacement;
+                };
+                var card = GuideParts.Card(GuideParts.Vertical(top, GuideParts.Body(feature.Description), host));
                 cards.Add((feature, card));
                 list.Children.Add(card);
             }
@@ -126,7 +154,7 @@ public sealed class SettingsWindow : Window
             }
             var count = cards.Count(c => c.Card.IsVisible);
             results.Text = aiSection.IsVisible ? "AI connections · Set up once, use throughout Tern"
-                : count == 0 ? "No settings match. Try another word." : $"{count} {(count == 1 ? "setting" : "settings")} · Changes apply when Settings closes";
+                : count == 0 ? "No settings match. Try another word." : $"{count} {(count == 1 ? "setting" : "settings")} · Apply or Done commits changes; Cancel discards pending changes";
         }
         search.TextChanged += (_, _) => Filter();
         navigation.SelectionChanged += (_, _) =>
@@ -134,12 +162,57 @@ public sealed class SettingsWindow : Window
             search.Text = string.Empty;
             Filter();
             if (navigation.SelectedItem is string category)
-                Dispatcher.UIThread.Post(() => groups[category].Heading.BringIntoView(), DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(() => { if (groups.TryGetValue(category, out var group)) group.Heading.BringIntoView(); }, DispatcherPriority.Background);
         };
         var close = new Button { Content = "Done", IsDefault = true, MinWidth = 96, HorizontalAlignment = HorizontalAlignment.Right };
         close.Classes.Add("accent");
         AutomationProperties.SetName(close, "Close settings");
-        close.Click += (_, _) => Close();
+        var apply = new Button { Content = "Apply" };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        var resetCategory = new Button { Content = "Reset this category to defaults" };
+        var applyStatus = GuideParts.Body("AI connection and credential changes are managed separately and take effect immediately.");
+        bool Commit()
+        {
+            var previous = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(liveSettings))!;
+            var previousBindings = liveRegistry.Overrides.ToDictionary();
+            try
+            {
+                settings.Normalize();
+                foreach (var feature in FeatureCatalog.SettingsFeatures)
+                {
+                    var property = typeof(AppSettings).GetProperty(feature.Property)!;
+                    property.SetValue(liveSettings, property.GetValue(settings));
+                }
+                // Clone mutable collections before committing so further pending edits remain private.
+                liveSettings.WorkspaceExclusions = [.. settings.WorkspaceExclusions];
+                liveSettings.KeyBindings = registry.Overrides.ToDictionary();
+                liveRegistry.LoadOverrides(liveSettings.KeyBindings);
+                commit?.Invoke();
+                applyStatus.Text = "Settings applied."; return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+            {
+                foreach (var property in typeof(AppSettings).GetProperties().Where(p => p.CanWrite)) property.SetValue(liveSettings, property.GetValue(previous));
+                liveRegistry.LoadOverrides(previousBindings);
+                applyStatus.Text = "Settings could not be saved. Pending changes are kept here for retry. " + ex.Message;
+                return false;
+            }
+        }
+        apply.Click += (_, _) => Commit();
+        close.Click += (_, _) => { if (Commit()) Close(); };
+        cancel.Click += (_, _) => Close();
+        resetCategory.Click += (_, _) =>
+        {
+            var defaults = new AppSettings();
+            foreach (var feature in FeatureCatalog.SettingsFeatures.Where(f => f.Category == navigation.SelectedItem as string))
+            {
+                var property = typeof(AppSettings).GetProperty(feature.Property)!;
+                property.SetValue(settings, property.GetValue(defaults));
+                if (feature.Property == nameof(AppSettings.KeyBindings)) registry.ResetAll();
+                reloadEditors[feature.Property]();
+            }
+            applyStatus.Text = "Category defaults are pending. Choose Apply or Done to commit them.";
+        };
         var sidebar = new ScrollViewer
         {
             Content = GuideParts.Vertical(GuideParts.Caption("YOUR WORKSPACE"), navigation, GuideParts.Caption("Make space for the way you write.\n\nAI connections are available across notes once configured.")),
@@ -158,7 +231,7 @@ public sealed class SettingsWindow : Window
         Grid.SetColumn(contentScroll, 1);
         Grid.SetRowSpan(contentScroll, 2);
         var description = GuideParts.Body("Your editor, your rhythm. Personalize your workspace and connect the AI services you use.");
-        var footer = GuideParts.Actions(close);
+        var footer = GuideParts.Vertical(applyStatus, GuideParts.Actions(resetCategory, cancel, apply, close));
         var layout = new Grid { Margin = new Thickness(28), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 18, Children =
         {
             GuideParts.Vertical(GuideParts.Caption("SETTINGS"), GuideParts.Title("Make Tern yours"), description),
@@ -193,18 +266,34 @@ public sealed class SettingsWindow : Window
             case nameof(AppSettings.DefaultViewMode): return Choice(settings.DefaultViewMode, v => settings.DefaultViewMode = v);
             case nameof(AppSettings.EditorFontFamily):
                 var font = new TextBox { Text = settings.EditorFontFamily, HorizontalAlignment = HorizontalAlignment.Stretch };
-                font.LostFocus += (_, _) => { if (!string.IsNullOrWhiteSpace(font.Text)) settings.EditorFontFamily = font.Text; };
-                return font;
-            case nameof(AppSettings.EditorFontSize): return DialogParts.Number(settings.EditorFontSize, 8, 48, 1, v => settings.EditorFontSize = v);
-            case nameof(AppSettings.PreviewFontSize): return DialogParts.Number(settings.PreviewFontSize, 8, 48, 1, v => settings.PreviewFontSize = v);
+                AutomationProperties.SetName(font, "Editor font");
+                var choices = new ComboBox { ItemsSource = FontManager.Current.SystemFonts.Select(f => f.Name).Order(StringComparer.OrdinalIgnoreCase).ToArray(), PlaceholderText = "Choose an installed font", HorizontalAlignment = HorizontalAlignment.Stretch };
+                choices.SelectionChanged += (_, _) => { if (choices.SelectedItem is string name) font.Text = name; };
+                var sample = _sourceFontSample = new TextBlock { Text = "# A note worth keeping\nThe quick brown fox · 0123456789", TextWrapping = TextWrapping.Wrap };
+                var reading = _readingFontSample = new TextBlock { Text = "A note worth keeping\nThe quick brown fox · 0123456789", TextWrapping = TextWrapping.Wrap };
+                void PreviewFont()
+                {
+                    if (string.IsNullOrWhiteSpace(font.Text)) return;
+                    settings.EditorFontFamily = font.Text;
+                    RefreshTypography();
+                }
+                font.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) PreviewFont(); };
+                PreviewFont();
+                return GuideParts.Vertical(choices, font, GuideParts.Caption("Source preview"), sample, GuideParts.Caption("Reading preview"), reading, GuideParts.Caption("Installed fonts only. A configured comma-separated fallback chain can be entered above."));
+            case nameof(AppSettings.EditorFontSize): return DialogParts.Number(settings.EditorFontSize, 8, 48, 1, v => { settings.EditorFontSize = v; RefreshTypography(); });
+            case nameof(AppSettings.PreviewFontSize): return DialogParts.Number(settings.PreviewFontSize, 8, 48, 1, v => { settings.PreviewFontSize = v; RefreshTypography(); });
             case nameof(AppSettings.ReadingWidth): return DialogParts.Number(settings.ReadingWidth, 360, 1600, 20, v => settings.ReadingWidth = v);
             case nameof(AppSettings.PreviewFullWidth): return Check(settings.PreviewFullWidth, v => settings.PreviewFullWidth = v);
             case nameof(AppSettings.UiScale): return DialogParts.Number(settings.UiScale, 0.75, 2.5, 0.1, v => settings.UiScale = v);
             case nameof(AppSettings.SidebarWidth): return DialogParts.Number(settings.SidebarWidth, 180, 800, 10, v => settings.SidebarWidth = v);
             case nameof(AppSettings.SidebarVisible): return Check(settings.SidebarVisible, v => settings.SidebarVisible = v);
+            case nameof(AppSettings.InspectorVisible): return Check(settings.InspectorVisible, v => settings.InspectorVisible = v);
+            case nameof(AppSettings.InspectorWidth): return DialogParts.Number(settings.InspectorWidth, 180, 800, 10, v => settings.InspectorWidth = v);
+            case nameof(AppSettings.SourceShare): return DialogParts.Number(settings.SourceShare, .15, .85, .05, v => settings.SourceShare = v);
+            case nameof(AppSettings.OnboardingDismissed): return Check(settings.OnboardingDismissed, v => settings.OnboardingDismissed = v);
             case nameof(AppSettings.WorkspaceExclusions):
                 var exclusions = new TextBox { Text = string.Join('\n', settings.WorkspaceExclusions), AcceptsReturn = true, MinHeight = 90, TextWrapping = TextWrapping.Wrap };
-                exclusions.LostFocus += (_, _) => settings.WorkspaceExclusions = (exclusions.Text ?? "").Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+                exclusions.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) settings.WorkspaceExclusions = (exclusions.Text ?? "").Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(); };
                 return exclusions;
             case nameof(AppSettings.KeyBindings):
                 var shortcuts = new Button { Content = "Edit keyboard shortcuts" };
@@ -212,7 +301,7 @@ public sealed class SettingsWindow : Window
                 return shortcuts;
             case nameof(AppSettings.TabSize): return DialogParts.Number(settings.TabSize, 1, 16, 1, v => settings.TabSize = (int)v);
             case nameof(AppSettings.ReduceMotion): return Check(settings.ReduceMotion, v => settings.ReduceMotion = v);
-            case nameof(AppSettings.WordWrap): return Check(settings.WordWrap, v => settings.WordWrap = v);
+            case nameof(AppSettings.WordWrap): return Check(settings.WordWrap, v => { settings.WordWrap = v; RefreshTypography(); });
             case nameof(AppSettings.ShowLineNumbers): return Check(settings.ShowLineNumbers, v => settings.ShowLineNumbers = v);
             case nameof(AppSettings.HighlightCurrentLine): return Check(settings.HighlightCurrentLine, v => settings.HighlightCurrentLine = v);
             case nameof(AppSettings.InsertSpacesForTab): return Check(settings.InsertSpacesForTab, v => settings.InsertSpacesForTab = v);

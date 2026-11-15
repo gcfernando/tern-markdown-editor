@@ -16,7 +16,7 @@ public sealed class BeginnerEditingTests
         using var f = new DesktopFixture();
         f.Shell.NewStartupDocument();
         Dispatcher.UIThread.RunJobs();
-        foreach (var id in new[] { CommandIds.ExportHtml, CommandIds.ExportPdf, CommandIds.Print })
+        foreach (var id in new[] { CommandIds.ExportAs, CommandIds.Print })
         {
             Assert.False(f.Window.CanRunCommand(id));
             var item = f.Window.GetLogicalDescendants().OfType<MenuItem>().Single(m => Equals(m.Tag, id));

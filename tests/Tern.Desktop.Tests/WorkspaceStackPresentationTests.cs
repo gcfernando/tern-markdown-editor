@@ -115,7 +115,7 @@ public sealed class WorkspaceStackPresentationTests
             var texts = card.GetVisualDescendants().OfType<TextBlock>().Select(block => block.Text).ToArray();
             Assert.Contains(root.Name, texts);
             Assert.Contains(root.Root, texts);
-            Assert.Contains(texts, value => value is not null && value.StartsWith("1 document(s)", StringComparison.Ordinal));
+            Assert.Contains(texts, value => value is not null && value.Contains("Content search", StringComparison.Ordinal));
         }
         var companyCard = Assert.Single(cards, border => border.DataContext is TreeRow row && WorkspacePaths.PathsEqual(row.FullPath, company.Root));
         var diagramsCard = Assert.Single(cards, border => border.DataContext is TreeRow row && WorkspacePaths.PathsEqual(row.FullPath, diagrams.Root));

@@ -6,9 +6,9 @@ Tern edits ordinary Markdown files on Windows with a native preview. Start with 
 
 The Library holds files, folders and workspaces. Tabs select the active note. The canvas shows Source (`Ctrl+1`), Split (`Ctrl+2`) or Reading (`Ctrl+3`). The optional inspector presents outline, backlinks, broken links and statistics. A read-only reference pane helps compare another document without replacing the editor.
 
-![Tern's Library, source editor, reading preview and outline in Split mode](../Images/main.png)
+![Tern's Library, source editor, reading preview and outline in Split mode](images/gui/split-midnight.png)
 
-Use File, Edit, Format, View and Help to discover actions. **+ Add** asks where a new file or folder belongs. Quick Open (`Ctrl+K`) finds a note; Command Palette (`Ctrl+Shift+P`) finds an action. Focus mode (`F8`), Library/inspector toggles, resizable panes and reading-width settings adapt the writing space.
+Use File, Edit, Format, View and Help to discover actions. **+ Add** opens a form with a destination and name for physical files or folders. **New document** creates an unsaved draft. Quick Open (`Ctrl+K`) finds a note; Command Palette (`Ctrl+Shift+P`) finds an action. View → Reset layout restores panes without changing notes, fonts or shortcuts.
 
 Use **Tab** and **Shift+Tab** to move through controls in either direction. Open dialogs and overlays keep keyboard focus within their own controls. Use **F6** or **Shift+F6** to move between visible areas in the main window, including the Library, document tabs, Source, Reading, and the selected Inspector tab. To resize a pane, tab to its divider and press the arrow keys. In Markdown Source, Tab can indent text.
 
@@ -36,12 +36,12 @@ Existing references outside that folder are not an unrestricted recursive copy r
 
 ## Pictures and local resources
 
-Save a new draft before inserting a picture; Tern can open Save and continue insertion afterwards. Selecting, dropping or pasting a copied image file beside the Markdown note links it immediately. Sources in other folders offer:
+Save a new draft before inserting a picture; Tern can open Save and continue insertion afterwards. Insert Local Image and Paste Image as Attachment use a form with a thumbnail, editable description (alt text), filename and destination. **Copy into note assets (portable)** suggests an assets folder. Uncheck it to link the original when a source file is known. Moving the original can break a link. Existing files are never overwritten. Undo removes the Markdown link but may leave a copied attachment on disk.
 
 | Choice | Effect |
 | --- | --- |
 | Link original | Insert a path to the original; moving it can break the image |
-| Copy image | Choose a destination and link the saved copy; existing files remain protected |
+| Copy into note assets (portable) | Choose a destination and link the saved copy; existing files remain protected |
 | Cancel | Leave the note unchanged by that insertion |
 
 Insert Local Image first checks for copied image files; otherwise it opens a picker. Paste Image as Attachment uses the same location rules for copied files. Clipboard pixels without a source filename need a destination. Source-area drops and clipboard payloads are distinct OS interactions requiring native acceptance.
@@ -52,9 +52,9 @@ Public remote image URLs can be requested automatically during preview or resour
 
 ## Open from URL
 
-Use File or **+ Add** → Open from URL. **Open** uses a managed cache; **Download and Open** chooses where to save the file and assets. Imported Markdown opens as an editable unsaved copy. Editing or saving it does not upload changes back to the website.
+Use File or **+ Add** → Open from URL. **Open working copy** uses a complete managed cache when available; **Fetch latest** requests a new copy; **Save portable copy…** chooses where to save the file and assets. Imported Markdown opens as an editable unsaved copy. Editing or saving it does not upload changes back to the website.
 
-![Open Markdown URL dialog with Open and Download and Open actions](../Images/from_url.png)
+The [current GUI task guide](gui-tasks.md#open-from-url) shows the current URL choices and their effects.
 
 The loader accepts HTTP/HTTPS Markdown-file URLs, converts public GitHub file links to raw content and permits explicitly entered localhost URLs. Repository directories, issue pages, sign-in pages and arbitrary HTML pages are not Markdown documents. Public requests are constrained against private-network destinations, credential-bearing URLs and unsafe redirects.
 
@@ -64,13 +64,17 @@ Complete cached bundles reopen offline. Partial downloads identify missing asset
 
 ## Folders, workspaces and search
 
-Open Folder browses a physical directory without creating metadata. Create Workspace makes a new named directory containing `.tern-workspace.json`; Open Workspace restores that context. Compatible legacy workspace/session records remain supported.
+Open Folder detects an existing named or legacy workspace; an ordinary folder opens for browsing without creating metadata. Workspace search uses an eligible indexed workspace. Create Workspace makes a new named directory containing `.tern-workspace.json`. Capability labels distinguish these contexts.
 
-Independent roots stack in the Library, while `Company/HR` remains nested. Context creation targets the clicked directory; global Add asks whether to use the selected location or an outside location. Use disposable folders to learn rename, move, duplicate and delete: those actions operate on disk.
+Independent roots stack in the Library, while `Company/HR` remains nested. Creation from a context menu targets that directory; the same form lets you inspect or change the destination. Use disposable folders to learn rename, move, duplicate and Move file to Recycle Bin: those actions operate on disk.
 
 The scanner includes `.md`, `.markdown`, `.mdown` and `.mkd` by default, with optional text inclusion. Standard exclusions include `.git`, `node_modules`, `.obsidian`, `bin` and `obj`. `.ternignore` and settings exclusions narrow scanning. Directory links are not followed by default; permitted traversal remains constrained to the workspace. Default scanning skips individual files above **16 MiB**, independently of the editor's open ceiling.
 
 Workspace search uses a local SQLite full-text index. Active-note find/replace and workspace search have different scopes. Indexes can be rebuilt; they are not document backups. Outline, backlinks and broken links depend on recognized syntax and available workspace files.
+
+Press `Ctrl+F` to find text in the current note. All matches are highlighted in Source, Split and Reading, with a stronger outline for the active result. Search starts near your current position and automatically brings that result into view. `Enter`/`F3` moves forward; `Shift+Enter`/`Shift+F3` moves backward. The counter shows the current result and announces wrapping. **Results** shows clickable matching-line snippets. Use `Aa`, `W` and `.*` for case, whole-word and regular-expression matching; compact windows put these options under **⋯**. Invalid regexes and no matches have explicit messages. `Escape` closes Find and returns focus to the document.
+
+`Ctrl+H` or the **Replace** toggle opens replacement controls. Replace all is one undoable change and does not save the file. Incomplete or timed-out results cannot be replaced in bulk. Find searches the Markdown source, so destinations and syntax hidden in Reading can also match: **Source-only match → Show in Source** reveals those results. Search does not combine words separated by Markdown formatting markers into a new plain-text phrase. Compact Results/Replace icons have tooltips and accessible names.
 
 In **Inspector → Outline**, use **Search headings** and select a result to jump to that section. The H1–H6 labels indicate heading depth. In **Inspector → Links**, search by label, path, or domain. Each result shows the destination and link status. Select it to jump to the source line.
 
@@ -81,11 +85,11 @@ In **Inspector → History**, choose **Open version history** to compare a dated
 | Action | Result |
 | --- | --- |
 | Tab × or `Ctrl+W` | Close the document after its save decision |
-| Open file × in Library | Close associated tabs and remove the reference after save decisions |
+| Close & forget reference | Close associated tabs after save decisions, then remove the reference |
 | Close Workspace, `Ctrl+Shift+W` or workspace × | Close its documents and release its context; unrelated notes remain open |
 | Expanded folder × | Close its documents and collapse it; retain the folder entry |
 | Close All Documents, `Ctrl+Alt+W` | Close tabs while retaining the workspace |
-| Remove Recent/Quick Open reference | Remove the reference while leaving open tabs alone |
+| Forget recent entry | Remove the reference while leaving open tabs alone |
 
 Save/Discard/Cancel decisions complete before a group closes. Cancel preserves affected tabs and references. Closing does not delete files; separate file-management actions do. Window close also asks about unsaved changes.
 
@@ -93,12 +97,16 @@ Save/Discard/Cancel decisions complete before a group closes. Cancel preserves a
 
 HTML, PDF and text exports share document/resource readiness checks. A format change requires a new compatible destination. Read truncation, resource and unsupported-character warnings and inspect output before sharing. Export does not replace saving editable Markdown.
 
+Choose **File → Export as… (`Ctrl+Shift+E`)**, select HTML, PDF or plain text, choose **Browse…** for the destination, then **Export**. PDF paper size, margins and page numbers and HTML appearance/language are in the same window. Document properties are optional and excluded by default.
+
 - **HTML:** self-contained output embeds supported resources within limits and sanitizes unsupported active content. It is not a screenshot of the native view.
 - **PDF:** bundled PDFsharp generates pages locally, with font/Unicode and layout constraints. Preparing remote images can still require network access.
 - **Text:** produces readable text without the full styled Markdown layout.
-- **Print (`Ctrl+P`):** uses Windows' print dialog and readable plain text, not pixel-for-pixel Markdown preview.
+- **Print preview… (`Ctrl+P`):** shows the formatted document in Tern. Choose **Open printable PDF…** to inspect exact page breaks in your installed PDF reader, then press `Ctrl+P` there to choose a printer and copies. Opening the preview does not send a print job.
 
 Resources must remain accessible under their local/remote policies. The PDF path bounds page count and image resources. A successful export call does not prove that every intended glyph, diagram and attachment is present; inspect the final artifact.
+
+In **Help → Ask & learn**, choose an example or ask about using Tern. Questions without a matching installed guide topic are stopped locally. The assistant receives a Tern-only help instruction and installed guide facts. AI connection settings, conversation controls and sharing details are collapsed sections. Your notes, selected text and file paths are never attached; a bounded recent conversation is included for follow-up questions. General knowledge and content generation belong in a separate AI application.
 
 ## Settings and local data
 
@@ -116,9 +124,9 @@ Settings (`Ctrl+,`) controls System/Midnight/Paper appearance, fonts, reading wi
 | Search indexes | `%LOCALAPPDATA%\Tern\index` |
 | Saved connection secrets | Windows Credential Manager, separate from those folders |
 
-`TERN_DATA_ROOT` selects a root containing `settings`, `state`, `recovery` and `index`. Backing up it does not back up Windows Credential Manager credentials. Settings writes are staged; malformed settings can be preserved as `.corrupt` while defaults are used and the problem is reported.
+`TERN_DATA_ROOT` selects a root containing `settings`, `state`, `recovery` and `index`. Backing up it does not back up Windows Credential Manager credentials. Apply persists settings; Cancel discards unapplied values. Malformed settings can be preserved as `.corrupt` while defaults are used and the problem is reported.
 
-![Settings showing AI connections and the explicit-request explanation](../Images/ai_connection.png)
+Settings changes are pending until **Apply**. **Done** applies and closes; **Cancel** or Escape discards unapplied changes. AI connection and credential management has its own explicit save actions.
 
 AI is optional. Read [protocols, credentials and reviewed text](privacy.md#optional-ai-connections) before using sensitive content.
 
@@ -130,17 +138,17 @@ Open **Edit → Settings → AI connections → Manage AI connections**. The wiz
 2. **Configure connection:** enter a recognizable connection name, the exact model ID and any required API key. Use **Advanced** for a custom documented endpoint or protocol. **Back** retains entered values.
 3. **Validate and save:** review the destination, then choose **Validate connection**. This sends the fixed message `Reply with exactly: OK.` using the selected endpoint, model and key. No document is attached; provider usage or charges may apply. Read the success or error before choosing **Save connection**.
 
-Saving stores metadata locally and secrets in Windows Credential Manager. Saving, reopening and navigating send no request; saving an untested connection does not prove that it works. Selecting any saved connection keeps you on Choose service and selects its service type. Choose **Configure connection** to open its saved settings, then modify, validate and save changes. **Delete connection** asks for confirmation before removing its saved settings and credential. **Create connection** starts a fresh setup. Every saved API, Copilot and MCP connection appears in the main toolbar.
+Saving stores metadata locally and secrets in Windows Credential Manager. Saving, reopening and navigating send no request; saving an untested connection does not prove that it works. Selecting any saved connection keeps you on Choose service and selects its service type. Choose **Configure connection** to open its saved settings, then modify, validate and save changes. **Delete connection** asks for confirmation before removing its saved settings and credential. **Create connection** starts a fresh setup. The compact **AI** entry opens the saved connection selector. Profiles identify Text generation or Tools capabilities; Help has a separate text-generation choice.
 
 If validation fails, check the key and API permissions for authentication errors, the exact model ID and account access for unavailable-model errors, and the endpoint, TLS certificate and server/network for connection errors. Correct the setting with **Back** and validate again. A successful test describes that request; it does not guarantee future availability.
 
-For a separate question, expand **Try your own message (optional)**, review the exact text and destination, check consent and choose **Send request**. For note editing, select a saved API or Copilot connection in the main toolbar and use **Write with AI**. When you select source text and press **Alt+Space**, the composer asks what you want to do with it. Use **Rewrite**, **Summarize**, **Explain**, or **Extract tasks** to start an editable instruction. Check **Selected text** or **Entire note** and the connection below the instruction. **Generate for review** sends the chosen text and instruction. Use **Set up connection** if none is saved. Compare the original and proposed Markdown, then choose **Apply** to use all proposed changes as one undoable edit. **Copy result** copies the full suggestion. **Close** or **Escape** discards the suggestion.
+For a separate setup check, expand **Try your own message (optional)**, review the exact text and destination, check consent and choose **Send request**. For note editing, choose a Text generation connection in **AI** and use **Write with AI**. Review **Selected text**, **Entire note** or **Instruction only** before **Generate for review**. **Improve selected text**, **Summarize**, **Explain**, **Extract tasks** and **Proofread** fill an editable instruction. The sharing scope and destination are shown before generation. Compare original and proposed Markdown; **Apply changes** replaces text and **Insert result** inserts new content. Both are unsaved, undoable changes. **Copy result** copies the full suggestion; Close or Escape leaves the note unchanged.
 
-Double-click empty space on the tab bar to open a blank **New document**. Without a selection, Write with AI uses the entire note and hides the scope picker. An empty note contributes no document text. The taller instruction box is available with or without selected text. With a selection, **Selected text** is the default and the starter buttons, including **Proofread**, fill in an instruction you can edit. In the review, use **Back** to revise your instruction before generating again.
+Double-click empty space on the tab bar to open a blank **New document**. The AI scope picker stays visible even without a selection. **Instruction only** shares no note text and inserts a result. The review’s **Back** action keeps your instruction for revision.
 
-Use the **AI** menu in Source for **Summarize**, **Extract action items**, or **Improve headings**. For summaries, explanations, and checklists, the review shows the original text beside the result. **Apply** inserts the result below the source. **Back** in the bottom row returns to your instruction.
+Use the **AI** menu in Source for **Summarize**, **Extract action items**, or **Improve headings**. Summaries, explanations and checklists use **Insert result** below the source; **Apply changes** is reserved for replacement proposals. A newer edit blocks stale proposals.
 
-Use **Ask workspace** in the AI toolbar to choose a workspace, find passages, and review them before sending. Select a source in the answer to open its file and line. In a saved workspace note, **Inspector → Links → Suggest related notes** finds candidates and explains their relevance. Select the links you want to insert.
+Use **Ask workspace** from the AI entry to choose an eligible workspace, **Find passages**, and review the exact request. Uncheck any passage to exclude it; no request can be sent with all passages excluded. **Send reviewed request** uses only included passages. Citations open only verified files still in that workspace.
 
 ### Save GitHub Copilot or MCP settings
 
@@ -180,3 +188,28 @@ Both integration wizards offer a saved-connections picker and **Manage saved con
 - Physical clipboard/drop, printers, DPI, assistive technology, installed offline operation, performance and signing require native acceptance. See the [release ledger](V1_RELEASE_LEDGER.md).
 
 Return to the [documentation index](../documentation.md).
+
+
+### Version 1.0.4 workflows
+
+- **Find:** use Edit → Find to highlight matches in Source, Split or Reading. Move with Next/Previous or select a result to reveal it. Review replacements before applying them.
+- **Export:** choose File → Export as… (Ctrl+Shift+E), select HTML, PDF or plain text, choose a destination and export. Open file and Show in folder appear beside the completion status only for the current complete successful export; editing settings or changing format hides them. HTML embeds permitted images; PDF preserves document structure on printable pages. Plain text keeps readable text, lists, code indentation and table layout; it cannot contain fonts, colours or images.
+- **Print:** choose File → Print preview… (Ctrl+P). Drag the scrollbar to move through the captured document, or use its track, mouse wheel and Page Up/Page Down. Resize the preview as needed. Open printable PDF shows exact page breaks in the installed PDF reader, where Ctrl+P selects the printer and copies.
+- **Ask & learn:** ask naturally, for example “I need to add a new AI connection, how can I do that?”. Tern ranks relevant installed guide topics instead of requiring every question word to match. Without a connection, or when a provider fails, an explicitly labelled offline answer appears automatically. No notes or selections are attached. Account access, expired tokens and provider permissions still require the account owner; Tern never changes them automatically.
+- **Consistent controls:** dialogs share Paper/Midnight colours, inherited text scaling, wrapping fields, keyboard focus and visible primary actions. Compact screens scroll the form while preserving its action area.
+
+### Help, export and guidance improvements
+
+- **Ask & learn:** AI connection and conversation actions sit above the larger question box. Answers render Markdown headings, emphasis, lists, code and tables in one reading area, with the newest answer revealed first. Copy conversation and Start new conversation become available when an answer is visible. What is shared? explains the submitted data. Without a writing connection, Tern answers from installed guides; provider failures also recover to an explicitly labelled offline answer.
+- **Export state:** changing Choose a format clears the destination, resets format options and clears completion status and notes. Open file and Show in folder appear only for the current complete successful result. Editing the destination or options, starting another export, or an export failure hides them. Actions share an aligned footer; Export notes start collapsed and only appear when needed.
+- **Readable TXT:** paragraphs wrap to a preferred 80-character width. Compact tables stay aligned; wide tables become labelled records. Numbered link references keep long URLs out of prose and retain relative and section destinations. Code indentation, nested lists and Unicode remain intact. Text files cannot display fonts, colours or actual images.
+- **PDF badges:** supported inert SVG images use the same bounded native renderer as preview and are embedded as PNG images. Unsupported SVG features still produce an export note instead of silently dropping content. HTML retains permitted SVG images.
+- **Next step guidance:** the main window and shared dialog shell show a contextual tip and installed Learn more help. Export tips change for destination selection, progress, success and failure. Ask & learn has its own question and answer guidance.
+
+### Latest screen usability improvements
+
+Ask & learn gives the answer more space once it is ready; the question editor stays available in a compact form for follow-ups. Click a picker result once to choose it, or use Up/Down and Enter. The welcome panel is larger and centered.
+
+In Write with AI, highlight text before opening the panel to use the selection actions. Create content appears only with no selection and Entire note selected. Review the sharing scope and connection, write your instruction, then choose Generate for review. The raw request/JSON section has been removed.
+
+In Review AI suggestion, compare the complete BEFORE and AFTER text. Use Back to improve the instruction, Copy result to copy the full suggestion, Apply changes to accept the proposal, or Close to keep your note unchanged. Insert result preserves the original text and adds the generated content. Applied edits remain unsaved and can be undone. Narrow screens stack the comparison vertically. Disclosure sections use the same themed appearance and keyboard focus cues throughout the app.

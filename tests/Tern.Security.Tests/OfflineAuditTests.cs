@@ -214,7 +214,8 @@ public class OfflineAuditTests
         foreach (var path in ShippedAssemblies())
         {
             var (_, _, strings) = Inspect(path);
-            foreach (var text in strings.Where(s => !AllowedTelemetryStatements.Any(a => s.StartsWith(a, StringComparison.Ordinal))))
+            // This exact CLI opt-out disables telemetry; it is not an endpoint or SDK.
+            foreach (var text in strings.Where(s => s != "--disable-client-telemetry" && !AllowedTelemetryStatements.Any(a => s.StartsWith(a, StringComparison.Ordinal))))
             {
                 foreach (var term in TelemetryStrings)
                 {

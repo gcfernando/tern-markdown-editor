@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Tern.Rendering.Mathematics;
 using Tern.Rendering.Mermaid;
 using Tern.Rendering.Preview;
@@ -26,6 +27,7 @@ internal sealed class BlockFactory
     private readonly Func<string, CancellationToken, Task<byte[]?>>? _remoteImageLoader;
     private readonly List<WeakReference<ImageView>> _images = [];
     private int _listDepth;
+    private int _sourceBaseOffset;
 
     public BlockFactory(double fontSize, Action<LinkTarget> linkInvoked, Func<string, CancellationToken, Task<byte[]?>>? remoteImageLoader = null)
     {
@@ -63,6 +65,7 @@ internal sealed class BlockFactory
     public BlockHost CreateHost(BlockSlot slot)
     {
         var node = slot.Node;
+        _sourceBaseOffset = node.Source.StartOffset;
         var content = BuildBlock(node, node.Source.StartLine);
         var margin = node switch
         {
@@ -111,7 +114,7 @@ internal sealed class BlockFactory
         ListNode list => List(list, baseLine),
         BlockQuoteNode quote => Quote(quote, baseLine),
         AlertNode alert => new AlertBlock(alert.Kind, Stack(alert.Blocks, baseLine, 8), _fontSize),
-        CodeBlockNode code => new CodeBlockView(code.Code, code.Language, _fontSize, _mono),
+        CodeBlockNode code => SearchableCode(code),
         ThematicBreakNode => Rule(),
         TableNode table => Table(table),
         FootnoteSectionNode section => Footnotes(section, baseLine),
@@ -129,6 +132,15 @@ internal sealed class BlockFactory
         var block = new RichTextBlock { FontSize = _fontSize, LineHeight = _fontSize * 1.5 };
         block.LinkInvoked += (_, e) => _linkInvoked(e.Target);
         return block;
+    }
+
+    private CodeBlockView SearchableCode(CodeBlockNode code)
+    {
+        var view = new CodeBlockView(code.Code, code.Language, _fontSize, _mono);
+        var text = (RichTextBlock)view.CodeText;
+        text.AddSearchSource(code.Source.StartOffset - _sourceBaseOffset,
+            code.Source.EndOffset - code.Source.StartOffset, 0, text.DisplayText.Length);
+        return view;
     }
 
     private Control ErrorBlock(BlockNode node, Exception ex)
@@ -164,6 +176,7 @@ internal sealed class BlockFactory
     {
         foreach (var node in nodes)
         {
+            var start = builder.Position;
             switch (node)
             {
                 case TextNode text:
@@ -212,6 +225,8 @@ internal sealed class BlockFactory
                     Walk(builder, styled.Children, Styled(format, styled.Style));
                     break;
             }
+            if (node is not (EmphasisNode or StrongNode or StrikethroughNode or LinkNode or StyledNode))
+                builder.MapSource(node.Source, start, _sourceBaseOffset);
         }
     }
 
@@ -324,6 +339,18 @@ internal sealed class BlockFactory
                 VerticalContentAlignment = VerticalAlignment.Center,
             };
             AutomationProperties.SetName(box, item.Task == TaskState.Checked ? "Completed task" : "Open task");
+            box.AttachedToVisualTree += (_, _) =>
+            {
+                var preview = box.FindAncestorOfType<PreviewView>();
+                box.IsEnabled = box.IsHitTestVisible = box.Focusable = preview?.CanToggleTasks == true;
+                if (!box.IsHitTestVisible) AutomationProperties.SetHelpText(box, "Informational task marker; this context is read only.");
+            };
+            box.Click += (_, e) =>
+            {
+                e.Handled = true;
+                box.IsChecked = item.Task == TaskState.Checked;
+                box.FindAncestorOfType<PreviewView>()?.RequestTaskActivation(box, item.Task == TaskState.Checked);
+            };
             return box;
         }
 
@@ -480,6 +507,9 @@ internal sealed class BlockFactory
         var note = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = _fontSize * 0.85 };
         PreviewTheme.Bind(note, TextBlock.ForegroundProperty, PreviewKeys.Error);
         panel.Children.Add(note);
+        var edit = new Button { Content = "Edit source" };
+        edit.Click += (_, _) => edit.FindAncestorOfType<PreviewView>()?.RequestSourceEdit(edit);
+        panel.Children.Add(edit);
         var frame = new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), Padding = new Thickness(14, 10), Child = panel };
         PreviewTheme.Bind(frame, Border.BackgroundProperty, PreviewKeys.CodeBackground);
         PreviewTheme.Bind(frame, Border.BorderBrushProperty, PreviewKeys.Border);
@@ -499,7 +529,15 @@ internal sealed class BlockFactory
             var diagram = new DiagramControl(parsed);
             AutomationProperties.SetName(diagram, $"{diagram.Description} with {diagram.ElementCount} elements");
             var frame = new FitScroller(diagram) { HorizontalAlignment = HorizontalAlignment.Left };
-            return frame;
+            var open = new Button { Content = "Open larger view", HorizontalAlignment = HorizontalAlignment.Left };
+            open.Click += (_, _) =>
+            {
+                if (TopLevel.GetTopLevel(open) is not Window owner) return;
+                var window = new DiagramWindow(diagram);
+                window.Closed += (_, _) => open.Focus();
+                window.Show(owner);
+            };
+            return new StackPanel { Spacing = 4, Children = { open, frame } };
         }
 
         var notice = parsed.Kind == MermaidResultKind.Unsupported

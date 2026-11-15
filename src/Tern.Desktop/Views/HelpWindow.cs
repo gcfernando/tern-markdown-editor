@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Tern.App.Commands;
 using Tern.App.Help;
+using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Views;
 
@@ -12,7 +13,9 @@ namespace Tern.Desktop.Views;
 public sealed class HelpWindow : Window
 {
     public HelpWindow(CommandRegistry registry, string? featureId = null, Func<string, Task>? openFeature = null, Func<string, Task>? askAI = null,
-        Func<string, CancellationToken, Task<string>>? answerAI = null, string? initialQuestion = null)
+        Func<string, CancellationToken, Task<string>>? answerAI = null, string? initialQuestion = null,
+        AIWorkspaceService? workspace = null, Func<Task>? configure = null, Func<string, bool>? canOpen = null, Action<string>? practice = null,
+        Func<BeginnerLesson, Task>? walkThrough = null, Func<string?>? selectedText = null)
     {
         DialogParts.Setup(this, "Learn Tern", 1080, 820);
         MinWidth = 620; MinHeight = 560;
@@ -24,7 +27,7 @@ public sealed class HelpWindow : Window
         var compactGoals = new ComboBox { ItemsSource = lessons, HorizontalAlignment = HorizontalAlignment.Stretch };
         compactGoals.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<BeginnerLesson>((v, _) => new TextBlock { Text = v?.Name, TextWrapping = TextWrapping.Wrap });
         AutomationProperties.SetName(compactGoals, "Choose a learning goal");
-        var search = new TextBox { PlaceholderText = "Ask anything…\nGet help with Tern, Markdown, your next idea, or something new.",
+        var search = new TextBox { PlaceholderText = "Find help with Tern…\nTry search, export, Markdown headings or AI connections.",
             AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 82, MaxHeight = 150, MaxLength = 8000, FontSize = GuideParts.Scaled(16), Padding = new Thickness(12) };
         AutomationProperties.SetName(search, "Search feature help");
         var categories = new ComboBox { ItemsSource = new[] { "All features" }.Concat(all.Select(f => f.Category).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)).ToArray(), SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -75,12 +78,14 @@ public sealed class HelpWindow : Window
         var skip = new Button { Content = "Skip tutorial" }; var replay = new Button { Content = "Replay" };
         var launch = new Button { IsVisible = false }; AutomationProperties.SetName(launch, "Open guided feature");
         var close = new Button { Content = "Exit guide", IsCancel = true };
+        var walk = new Button { Content = "Walk me through", IsVisible = walkThrough is not null };
         ((StackPanel)detail.Content!).Children.Insert(0, answerCard);
         var ask = new Button { Content = "Ask question  ↗", IsEnabled = false, IsVisible = false, Classes = { "accent" } };
         var askingAI = false;
         AutomationProperties.SetName(ask, "Ask question");
-        ToolTip.SetTip(ask, "Send this question using the AI connection selected on Tern's main screen. Your documents are not included.");
+        ToolTip.SetTip(ask, "Ask about this Tern feature using your selected Help connection. Your documents are not included.");
         var activeLesson = lessons[0]; IReadOnlyList<string> steps = []; string? launchId = null; var index = 0; var skipped = false; var launching = false;
+        walk.Click += async (_, _) => { if (walkThrough is not null) { Close(); await walkThrough(activeLesson); } };
         void ShowStep()
         {
             step.Text = skipped ? "Tutorial skipped. Choose another goal, or Replay when you want to try again. Your writing has not been changed." : $"Step {index + 1} of {steps.Count}\n{steps[index]}";
@@ -115,13 +120,13 @@ public sealed class HelpWindow : Window
             ask.IsVisible = !string.IsNullOrWhiteSpace(search.Text);
             if (rows.Length == 0)
             {
-                title.Text = "Ask about anything";
-                purpose.Text = "This question does not match an offline tutorial. Ask your selected AI connection for an answer here. Check its answer for accuracy.";
-                need.Text = "Guide questions include your question and Tern's feature reference. Your notes are not attached. Choose an AI connection in the main toolbar before asking.";
+                title.Text = "Find help with Tern";
+                purpose.Text = "No installed guide matches this question. Try a Tern feature name such as search, export or Markdown headings. General questions are outside this help screen.";
+                need.Text = "Guide questions include your question and Tern's feature reference. Your notes are not attached by default. Choose a Help connection in Ask & learn before asking.";
                 exampleCard.IsVisible = false; advanced.IsVisible = false; trouble.IsExpanded = false;
                 result.Text = "Your documents have not changed. No question has been sent.";
                 troubleshooting.Text = "Clear the search to browse all features, or choose Start here for everyday lessons.";
-                steps = ["Choose Ask question for an AI answer, or clear the question to browse the offline tutorials. A guide answer does not modify a document."];
+                steps = ["Clear the search to browse the offline tutorials, or ask about a specific Tern feature."];
                 launchId = null; index = 0; skipped = false; detail.Offset = default; ShowStep();
             }
             else if (!string.IsNullOrWhiteSpace(search.Text) && GuideQuery.Lesson(search.Text) is { } lessonId)
@@ -136,7 +141,9 @@ public sealed class HelpWindow : Window
         ask.Click += async (_, _) =>
         {
             if (askingAI || string.IsNullOrWhiteSpace(search.Text)) return;
-            var question = search.Text; askingAI = true; ask.IsEnabled = false;
+            var question = search.Text;
+            if (!GuideQuestionPrompt.CanAnswer(registry, question)) { answerCard.IsVisible = true; answerText.Text = GuideQuestionPrompt.ScopeMessage; return; }
+            askingAI = true; ask.IsEnabled = false;
             try
             {
                 if (answerAI is not null)
@@ -187,12 +194,25 @@ public sealed class HelpWindow : Window
             intro.IsVisible = !compact;
             title.FontSize = GuideParts.Scaled(compact ? 18 : 22);
             whatToDo.IsVisible = !compact;
-            intro.Text = compact ? "Ask a question or browse a tutorial." : "Ask your selected AI connection anything, or explore the practical guides below. Your notes stay out of guide questions.";
+            intro.Text = compact ? "Ask a question or browse a tutorial." : "Find step-by-step help with Tern, or browse the practical guides below. Your notes stay out of guide questions.";
             Grid.SetColumn(detail, compact ? 0 : 1); Grid.SetRow(detail, compact ? 1 : 0);
         }
         SizeChanged += (_, _) => Arrange();
         var questionCard = GuideParts.Card(GuideParts.Vertical(search, GuideParts.Actions(cancelAnswer, ask)));
-        Content = GuideParts.Frame(GuideParts.Vertical(guideTitle, intro, questionCard), body, GuideParts.Actions(back, next, skip, replay, launch, close));
+        Content = GuideParts.Frame(GuideParts.Vertical(guideTitle, intro, questionCard), body, GuideParts.Actions(back, next, skip, replay, walk, launch, close));
+        if (workspace is not null)
+        {
+            var guides = Content;
+            Content = null;
+            var helpSections = new TabControl();
+            var tutor = new HelpTutorView(workspace, registry, configure ?? (() => Task.CompletedTask), openFeature, canOpen,
+                feature => { helpSections.SelectedIndex = 0; tabs.SelectedIndex = 1; features.SelectedItem = feature; SelectFeature(feature); }, practice, selectedText);
+            helpSections.Items.Add(new TabItem { Header = "Guides · offline", Content = guides });
+            helpSections.Items.Add(new TabItem { Header = "Ask & learn", Content = tutor });
+            if (initialQuestion is not null) { tutor.Question.Text = initialQuestion; helpSections.SelectedIndex = 1; }
+            Content = helpSections;
+            Closed += (_, _) => tutor.Dispose();
+        }
         Refresh(); goals.SelectedIndex = 0; SelectLesson(lessons[0]); Arrange();
         if (featureId is not null && features.Items.OfType<FeatureHelp>().FirstOrDefault(f => f.Id == featureId) is { } initial)
         { tabs.SelectedIndex = 1; features.SelectedItem = initial; SelectFeature(initial); }

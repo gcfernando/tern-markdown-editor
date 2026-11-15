@@ -27,7 +27,7 @@ public class FeatureHelpTests
         var imagePrerequisite = help.Single(f => f.Id == CommandIds.InsertImage).Prerequisite;
         Assert.Contains("writable note", imagePrerequisite, StringComparison.Ordinal);
         Assert.Contains("a new note asks where to save before adding pictures", imagePrerequisite, StringComparison.Ordinal);
-        Assert.All(new[] { CommandIds.Print, CommandIds.ExportHtml, CommandIds.ExportPdf }, id =>
+        Assert.All(new[] { CommandIds.Print, CommandIds.ExportAs }, id =>
             Assert.Contains("Opened files count without edits", help.Single(f => f.Id == id).Prerequisite, StringComparison.Ordinal));
         Assert.Contains("copied picture stays on disk", help.Single(f => f.Id == CommandIds.PasteImage).Description, StringComparison.Ordinal);
     }
@@ -38,7 +38,7 @@ public class FeatureHelpTests
         var registry = CommandRegistry.CreateDefault();
         registry.SetBinding(CommandIds.Save, "Ctrl+Alt+F12");
         var help = FeatureCatalog.Search(registry, null);
-        Assert.Equal(registry.Commands.Count + FeatureCatalog.Subfeatures.Count, help.Count);
+        Assert.Equal(registry.Commands.Count + FeatureCatalog.Subfeatures.Count + FeatureCatalog.TutorialFeatures.Count, help.Count);
         Assert.Equal(help.Count, help.Select(f => f.Id).Distinct(StringComparer.Ordinal).Count());
         Assert.All(registry.Commands, c => Assert.Contains(help, f => f.Id == c.Id && f.LaunchCommandId == c.Id && f.Name == c.Title));
         Assert.All(help, f => { Assert.NotEmpty(f.Description); Assert.NotEmpty(f.Prerequisite); Assert.True(f.Steps.Count >= 3); });
@@ -189,7 +189,7 @@ public class FeatureHelpTests
         Assert.Contains(copilot.Steps, s => s.Contains("8,192", StringComparison.Ordinal)
             && s.Contains("active note", StringComparison.Ordinal) && s.Contains("Undo", StringComparison.Ordinal));
         var mcp = Assert.Single(help, f => f.Id == "ai.mcp");
-        Assert.Contains(mcp.Steps, s => s.Contains("main toolbar", StringComparison.Ordinal)
+        Assert.Contains(mcp.Steps, s => s.Contains("AI entry", StringComparison.Ordinal)
             && s.Contains("without a request", StringComparison.Ordinal));
     }
 
