@@ -80,7 +80,20 @@ def validate_license_inventory(runtime: dict) -> None:
         raise PackageError(
             "Licensing inventory does not cover the restored desktop graph"
         )
-    for item in [inventory["runtime"], *inventory["packages"]]:
+    downloads = {
+        (item["name"], item["version"])
+        for framework in assets.get("project", {}).get("frameworks", {}).values()
+        for item in framework.get("downloadDependencies", [])
+    }
+    projection = "Microsoft.Windows.SDK.NET.Ref"
+    licensed_projection = {(item["id"], f'[{item["version"]}, {item["version"]}]')
+                           for item in inventory.get("platformComponents", []) if item["id"] == projection}
+    if {item for item in downloads if item[0] == projection} != licensed_projection:
+        raise PackageError("Windows projection pack requires a matching licensing inventory")
+    for item in inventory.get("platformComponents", []):
+        if (item["id"], f'[{item["version"]}, {item["version"]}]') not in downloads:
+            raise PackageError("Platform licensing inventory differs from the restored targeting pack")
+    for item in [inventory["runtime"], *inventory["packages"], *inventory.get("platformComponents", [])]:
         for notice in item.get("notices", []):
             path = (ROOT / notice["path"]).resolve()
             if (

@@ -173,22 +173,24 @@ def publish(
     api, environment: dict[str, str], project: str, version: str, packages: list[Path]
 ):
     repository, commit, run, tag, marker = identity(environment, version)
-    expected = {"Tern": 1}
-    if project not in expected or len(packages) != expected[project]:
-        raise ReleaseError("Unexpected project or package count")
+    modern = tuple(map(int, version.split('.'))) >= (1, 0, 5)
+    required = {'Tern-win-x64.zip', 'Tern.exe', f'Tern-{version}.msi'} if modern else {'Tern-win-x64.zip'}
     names = [package.name for package in packages]
-    if len(set(names)) != len(names) or any(
-        not re.fullmatch(r"[A-Za-z0-9_.-]+\.zip", name) for name in names
-    ):
-        raise ReleaseError("Unsafe or duplicate package names")
-    if names != ["Tern-win-x64.zip"]:
-        raise ReleaseError(
-            "Expected the verified self-contained Windows x64 Tern package"
-        )
+    if project != 'Tern' or len(names) != len(required) or set(names) != required:
+        raise ReleaseError('Expected every Windows distribution, with no unexpected or duplicate package names')
     for package in packages:
         if not package.is_file() or package.stat().st_size <= 0:
             raise ReleaseError("A required package is missing or empty")
-    validate_package(packages[0], version, commit)
+    archive = next(package for package in packages if package.name == "Tern-win-x64.zip")
+    validate_package(archive, version, commit)
+    if modern:
+        for package in packages:
+            with package.open("rb") as source:
+                header = source.read(8)
+            if package.suffix == ".exe" and header[:2] != b"MZ":
+                raise ReleaseError("Standalone EXE is not a Windows executable")
+            if package.suffix == ".msi" and header != bytes.fromhex("D0CF11E0A1B11AE1"):
+                raise ReleaseError("MSI is not a Windows Installer database")
     checksum = packages[0].parent / "SHA256SUMS.txt"
     checksum.write_text(
         "".join(f"{sha256(package)}  {package.name}\n" for package in sorted(packages)),
@@ -221,7 +223,7 @@ def publish(
     elif reference:
         raise ReleaseError("The tag exists without an owned release")
     instructions = (
-        "Extract the entire ZIP and run Tern.exe. Windows x64 is required. "
+        "Choose the per-user MSI, standalone Tern.exe, or extract the entire portable ZIP and run its Tern.exe. Windows x64 is required. "
         "The .NET 10 runtime and adjacent application dependencies are bundled; "
         "keep the complete extracted folder together. No separate .NET installation "
         "is required. See LICENSE, THIRD-PARTY-NOTICES.md and licenses/. "
@@ -234,7 +236,7 @@ def publish(
         f"[Required checks and package verification](https://github.com/{repository}/actions/runs/{run}).\n\n"
         f"{instructions}\n\nThese are **unsigned automated preview builds**. "
         "Windows may show Unknown publisher or SmartScreen warnings. Signing is not configured. SHA256SUMS.txt records each application "
-        "ZIP's SHA-256 checksum. Source-code archives are not runnable downloads.\n\n"
+        "download's SHA-256 checksum. Source-code archives are not runnable downloads.\n\n"
         f"Release identity: `{tag}`. Application base version: `{version}`. "
         "Each successful main push keeps its own release; reruns retain an already "
         "published complete release. Manual desktop acceptance remains separate "

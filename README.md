@@ -22,18 +22,15 @@ The screenshot shows an existing note in Split view. See the [user guide](docs/u
 
 ## Download and run
 
-Open [GitHub Releases](https://github.com/gcfernando/tern-markdown-editor/releases) and select a complete release containing **Tern-win-x64.zip** and **SHA256SUMS.txt**. GitHub's source-code ZIP and tarball are source archives, not the packaged application. If those assets are absent, use the [source build instructions](docs/development.md) or a complete earlier release.
+Open [GitHub Releases](https://github.com/gcfernando/tern-markdown-editor/releases) and choose a complete Windows x64 release. Version 1.0.5 provides **Tern-1.0.5.msi**, a standalone **Tern.exe**, **Tern-win-x64.zip**, and **SHA256SUMS.txt**. Source-code archives do not run the application.
 
-1. Download the application ZIP and checksum file from the same release.
-2. Compare its SHA-256 with the matching manifest entry:
+- The **MSI** installs for your user and registers Markdown support. It preserves your default app.
+- The standalone **Tern.exe** runs the editor directly, with its runtime and native dependencies bundled.
+- For the **portable ZIP**, extract the complete folder and run its Tern.exe. Keep every companion file together.
 
-   ```powershell
-   Get-FileHash .\Tern-win-x64.zip -Algorithm SHA256
-   ```
+Compare your download's SHA-256 with its SHA256SUMS.txt entry. Standalone and ZIP users can choose **Settings → Windows integration → Register this copy** to make their stable copy available in Explorer. See [installation and Explorer steps](docs/workflows-1.0.5.md#installation-and-explorer).
 
-3. Extract the entire ZIP to a writable folder and run `Tern.exe`. Keep all companion files together.
-
-The Windows x64 release package is self-contained and bundles its .NET runtime. A development executable under `bin` is a different build and may need an installed matching runtime. The current packaging route is **unsigned**, so Windows may show **Unknown publisher** or a SmartScreen warning. A checksum does not establish a trusted publisher. Read the [release guide](docs/releases.md) for updates, removal and acceptance limits.
+All three paths bundle the .NET runtime. Unsigned candidates can show Unknown publisher or SmartScreen warnings; checksums verify integrity but do not establish a trusted publisher. See the [release guide](docs/releases.md) for signing and acceptance limits.
 
 ## Use Tern
 
@@ -73,7 +70,7 @@ Dependencies and lockfiles are pinned, and warnings are errors. Eight test proje
 
 ## Automated releases
 
-The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.4**. A failed check must not be described as a verified release.
+The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) is configured to build, run its documented automated gate and package Windows x64, then publish a separate main-branch preview after required checks succeed. Preview tags identify the run and source commit; application version remains **1.0.5**. A failed check must not be described as a verified release.
 
 For a local candidate, use `./tools/BuildRelease.ps1`; it publishes, invokes the packaging helper and smokes the extracted application. The legacy `./scripts/publish.ps1` remains available for a local self-contained publish. These have different output directories; the [release guide](docs/releases.md) explains each and the unsigned/manual-acceptance limitations.
 
@@ -107,7 +104,7 @@ The previous README's detailed workflow and architecture reference is preserved 
 
 The [current GUI task guide](docs/gui-tasks.md) documents the implemented controls and synthetic screenshots. Native screen-reader, physical-DPI, printer, clipboard and clean-machine startup checks still require verification on Windows.
 
-Version **1.0.4** improves export and print-preview layout, search in all document modes, and conversational Tern help with automatic offline recovery. See the [user guide](docs/user-guide.md#version-104-workflows) and [release notes](docs/release-notes-1.0.4.md).
+Version **1.0.5** updates onboarding, ten starter templates, authoring dialogs, task rendering and actual PDF page selection. Windows distributions include MSI, standalone Tern.exe and the portable ZIP. See the [illustrated workflows](docs/workflows-1.0.5.md) and [release notes](docs/release-notes-1.0.5.md).
 
 ### Help, export and guidance improvements
 
@@ -121,6 +118,6 @@ Version **1.0.4** improves export and print-preview layout, search in all docume
 
 Ask & learn gives the answer more space once it is ready; the question editor stays available in a compact form for follow-ups. Click a picker result once to choose it, or use Up/Down and Enter. The welcome panel is larger and centered.
 
-In Write with AI, highlight text before opening the panel to use the selection actions. Create content appears only with no selection and Entire note selected. Review the sharing scope and connection, write your instruction, then choose Generate for review. The raw request/JSON section has been removed.
+In Write with AI, highlight text before opening the panel to use the selection actions. The Create content button and editor toolbar AI flyout have been removed. Other AI commands remain available. Review the sharing scope and connection, write your instruction, then choose Generate for review. The raw request/JSON section has been removed.
 
 In Review AI suggestion, compare the complete BEFORE and AFTER text. Use Back to improve the instruction, Copy result to copy the full suggestion, Apply changes to accept the proposal, or Close to keep your note unchanged. Insert result preserves the original text and adds the generated content. Applied edits remain unsaved and can be undone. Narrow screens stack the comparison vertically. Disclosure sections use the same themed appearance and keyboard focus cues throughout the app.

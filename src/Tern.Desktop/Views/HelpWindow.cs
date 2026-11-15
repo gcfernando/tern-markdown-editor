@@ -63,6 +63,31 @@ public sealed class HelpWindow : Window
         var advancedText = GuideParts.Body("");
         var advanced = new Expander { Header = "Advanced details", Content = advancedText, IsVisible = false, HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(advanced, "Advanced feature details");
+        var screenshotImage = new Image { Stretch = Stretch.Uniform, MaxHeight = 480 };
+        var screenshot = new Expander { Header = "Screenshot · Tern 1.0.5", IsVisible = false, Content = screenshotImage, HorizontalAlignment = HorizontalAlignment.Stretch };
+        Avalonia.Media.Imaging.Bitmap? screenshotBitmap = null;
+        void ShowScreenshot(string? id)
+        {
+            screenshotImage.Source = null; screenshotBitmap?.Dispose(); screenshotBitmap = null;
+            screenshot.IsVisible = false; screenshot.IsExpanded = false;
+            var name = id switch
+            {
+                "tutorial.1.0.5.0" => "starter-templates",
+                "tutorial.1.0.5.1" => "metadata-tags",
+                "tutorial.1.0.5.2" => "insert-link-web",
+                "tutorial.1.0.5.3" => "save-before-image",
+                "tutorial.1.0.5.4" => "help-replay",
+                "tutorial.1.0.5.5" => "complete-print-preview",
+                "tutorial.1.0.5.7" => "ask-and-learn-offline",
+                _ => null
+            };
+            if (name is null) return;
+            using var source = Avalonia.Platform.AssetLoader.Open(new Uri("avares://Tern/Assets/Help/v105/" + name + ".png"));
+            screenshotBitmap = new Avalonia.Media.Imaging.Bitmap(source);
+            screenshotImage.Source = screenshotBitmap; screenshot.IsVisible = true;
+            AutomationProperties.SetName(screenshotImage, "Tern 1.0.5 workflow screenshot: " + name.Replace('-', ' '));
+        }
+        Closed += (_, _) => { screenshotImage.Source = null; screenshotBitmap?.Dispose(); };
         var whatToDo = GuideParts.Caption("WHAT TO DO");
         var answerText = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap, FontSize = GuideParts.Scaled(15), LineHeight = GuideParts.Scaled(23) };
         AutomationProperties.SetName(answerText, "Guide AI answer");
@@ -72,7 +97,7 @@ public sealed class HelpWindow : Window
         var cancelAnswer = new Button { Content = "Cancel answer", IsVisible = false };
         cancelAnswer.Click += (_, _) => answerRequest?.Cancel();
         Closed += (_, _) => answerRequest?.Cancel();
-        var detail = new ScrollViewer { HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, Content = new StackPanel { Spacing = 18, Children = { title, GuideParts.Card(GuideParts.Vertical(whatToDo, step)), need, purpose, exampleCard, result, trouble, advanced } } };
+        var detail = new ScrollViewer { HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, Content = new StackPanel { Spacing = 18, Children = { title, GuideParts.Card(GuideParts.Vertical(whatToDo, step)), need, purpose, exampleCard, result, screenshot, trouble, advanced } } };
         AutomationProperties.SetName(detail, "Lesson instructions");
         var back = new Button { Content = "Back" }; var next = new Button { Content = "Next", IsDefault = true };
         var skip = new Button { Content = "Skip tutorial" }; var replay = new Button { Content = "Replay" };
@@ -95,6 +120,7 @@ public sealed class HelpWindow : Window
         }
         void SelectLesson(BeginnerLesson lesson)
         {
+            ShowScreenshot(null);
             activeLesson = lesson; title.Text = lesson.Name; purpose.Text = lesson.When + "\n\n" + lesson.Why; need.Text = "Before you start: " + lesson.Prerequisite;
             example.Text = lesson.Example; exampleCard.IsVisible = true; illustration.IsVisible = lesson.Id == "practice"; result.Text = "When you're finished: " + lesson.Result; troubleshooting.Text = lesson.Troubleshooting; trouble.IsExpanded = false; advanced.IsVisible = false;
             steps = lesson.Steps.Select(s => s.Title + "\n" + s.Action + "\n\nWhat you'll see: " + s.Expected).ToArray(); launchId = lesson.LaunchCommandId;
@@ -102,6 +128,7 @@ public sealed class HelpWindow : Window
         }
         void SelectFeature(FeatureHelp feature)
         {
+            ShowScreenshot(feature.Id);
             title.Text = feature.Name; purpose.Text = feature.Description; need.Text = "Before you start: " + feature.Prerequisite + (feature.Shortcut.Length > 0 ? "\nCurrent shortcut: " + feature.Shortcut : "");
             exampleCard.IsVisible = false; result.Text = "Follow the steps deliberately, then check the result before saving. This reference does not run actions automatically.";
             troubleshooting.Text = "If the feature is unavailable, check the requirements above. Open a document or folder when needed. Search another feature here, or return to Start here for an everyday lesson."; trouble.IsExpanded = false;
@@ -120,6 +147,7 @@ public sealed class HelpWindow : Window
             ask.IsVisible = !string.IsNullOrWhiteSpace(search.Text);
             if (rows.Length == 0)
             {
+                ShowScreenshot(null);
                 title.Text = "Find help with Tern";
                 purpose.Text = "No installed guide matches this question. Try a Tern feature name such as search, export or Markdown headings. General questions are outside this help screen.";
                 need.Text = "Guide questions include your question and Tern's feature reference. Your notes are not attached by default. Choose a Help connection in Ask & learn before asking.";

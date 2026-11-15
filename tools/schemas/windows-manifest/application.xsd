@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:schemas-microsoft-com:asm.v3" xmlns:ws="http://schemas.microsoft.com/SMI/2016/WindowsSettings" elementFormDefault="qualified">
+  <xs:import namespace="http://schemas.microsoft.com/SMI/2016/WindowsSettings" schemaLocation="windows-settings.xsd" />
+  <xs:element name="application">
+    <xs:complexType><xs:sequence><xs:element name="windowsSettings">
+      <xs:complexType><xs:all>
+        <xs:element ref="ws:longPathAware" />
+        <xs:element ref="ws:dpiAwareness" />
+      </xs:all></xs:complexType>
+    </xs:element></xs:sequence></xs:complexType>
+  </xs:element>
+</xs:schema>

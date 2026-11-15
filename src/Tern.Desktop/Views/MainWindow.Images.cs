@@ -247,7 +247,7 @@ public partial class MainWindow
             if (selected?.TryGetLocalPath() is not { } target)
             { _shell.StatusMessage = "Image insertion cancelled. Your document was kept."; return false; }
             if (!ReferenceEquals(tab, _shown)) { _shell.StatusMessage = "The active document changed. Try inserting the image again."; return false; }
-            await ImageAttachmentImporter.InsertAsync(tab, bytes, Path.GetDirectoryName(target)!, Path.GetFileName(target), offset, revision, allowExternalDestination: true);
+            await ImageAttachmentImporter.InsertAsync(tab, bytes, Path.GetDirectoryName(target)!, Path.GetFileName(target), offset, revision, allowExternalDestination: true, confirmReplace: ConfirmReplaceImageAsync);
             _shell.StatusMessage = "Image copied and linked. Save the document to keep the link. Undo removes the link; the attachment stays on disk.";
             ReportLinkedImagePermissionFailure();
             return true;
@@ -267,7 +267,7 @@ public partial class MainWindow
         {
             if (!Current()) return "The document changed while choosing the image. Close this form and insert it again.";
             if (choice.Copy)
-                await ImageAttachmentImporter.InsertAsync(tab, bytes, choice.Folder, choice.Name, offset, revision, allowExternalDestination: true, altText: choice.Alt, isCurrent: Current);
+                await ImageAttachmentImporter.InsertAsync(tab, bytes, choice.Folder, choice.Name, offset, revision, allowExternalDestination: true, altText: choice.Alt, isCurrent: Current, confirmReplace: ConfirmReplaceImageAsync);
             else if (original is not null)
                 ImageAttachmentImporter.LinkExisting(tab, bytes, original, offset, revision, choice.Alt);
             return null;
@@ -278,10 +278,20 @@ public partial class MainWindow
         return true;
     }
 
+    private async Task<bool> ConfirmReplaceImageAsync(string target) =>
+        await PromptWindow.AskAsync(OwnedWindows.OfType<InsertImageWindow>().FirstOrDefault(window => window.IsVisible) as Window ?? this, "Replace image file?",
+            "Replace “" + Path.GetFileName(target) + "”?\n\nDestination: " + target +
+            "\n\nOther notes may use this image. Cancel keeps the existing file and stops insertion.",
+            ["Replace file", "Cancel"], 1, 1) == 0;
+
     private async Task<bool> EnsureImageDocumentAsync()
     {
         if (_shown is not { IsReadOnly: false } tab) return false;
         if (tab.FilePath is not null) return true;
+        var confirmed = await PromptWindow.AskAsync(this, "Insert image",
+            "Save this note before inserting an image\n\nSaving gives Tern a location for image attachments. After the note is saved, choose your image.",
+            ["Save note", "Cancel"], 0, 1);
+        if (confirmed != 0 || !ReferenceEquals(tab, _shown) || !_shell.Tabs.Contains(tab)) return false;
         _shell.StatusMessage = "Choose where to save the note; image insertion will continue after saving.";
         if (!await _shell.SaveTabAsync(tab))
         {

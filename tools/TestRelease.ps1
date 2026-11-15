@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$Archive,
     [Parameter(Mandatory)][string]$Checksum,
-    [Parameter(Mandatory)][string]$EvidenceDirectory
+    [Parameter(Mandatory)][string]$EvidenceDirectory,
+    [string]$Executable
 )
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'The extracted application smoke check requires Windows.' }
@@ -10,23 +11,32 @@ $archivePath = [IO.Path]::GetFullPath($Archive)
 $evidence = [IO.Path]::GetFullPath($EvidenceDirectory)
 if (Test-Path -LiteralPath $evidence) { throw 'Preserve existing smoke evidence; choose a fresh directory.' }
 $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-if ([IO.File]::ReadAllText([IO.Path]::GetFullPath($Checksum)).Trim() -cne "$hash  $([IO.Path]::GetFileName($archivePath))") {
+$checksumEntries = @([IO.File]::ReadAllLines([IO.Path]::GetFullPath($Checksum)) | Where-Object { $_ -match '  Tern-win-x64\.zip$' })
+if ($checksumEntries.Count -ne 1 -or $checksumEntries[0] -cne "$hash  $([IO.Path]::GetFileName($archivePath))") {
     throw 'Release archive checksum mismatch.'
 }
 $manifestText = python (Join-Path $PSScriptRoot 'package_release.py') --verify $archivePath
 if ($LASTEXITCODE -ne 0) { throw 'Release file coverage, CRC or SHA-256 verification failed.' }
 $manifest = $manifestText | ConvertFrom-Json
 [void][IO.Directory]::CreateDirectory($evidence)
-$extract = Join-Path $evidence 'extracted'
+$extract = Join-Path $evidence 'extracted app with spaces'
 [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extract)
 if ($manifest.signing -eq 'Verified Authenticode signatures') {
     & (Join-Path $PSScriptRoot 'VerifyReleaseSignatures.ps1') -PublishDirectory $extract
 }
 $trace = Join-Path $evidence 'startup.json'
-$note = Join-Path $evidence 'release-smoke.md'
+$note = Join-Path $evidence 'notes with spaces/release-smoke.md'
+[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($note))
 [IO.File]::WriteAllText($note, "# Release smoke`n`nLocal **Markdown** startup fixture.`n", [Text.UTF8Encoding]::new($false))
 $before = (Get-FileHash -LiteralPath $note -Algorithm SHA256).Hash
-$start = [Diagnostics.ProcessStartInfo]::new((Join-Path $extract 'Tern.exe'))
+$application = if ($Executable) { [IO.Path]::GetFullPath($Executable) } else { Join-Path $extract 'Tern.exe' }
+if ($Executable) {
+    $spaced = Join-Path $evidence 'standalone path with spaces'
+    [void][IO.Directory]::CreateDirectory($spaced)
+    Copy-Item -LiteralPath $application -Destination (Join-Path $spaced 'Tern.exe')
+    $application = Join-Path $spaced 'Tern.exe'
+}
+$start = [Diagnostics.ProcessStartInfo]::new($application)
 $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
@@ -69,8 +79,8 @@ try {
     if ($process.ExitCode -ne 0) { throw "Extracted application exit code: $($process.ExitCode)" }
     [IO.File]::WriteAllText((Join-Path $evidence 'stdout.log'), $stdout.GetAwaiter().GetResult())
     [IO.File]::WriteAllText((Join-Path $evidence 'stderr.log'), $stderr.GetAwaiter().GetResult())
-    $result = [ordered]@{ schemaVersion=1; archiveSha256=$hash; version=$manifest.version; selfContained=$manifest.selfContained;
-        sourceCommit=$manifest.sourceCommit; status='passed'; startupCompleted=$true; nativeWindowTitle=$caption;
+    $result = [ordered]@{ schemaVersion=1; executable=$application; executableSha256=(Get-FileHash -LiteralPath $application -Algorithm SHA256).Hash.ToLowerInvariant(); archiveSha256=$hash; version=$manifest.version; selfContained=$manifest.selfContained;
+        sourceCommit=$manifest.sourceCommit; status='passed'; startupCompleted=$true; nativeWindowTitle=$caption; fixturePath=$note;
         fixtureUnchanged=$true; normalExit=$true; scope='Extracted native startup, isolated state, unchanged local Markdown fixture and normal close. No manual printing, accessibility, or network-isolation acceptance claim.' }
     [IO.File]::WriteAllText((Join-Path $evidence 'result.json'), ($result | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
     Write-Output 'PASS: extracted self-contained Tern startup and normal close.'

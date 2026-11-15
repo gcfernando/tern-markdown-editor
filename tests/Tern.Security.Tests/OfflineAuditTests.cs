@@ -242,6 +242,10 @@ public class OfflineAuditTests
         // never sends a request; exact strings keep unknown destinations reviewable.
         var reviewedConnectionText = new HashSet<string>(StringComparer.Ordinal)
         {
+            // Destination validation help only. InsertLinkWindow checks Uri syntax;
+            // neither displaying this hint nor validating a web address fetches it.
+            "Enter a complete http:// or https:// address.",
+            "Web address requires a complete http:// or https:// address. Tern validates its form without fetching it.",
             // Exact static malformed-input hint. The example is displayed in an
             // ArgumentException, never submitted as a request. The URL dialog's
             // invalid-input regression separately verifies zero network calls.
@@ -312,7 +316,7 @@ public class OfflineAuditTests
         var root = FindRepoRoot();
         var banned = new[] { "ApplicationInsights", "Sentry", "OpenTelemetry", "RestSharp", "Flurl", "Refit", "AppCenter", "Grpc", "SignalR", "Azure.", "AWSSDK", "Polly", "HttpClient" };
         var problems = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories).Concat(Directory.EnumerateFiles(root, "Directory.Packages.props")))
+        foreach (var file in RepositoryProjects(root).Concat(Directory.EnumerateFiles(root, "Directory.Packages.props")))
         {
             if (file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) || file.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
             {
@@ -324,6 +328,18 @@ public class OfflineAuditTests
         }
 
         Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    private static IEnumerable<string> RepositoryProjects(string directory)
+    {
+        // Audit every source project without descending into generated SDKs,
+        // native-test account profiles, release payloads or user-supplied inputs.
+        foreach (var file in Directory.EnumerateFiles(directory, "*.csproj")) yield return file;
+        foreach (var child in Directory.EnumerateDirectories(directory))
+        {
+            if (Path.GetFileName(child) is ".git" or ".runtime" or "bin" or "obj" or "artifacts" or "inputs" or "node_modules") continue;
+            foreach (var file in RepositoryProjects(child)) yield return file;
+        }
     }
 
     [Fact]

@@ -88,7 +88,7 @@ public sealed class GuiWorkspaceFeaturesTests
         Assert.Null(practice.FilePath);
         Assert.Contains("practice", practice.DisplayName, StringComparison.OrdinalIgnoreCase);
         Assert.True(practice.IsDirty);
-        var dismiss = f.Window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Dismiss checklist"));
+        var dismiss = f.Window.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && Equals(b.Content, "Hide Quick Start tips"));
         dismiss.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.True(new SettingsStore(f.Shell.Paths.SettingsDirectory).Load().OnboardingDismissed);
         Assert.Equal("Original text", original.CurrentText);

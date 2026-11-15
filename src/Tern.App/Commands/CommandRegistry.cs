@@ -505,7 +505,7 @@ public sealed class CommandRegistry
         new(CommandIds.ShowHistory, "Document Version History", "File", "Ctrl+Alt+H"),
         new(CommandIds.ToggleReference, "Toggle Reference Pane", "View", "Ctrl+Alt+2"),
         new(CommandIds.ResetLayout, "Reset layout", "View", "Ctrl+Alt+Shift+F10"),
-        new(CommandIds.Welcome, "Replay first-note checklist", "Help", "Ctrl+Alt+Shift+F12"),
+        new(CommandIds.Welcome, "Tern Quick Start", "Help", "Ctrl+Alt+Shift+F12"),
         new(CommandIds.ToggleFocus, "Toggle Focus Mode", "View", "F8"),
         new(CommandIds.ToggleSidebar, "Toggle Sidebar", "View", "Ctrl+Shift+B"),
         new(CommandIds.ToggleRightPanel, "Toggle Outline Panel", "View", "Ctrl+Alt+B"),

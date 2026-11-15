@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tern's application-manifest profile; not a complete Windows SDK schema. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:schemas-microsoft-com:asm.v1" xmlns:a="urn:schemas-microsoft-com:asm.v1" xmlns:c="urn:schemas-microsoft-com:compatibility.v1" xmlns:v3="urn:schemas-microsoft-com:asm.v3" elementFormDefault="qualified">
+  <xs:import namespace="urn:schemas-microsoft-com:compatibility.v1" schemaLocation="compatibility.xsd" />
+  <xs:import namespace="urn:schemas-microsoft-com:asm.v3" schemaLocation="application.xsd" />
+  <xs:element name="assembly">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="a:assemblyIdentity" />
+        <xs:element ref="c:compatibility" />
+        <xs:element ref="v3:application" />
+      </xs:sequence>
+      <xs:attribute name="manifestVersion" type="xs:string" use="required" fixed="1.0" />
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="assemblyIdentity">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required" />
+      <xs:attribute name="version" use="required">
+        <xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" /></xs:restriction></xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

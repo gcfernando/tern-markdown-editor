@@ -43,10 +43,12 @@ Tern edits ordinary Markdown files on Windows. Start with the practical guides, 
 The [published site](https://gcfernando.github.io/tern-markdown-editor/) documents the desktop application; it does not run the editor in a browser. Source, fixtures and build scripts remain in the [GitHub repository](https://github.com/gcfernando/tern-markdown-editor). See the [MIT license](LICENSE) and [third-party notices](THIRD-PARTY-NOTICES.md).
 
 
-### Version 1.0.4 workflows
+### Current workflows
 
 - **Find:** use Edit → Find to highlight matches in Source, Split or Reading. Move with Next/Previous or select a result to reveal it. Review replacements before applying them.
 - **Export:** choose File → Export as… (Ctrl+Shift+E), select HTML, PDF or plain text, choose a destination and export. Open file and Show in folder remain beside the completion status. HTML embeds permitted images; PDF preserves document structure on printable pages. Plain text keeps readable text, lists, code indentation and table layout; it cannot contain fonts, colours or images.
-- **Print:** choose File → Print preview… (Ctrl+P). Drag the scrollbar to move through the captured document, or use its track, mouse wheel and Page Up/Page Down. Resize the preview as needed. Open printable PDF shows exact page breaks in the installed PDF reader, where Ctrl+P selects the printer and copies.
+- **Print:** choose File → Print preview… (Ctrl+P). Navigate actual PDF pages. Choose All, Current page or Pages, then Open selected PDF; Ctrl+P in the PDF reader selects the printer and copies.
 - **Ask & learn:** ask naturally, for example “I need to add a new AI connection, how can I do that?”. Tern ranks relevant installed guide topics instead of requiring every question word to match. Without a connection, or when a provider fails, an explicitly labelled offline answer appears automatically. No notes or selections are attached. Account access, expired tokens and provider permissions still require the account owner; Tern never changes them automatically.
 - **Consistent controls:** dialogs share Paper/Midnight colours, inherited text scaling, wrapping fields, keyboard focus and visible primary actions. Compact screens scroll the form while preserving its action area.
+
+See the [illustrated Tern 1.0.5 workflows](docs/workflows-1.0.5.md) for onboarding, templates, tags, links, images, line endings, printing and Windows installation.

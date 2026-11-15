@@ -38,7 +38,7 @@ internal static class ImageAttachmentImporter
         throw new IOException("Choose a different attachment name; too many copies use this name.");
     }
 
-    public static async Task<string> InsertAsync(DocumentTab tab, byte[] bytes, string folder, string name, int offset, long revision, bool allowExternalDestination = false, string? altText = null, Func<bool>? isCurrent = null)
+    public static async Task<string> InsertAsync(DocumentTab tab, byte[] bytes, string folder, string name, int offset, long revision, bool allowExternalDestination = false, string? altText = null, Func<bool>? isCurrent = null, Func<string, Task<bool>>? confirmReplace = null)
     {
         if (tab.IsReadOnly || tab.FilePath is not { } document) throw new IOException("Save a writable document before inserting an attachment.");
         ValidateImage(bytes, name);
@@ -49,8 +49,19 @@ internal static class ImageAttachmentImporter
             throw new IOException("Choose an attachment folder inside the document's folder.");
         Directory.CreateDirectory(targetFolder);
         var target = Path.Combine(targetFolder, name);
-        if (File.Exists(target) || Directory.Exists(target))
-            throw new IOException("That filename already exists. Choose another name; the existing attachment was kept.");
+        if (Directory.Exists(target)) throw new IOException("That destination is a folder. Choose another filename.");
+        byte[]? previousHash = null;
+        if (File.Exists(target))
+        {
+            if (confirmReplace is null) throw new IOException("That filename already exists. Choose another name; the existing attachment was kept.");
+            if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0) throw new IOException("Choose a destination that is not a linked file.");
+            using (var previous = File.OpenRead(target))
+            {
+                if (previous.Length > MaxBytes) throw new IOException("The existing destination exceeds 16 MiB. Choose another filename; the existing file was kept.");
+                previousHash = await System.Security.Cryptography.SHA256.HashDataAsync(previous);
+            }
+            if (!await confirmReplace(target)) throw new IOException("Image replacement cancelled. The existing file was kept.");
+        }
         var staged = Path.Combine(targetFolder, ".tern-image-" + Guid.NewGuid().ToString("N") + ".tmp");
         var committed = false;
         try
@@ -59,7 +70,14 @@ internal static class ImageAttachmentImporter
             if (isCurrent?.Invoke() == false || !tab.Session.IsCurrent(revision) || tab.FilePath != document || tab.IsReadOnly) throw new IOException("The document changed while choosing the attachment. Try again.");
             // Re-resolve the directory before committing so a changed link cannot redirect the copy.
             if (FileIdentity.ResolvePhysicalPath(folder) != targetFolder) throw new IOException("The attachment folder changed. Try again.");
-            File.Move(staged, target, overwrite: false);
+            if (previousHash is not null)
+            {
+                if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0) throw new IOException("The destination changed to a linked file after confirmation. Insert the image again.");
+                using (var previous = File.OpenRead(target))
+                    if (!(await System.Security.Cryptography.SHA256.HashDataAsync(previous)).SequenceEqual(previousHash))
+                        throw new IOException("The destination changed after confirmation. Insert the image again.");
+            }
+            File.Move(staged, target, overwrite: previousHash is not null);
             committed = true;
             RegisterSelectedImage(tab, target);
             InsertLink(tab, document, target, name, offset, altText);

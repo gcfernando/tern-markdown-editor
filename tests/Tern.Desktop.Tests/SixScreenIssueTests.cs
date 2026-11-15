@@ -60,7 +60,7 @@ public sealed class SixScreenIssueTests
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Create_content_is_hidden_when_a_selection_exists_and_raw_request_ui_is_removed(bool selection)
+    public void Create_content_is_removed_for_every_scope_and_raw_request_ui_is_removed(bool selection)
     {
         using var f = new DesktopFixture();
         var scope = new ComboBox { ItemsSource = selection ? new[] { "Selected text", "Entire note", "Instruction only" } : new[] { "Entire note", "Instruction only" }, SelectedIndex = 0 };
@@ -68,10 +68,11 @@ public sealed class SixScreenIssueTests
         var window = new Window { Width = 1000, Height = 900, Content = prompt }; window.Show(f.Window); Pump(window);
         try
         {
-            var create = prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Create content"));
-            Assert.Equal(!selection, create.IsVisible);
-            scope.SelectedItem = "Entire note"; Pump(window); Assert.Equal(!selection, create.IsVisible);
-            scope.SelectedItem = "Instruction only"; Pump(window); Assert.False(create.IsVisible);
+            Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Create content"));
+            scope.SelectedItem = "Entire note"; Pump(window);
+            Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Create content"));
+            scope.SelectedItem = "Instruction only"; Pump(window);
+            Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Create content"));
             scope.SelectedIndex = 0; Pump(window);
             Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Expander>(), e => Equals(e.Header, "Inspect exact text to share"));
             Assert.DoesNotContain(prompt.GetVisualDescendants(), c => AutomationProperties.GetName(c) == "Exact AI writing scope");

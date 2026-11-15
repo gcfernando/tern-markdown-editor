@@ -1,0 +1,7 @@
+WiX Toolset 3.14.1, unmodified WixUI and WixUtil installer helpers.
+Copyright (c) .NET Foundation and contributors.
+License: Microsoft Reciprocal License (MS-RL), accompanying LICENSE.TXT.
+Exact upstream source: https://github.com/wixtoolset/wix3/tree/wix3141rtm
+Source archive: https://github.com/wixtoolset/wix3/archive/refs/tags/wix3141rtm.zip
+License and generated-installer clarification: https://docs.firegiant.com/wix/
+The WiX compiler/linker are build tools and are not installed with Tern.

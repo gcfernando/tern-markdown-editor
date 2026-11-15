@@ -322,7 +322,7 @@ internal sealed class BlockFactory
 
     private Control Marker(ListNode list, ListItemNode item, int index, int depth)
     {
-        var slot = _fontSize * 1.7;
+        var slot = Math.Max(20, _fontSize * 1.7);
         if (item.Task != TaskState.None)
         {
             var box = new CheckBox
@@ -332,7 +332,9 @@ internal sealed class BlockFactory
                 Focusable = false,
                 MinWidth = 0,
                 MinHeight = 0,
-                Height = _fontSize * 1.6,
+                Width = slot,
+                Height = Math.Max(20, _fontSize * 1.6),
+                Template = new Avalonia.Controls.Templates.FuncControlTemplate<CheckBox>((owner, _) => new TaskMarker(owner, _fontSize)),
                 Padding = default,
                 Margin = new Thickness(0, 0, 4, 0),
                 VerticalAlignment = VerticalAlignment.Top,

@@ -8,14 +8,27 @@ namespace Tern.Desktop.Views;
 
 public partial class MainWindow
 {
+    private bool _editingMetadata;
     private async void OnEditTagsClick(object? sender, RoutedEventArgs e)
     {
-        if (_shown is not { IsReadOnly: false, Analysis: { } analysis } tab) return;
+        if (_editingMetadata || _shown is not { IsReadOnly: false } tab) return;
+        _editingMetadata = true;
+        try
+        {
         var revision = tab.Session.Revision;
-        var dialog = new Window(); DialogParts.Setup(dialog, "Edit note metadata", 600, 420);
+        var snapshot = tab.CurrentText;
+        var profile = tab.Profile;
+        // The inspector's asynchronous analysis can still describe an earlier
+        // revision. Never use those ranges to edit the current front matter.
+        var analysis = await Task.Run(() => Tern.Markdown.MarkdownAnalyzer.Analyze(snapshot, profile));
+        if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || tab.IsReadOnly || _windowClosed)
+        { _shell.StatusMessage = "The note changed. Reopen Edit note metadata to refresh it."; return; }
+        var dialog = new Window(); DialogParts.Setup(dialog, "Edit note metadata", 600, 340, guidance: false);
+        dialog.CanResize = false;
         var input = new TextBox { Text = string.Join(", ", FrontMatterReader.Read(analysis.FrontMatter?.Yaml).Tags) };
+        var message = GuideParts.Caption("");
         var preview = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        var apply = new Button { Content = "Apply tags", IsDefault = true };
+        var apply = new Button { Content = "Apply tags", IsDefault = true, Classes = { "accent" } };
         var source = new Button { Content = "Edit metadata in Source" };
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         void Update()
@@ -31,15 +44,24 @@ public partial class MainWindow
         apply.Click += (_, _) =>
         {
             if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || tab.IsReadOnly)
-            { preview.Text = "The note changed. Close this form and reopen Edit tags to refresh it."; apply.IsEnabled = false; return; }
+            { message.Text = "The note changed. Close and reopen Edit note metadata to refresh it."; message.IsVisible = true; apply.IsEnabled = false; return; }
             if (TagEdits.Create(tab.CurrentText, analysis, input.Text ?? "", tab.Session.Format.NewLineText) is { } edit)
             { tab.ApplyEdits([edit]); dialog.Close(); }
         };
-        dialog.Content = new StackPanel { Margin = new Avalonia.Thickness(20), Spacing = 12, Children =
-        {
-            new TextBlock { Text = "Add / edit tags. A metadata block is inserted when the note has none.", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-            DialogParts.Labeled("Tags (comma separated)", input), preview, GuideParts.Actions(source, cancel, apply)
-        } };
-        Update(); await dialog.ShowDialog(this);
+        var clear = new Button { Content = "Clear tags" };
+        clear.Click += (_, _) => { input.Text = ""; input.Focus(); };
+        preview.IsVisible = false;
+        input.TextChanged += (_, _) => { message.Text = apply.IsEnabled ? "" : "This metadata is complex. Edit it in Source to preserve it."; message.IsVisible = !apply.IsEnabled; };
+        var field = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, Children = { input, clear } };
+        Grid.SetColumn(clear, 1);
+        var fields = GuideParts.Vertical(GuideParts.Caption("Separate tags with commas, for example work, planning."), field,
+            GuideParts.Body("Apply tags edits this note. Save (Ctrl+S) writes it to disk."), message);
+        dialog.Content = GuideParts.Frame(GuideParts.Title("Tags"), new ScrollViewer { Content = fields, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }, GuideParts.Actions(source, cancel, apply));
+        Update(); message.Text = apply.IsEnabled ? "" : "This metadata is complex. Edit it in Source to preserve it."; message.IsVisible = !apply.IsEnabled;
+        await dialog.ShowDialog(this);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        { _shell.StatusMessage = "Could not edit note metadata: " + ex.Message; }
+        finally { _editingMetadata = false; }
     }
 }

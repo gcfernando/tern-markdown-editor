@@ -19,15 +19,16 @@ public static class Startup
         foreach (var arg in args.Where(a => !string.IsNullOrWhiteSpace(a) && !a.StartsWith('-')))
         {
             if (!window.IsVisible) return;
-            var full = Path.GetFullPath(arg);
-            if (Directory.Exists(full))
+            try
             {
-                await shell.OpenDirectoryAsync(full);
+                var full = Path.GetFullPath(arg);
+                if (Directory.Exists(full)) await shell.OpenDirectoryAsync(full);
+                else if (File.Exists(full)) await shell.OpenFileAsync(full);
+                else shell.StatusMessage = "The requested path is unavailable. Use Open files to choose another note.";
             }
-            else if (File.Exists(full))
-            {
-                await shell.OpenFileAsync(full);
-            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            { shell.StatusMessage = "Could not open the requested path: " + ex.Message; }
+
         }
 
         await OfferRecoveryAsync(window, shell);

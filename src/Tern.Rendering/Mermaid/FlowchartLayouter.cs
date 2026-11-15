@@ -174,6 +174,7 @@ internal static class FlowchartLayouter
         var targetPorts = new double[edges.Count];
         var departureLanes = Enumerable.Repeat(0.5, edges.Count).ToArray();
         AssignPorts(from, to, rects, horizontal, sourcePorts, targetPorts, departureLanes);
+        AlignNearbyPorts(nodes, from, to, chains, rects, horizontal, sourcePorts, targetPorts);
 
         var routed = new List<(IReadOnlyList<DiagramPoint> Points, DiagramRect? Label)>(edges.Count);
         for (var e = 0; e < edges.Count; e++)
@@ -259,6 +260,59 @@ internal static class FlowchartLayouter
 
         var laidFrames = frames.Select(f => new LaidOutSubgraph(f.Subgraph, Shift(f.Bounds))).ToList();
         return new FlowchartLayout(laidNodes, laidEdges, laidFrames, (maxX - minX) + (Margin * 2), (maxY - minY) + (Margin * 2));
+    }
+
+    private static void AlignNearbyPorts(FlowNode[] nodes, int[] from, int[] to, List<int>?[] chains,
+        DiagramRect[] rectangles, bool horizontal, double[] sourcePorts, double[] targetPorts)
+    {
+        // Small layout drift should not introduce an S-bend when a common
+        // connection point fits both faces. Keep the curved router for genuine
+        // offsets, long edges, loops and faces with multiple fixed ports.
+        var counts = new Dictionary<(int Node, int Side), int>();
+        int Side(int owner, int peer) => Math.Sign(horizontal
+            ? rectangles[peer].Center.X - rectangles[owner].Center.X
+            : rectangles[peer].Center.Y - rectangles[owner].Center.Y);
+        double Cross(DiagramPoint point) => horizontal ? point.Y : point.X;
+        bool Movable(int owner, int peer) => counts[(owner, Side(owner, peer))] == 1
+            && nodes[owner].Shape is FlowNodeShape.Rectangle or FlowNodeShape.Rounded or FlowNodeShape.Subroutine or FlowNodeShape.Entity or FlowNodeShape.Class;
+        for (var edge = 0; edge < from.Length; edge++)
+        {
+            if (from[edge] == to[edge]) continue;
+            foreach (var (owner, peer) in new[] { (from[edge], to[edge]), (to[edge], from[edge]) })
+            {
+                var key = (owner, Side(owner, peer));
+                counts[key] = counts.GetValueOrDefault(key) + 1;
+            }
+        }
+        DiagramPoint Port(int owner, int peer, double offset)
+        {
+            var rect = rectangles[owner]; var centre = rect.Center; var side = Side(owner, peer);
+            return Clip(nodes[owner].Shape, rect, horizontal
+                ? new DiagramPoint(centre.X + side * rect.Width, centre.Y + 2 * offset)
+                : new DiagramPoint(centre.X + 2 * offset, centre.Y + side * rect.Height));
+        }
+        (double Low, double High) Range(int owner, int peer, double fixedCross)
+        {
+            if (!Movable(owner, peer)) return (fixedCross, fixedCross);
+            var rect = rectangles[owner];
+            var span = Math.Max(0, (horizontal ? rect.Height : rect.Width) / 2 - 12);
+            var centre = Cross(rect.Center);
+            return (centre - span, centre + span);
+        }
+        for (var edge = 0; edge < from.Length; edge++)
+        {
+            var source = from[edge]; var target = to[edge];
+            if (source == target || chains[edge]?.Count != 2) continue;
+            var a = Cross(Port(source, target, sourcePorts[edge]));
+            var b = Cross(Port(target, source, targetPorts[edge]));
+            if (Math.Abs(a - b) < .001 || Math.Abs(a - b) > 48) continue;
+            var sourceRange = Range(source, target, a); var targetRange = Range(target, source, b);
+            var low = Math.Max(sourceRange.Low, targetRange.Low); var high = Math.Min(sourceRange.High, targetRange.High);
+            if (low > high) continue;
+            var common = Math.Clamp((a + b) / 2, low, high);
+            if (Movable(source, target)) sourcePorts[edge] = common - Cross(rectangles[source].Center);
+            if (Movable(target, source)) targetPorts[edge] = common - Cross(rectangles[target].Center);
+        }
     }
 
     private static void AssignPorts(int[] from, int[] to, DiagramRect[] rectangles, bool horizontal,
