@@ -1,5 +1,6 @@
 # Tern 1.0.4
 
+- Pin the bundled Windows runtime to .NET 10.0.15 and include its matching upstream license notices, preventing SDK patch updates from causing runtime inventory mismatches during packaging.
 - Unify HTML, PDF and plain-text export under File → Export as… (Ctrl+Shift+E), with explicit output selection and visible completion actions.
 - Increase print-preview space and keep scrollbar thumb movement proportional while virtualized blocks are measured.
 - Improve Find across Source, Split and Reading, including match highlighting, result navigation and replace review.

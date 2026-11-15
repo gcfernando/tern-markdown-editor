@@ -2,6 +2,8 @@
 
 ## 1.0.4 — November 15 2026
 
+- Pin the bundled Windows runtime to .NET 10.0.15 and include its matching upstream license notices, preventing SDK patch updates from causing runtime inventory mismatches during packaging.
+
 ### Six-screen usability and shared-style corrections
 
 - Give Ask & learn answers more reading height after a response arrives, keeping a compact question editor available for follow-ups. Hide the redundant connection summary while reading an answer; connection selection and management remain at the top.

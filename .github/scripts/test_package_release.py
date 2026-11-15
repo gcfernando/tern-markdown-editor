@@ -4,6 +4,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +17,21 @@ SPEC = importlib.util.spec_from_file_location(
 )
 package = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(package)
+
+
+class RuntimeInventoryTests(unittest.TestCase):
+    def test_desktop_runtime_pin_and_upstream_notices_match_inventory(self):
+        root = Path(__file__).resolve().parents[2]
+        inventory = json.loads((root / "licenses/dependency-inventory.json").read_text())
+        runtime = inventory["runtime"]
+        desktop = ET.parse(root / "src/Tern.Desktop/Tern.Desktop.csproj")
+        self.assertEqual(desktop.findtext(".//RuntimeFrameworkVersion"), runtime["version"])
+        self.assertEqual(runtime["id"], "Microsoft.NETCore.App.Runtime.win-x64")
+        self.assertEqual(len(runtime["notices"]), 2)
+        for notice in runtime["notices"]:
+            path = root / notice["path"]
+            self.assertEqual(path.parent.name, runtime["version"])
+            self.assertEqual(package.sha256(path), notice["sha256"])
 
 
 class PackageTests(unittest.TestCase):
