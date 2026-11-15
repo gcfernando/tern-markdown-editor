@@ -13,8 +13,10 @@ public sealed record PlainTextExportOptions
     /// <summary>How the Markdown is parsed.</summary>
     public PreviewOptions Preview { get; init; } = ExportDefaults.PreviewOptions;
 
-    /// <summary>Line width used to pad tables and underline headings. Text itself is not re-wrapped. Default 80.</summary>
+    /// <summary>Preferred readable line width. Long code lines and link-reference destinations remain intact. Default 80.</summary>
     public int Width { get; init; } = 80;
+    /// <summary>Wrap prose, adapt wide tables and collect link destinations at the end. Disable for the legacy inline layout.</summary>
+    public bool ReadableLayout { get; init; } = true;
 
     /// <summary>Whether front matter is written as <c>key: value</c> lines.</summary>
     public bool IncludeFrontMatter { get; init; } = true;
@@ -36,7 +38,9 @@ public static class PlainTextExporter
     public static string Export(PreviewDocument document, PlainTextExportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(document);
-        var writer = new TextBlockWriter(options ?? new PlainTextExportOptions());
+        options ??= new PlainTextExportOptions();
+        if (options.Width is < 20 or > 240) throw new ArgumentOutOfRangeException(nameof(options), "Text width must be between 20 and 240.");
+        var writer = new TextBlockWriter(options);
         var lines = writer.Blocks(document.Blocks);
         if (document.Truncated)
         {
@@ -44,7 +48,8 @@ public static class PlainTextExporter
             lines.Add("[The document is very large and was cut short.]");
         }
 
-        return string.Join('\n', lines).TrimEnd('\n', ' ') + "\n";
+        writer.AppendLinks(lines);
+        return string.Join('\n', lines).Trim('\n', '\r') + "\n";
     }
 
     /// <summary>Exports to a UTF-8 file without BOM.</summary>
@@ -54,15 +59,63 @@ public static class PlainTextExporter
         AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(Export(markdown, options)), options?.Preview.DocumentPath);
     }
 
+    /// <summary>Writes a previously built preview so callers can retain its truncation outcome.</summary>
+    public static void ExportToFile(PreviewDocument document, string outputPath, PlainTextExportOptions? options = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
+        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(Export(document, options)), options?.Preview.DocumentPath);
+    }
+
     private sealed class TextBlockWriter(PlainTextExportOptions options)
     {
+        private readonly List<string> _links = [];
+        private int _indent;
+        private string Reference(string destination)
+        {
+            destination = ExportText.Clean(destination);
+            var index = _links.IndexOf(destination);
+            if (index < 0) { index = _links.Count; _links.Add(destination); }
+            return $"[L{index + 1}]";
+        }
+        public void AppendLinks(List<string> lines)
+        {
+            if (_links.Count == 0) return;
+            lines.Add(""); lines.Add("Links"); lines.Add("-----");
+            for (var i = 0; i < _links.Count; i++) lines.Add($"[L{i + 1}] {_links[i]}");
+        }
+        private List<string> Prose(string text, string continuation = "")
+        {
+            if (!options.ReadableLayout) return Split(text);
+            var result = new List<string>();
+            var width = Math.Max(20, options.Width - _indent);
+            foreach (var paragraph in Split(text))
+            {
+                var line = "";
+                foreach (var word in paragraph.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (line.Length > 0 && line.Length + 1 + word.Length > width)
+                    { result.Add(line); line = continuation; }
+                    var remaining = word;
+                    while (remaining.Length > width - continuation.Length)
+                    {
+                        if (line.Trim().Length > 0) { result.Add(line); line = continuation; }
+                        var count = width - continuation.Length;
+                        if (count < remaining.Length && char.IsLowSurrogate(remaining[count])) count--;
+                        result.Add(continuation + remaining[..count]); remaining = remaining[count..];
+                    }
+                    line += (line.Trim().Length > 0 ? " " : "") + remaining;
+                }
+                result.Add(line.TrimEnd());
+            }
+            return result;
+        }
         public List<string> Blocks(IEnumerable<BlockNode> blocks)
         {
             var lines = new List<string>();
             foreach (var block in blocks)
             {
                 var rendered = Block(block);
-                if (rendered.Count == 0)
+                if (rendered.Count == 0 || rendered.All(string.IsNullOrWhiteSpace))
                 {
                     continue;
                 }
@@ -84,15 +137,15 @@ public static class PlainTextExporter
             {
                 case HeadingNode heading:
                     var text = Flatten(heading.Inlines);
-                    var result = new List<string> { text };
-                    if (heading.Level <= 2 && text.Length > 0)
+                    var result = options.ReadableLayout ? Prose(text) : new List<string> { text };
+                    if ((heading.Level <= 2 || options.ReadableLayout) && text.Length > 0)
                     {
-                        result.Add(new string(heading.Level == 1 ? '=' : '-', Math.Clamp(text.Length, 3, options.Width)));
+                        result.Add(new string(heading.Level == 1 ? '=' : heading.Level == 2 ? '-' : '~', Math.Clamp(text.Length, 3, options.Width)));
                     }
 
                     return result;
                 case ParagraphNode paragraph:
-                    return Split(Flatten(paragraph.Inlines));
+                    return Prose(Flatten(paragraph.Inlines));
                 case ListNode list:
                     return List(list);
                 case BlockQuoteNode quote:
@@ -163,7 +216,9 @@ public static class PlainTextExporter
                     TaskState.Unchecked => "[ ] ",
                     _ => string.Empty,
                 };
+                _indent += marker.Length;
                 var content = Blocks(item.Blocks);
+                _indent -= marker.Length;
                 if (!list.Tight && lines.Count > 0)
                 {
                     lines.Add(string.Empty);
@@ -195,6 +250,21 @@ public static class PlainTextExporter
             }
 
             var lines = new List<string>();
+            if (options.ReadableLayout && widths.Sum() + columns * 3 + 1 > options.Width - _indent)
+            {
+                var headings = table.Header?.Cells.Select(c => OneLine(Flatten(c.Inlines))).ToArray() ?? [];
+                foreach (var (cells, isTableHeader) in rows)
+                {
+                    if (isTableHeader && rows.Count > 1) continue;
+                    if (lines.Count > 0) lines.Add("");
+                    for (var i = 0; i < cells.Count; i++)
+                    {
+                        var name = i < headings.Length && headings[i].Length > 0 ? headings[i] : $"Column {i + 1}";
+                        lines.AddRange(Prose(name + ": " + cells[i], "  "));
+                    }
+                }
+                return lines;
+            }
             foreach (var (cells, isHeader) in rows)
             {
                 var padded = Enumerable.Range(0, columns).Select(i => (i < cells.Count ? cells[i] : string.Empty).PadRight(widths[i]));
@@ -261,7 +331,12 @@ public static class PlainTextExporter
                 case LinkNode link:
                     var label = Flatten(link.Children);
                     builder.Append(label);
-                    if (link.Resolution is ExternalLink external && !string.Equals(label, external.Uri.OriginalString, StringComparison.Ordinal))
+                    if (options.ReadableLayout && link.Resolution is ExternalLink or LocalFile or Anchor)
+                    {
+                        var target = link.Resolution is ExternalLink uri ? uri.Uri.AbsoluteUri : link.Destination;
+                        builder.Append(' ').Append(Reference(target));
+                    }
+                    else if (link.Resolution is ExternalLink external && !string.Equals(label, external.Uri.OriginalString, StringComparison.Ordinal))
                     {
                         builder.Append(" (").Append(external.Uri.AbsoluteUri).Append(')');
                     }

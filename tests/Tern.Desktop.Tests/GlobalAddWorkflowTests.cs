@@ -25,7 +25,6 @@ public sealed class GlobalAddWorkflowTests
         await OpenRootsAsync(fixture, workspaceCount);
         var selected = fixture.Shell.Workspace;
         ClickAdd(fixture, CommandIds.NewFile);
-        if (workspaceCount > 0) await ChooseAsync(fixture, "Outside all workspaces");
         await UntilAsync(fixture, () => fixture.Shell.Tabs.Count == 1 && !fixture.Window.OwnedWindows.Any());
         var draft = Assert.Single(fixture.Shell.Tabs);
         Assert.True(draft.IsStandaloneDraft);
@@ -58,11 +57,10 @@ public sealed class GlobalAddWorkflowTests
         var decision = await OneDialogAsync(fixture);
         ClickAdd(fixture, CommandIds.NewWorkspaceFile);
         Assert.Same(decision, Assert.Single(fixture.Window.OwnedWindows));
-        Assert.NotNull(FindButton(decision, "Use selected location"));
-        Assert.DoesNotContain(decision.GetVisualDescendants().OfType<TextBox>(), t => AutomationProperties.GetName(t) == "Parent folder");
+        Assert.Contains(decision.GetVisualDescendants().OfType<ComboBox>(), c => AutomationProperties.GetName(c) == "Creation destination");
+        Assert.Equal(intended.Root, Input(decision, "Parent folder").Text);
         // The displayed choice must retain its target even if background shell selection changes.
         if (roots.Length > 1) fixture.Shell.SelectWorkspace(roots[1]);
-        ClickButton(decision, "Use selected location");
         var create = await CreateDialogAsync(fixture);
         var parent = Input(create, "Parent folder");
         Assert.Equal(intended.Root, parent.Text);
@@ -71,7 +69,7 @@ public sealed class GlobalAddWorkflowTests
         Assert.True(FindButton(create, "Create").IsEnabled);
         ClickButton(create, "Create");
         var expected = Path.Combine(intended.Root, "chosen-target.md");
-        await UntilAsync(fixture, () => fixture.Shell.ActiveTab?.FilePath is { } path && WorkspacePaths.PathsEqual(path, expected));
+        await UntilAsync(fixture, () => !fixture.Window.OwnedWindows.Any() && fixture.Shell.ActiveTab?.FilePath is { } path && WorkspacePaths.PathsEqual(path, expected));
         Assert.True(File.Exists(expected));
         foreach (var root in roots.Where(root => !ReferenceEquals(root, intended))) Assert.False(File.Exists(Path.Combine(root.Root, "chosen-target.md")));
         Assert.Empty(fixture.Window.OwnedWindows);
@@ -224,7 +222,16 @@ public sealed class GlobalAddWorkflowTests
     }
 
     private static async Task ChooseAsync(DesktopFixture fixture, string name)
-    { var dialog = await OneDialogAsync(fixture); Assert.NotNull(FindButton(dialog, name)); ClickButton(dialog, name); Pump(fixture); }
+    {
+        var dialog = await OneDialogAsync(fixture);
+        if (name == "Cancel destination choice") ClickButton(dialog, "Cancel");
+        else
+        {
+            var selector = Assert.Single(dialog.GetVisualDescendants().OfType<ComboBox>(), c => AutomationProperties.GetName(c) == "Creation destination");
+            selector.SelectedItem = selector.Items.OfType<CreationDestination>().Single(d => d.IsCustom);
+        }
+        Pump(fixture);
+    }
 
     private static async Task<Window> CreateDialogAsync(DesktopFixture fixture)
     {

@@ -21,6 +21,13 @@ internal static class GuideParts
     public static TextBlock Title(string text) => new() { Text = text, FontSize = Scaled(22), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     public static TextBlock Body(string text) => new() { Text = text, FontSize = Scaled(14), TextWrapping = TextWrapping.Wrap, LineHeight = Scaled(21) };
     public static TextBlock Caption(string text) => new() { Text = text, FontSize = Scaled(12), TextWrapping = TextWrapping.Wrap, LineHeight = Scaled(18) };
+    public static Expander Details(string header, Control content) => new()
+    {
+        Header = header, Content = content, HorizontalAlignment = HorizontalAlignment.Stretch,
+        Classes = { "tern-details", "library-shortcuts" },
+        HeaderTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<string>((text, _) =>
+            new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center })
+    };
     public static Border Card(Control content) => new()
     {
         Padding = new Thickness(16), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Child = content,

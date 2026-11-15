@@ -19,12 +19,13 @@ public sealed record LinkRowView(string Text, string Destination, int Line, bool
 public sealed record SideRow(string Title, string Detail, string? Path, int Line, string Glyph = "", bool IsMissing = false, bool CanRemoveReference = false, bool IsOnline = false)
 {
     public bool IsWorkspace { get; init; }
+    public bool IsRecentEntry { get; init; }
     public bool IsDocument => !IsWorkspace;
     public string OpenLabel => IsWorkspace ? "Open Workspace" : "Open";
-    public string RemoveLabel => IsWorkspace ? "Remove from Recent" : "Remove";
+    public string RemoveLabel => IsRecentEntry || IsWorkspace ? "Forget recent entry" : "Close and forget file reference";
     public string RemoveHint => IsWorkspace ? "Remove this workspace from Recent; keep its files and any open workspace."
         : "Close document and remove Library reference; saved files stay on disk. In Recent, only forget the reference.";
-    public string RemoveAccessibleName => IsWorkspace ? "Remove workspace reference" : "Remove file reference";
+    public string RemoveAccessibleName => "File reference actions";
     public string IconPath => IsWorkspace ? LibraryIcons.Workspace : LibraryIcons.Document;
     public Tern.App.Documents.DocumentTab? OpenTab { get; init; }
     public bool HasDetail => !string.IsNullOrEmpty(Detail);
@@ -70,7 +71,8 @@ public sealed partial class TreeRow : ObservableObject
     public bool IsSection { get; private init; }
     public bool IsSectionOpen { get; set; }
     public bool IsTreeEntry => !IsSection;
-    public string SectionKind => IsWorkspace ? "WORKSPACE" : "FOLDER · OUTSIDE WORKSPACES";
+    public string SectionKind => IsWorkspace ? "WORKSPACE" : "FOLDER";
+    public string SectionCapability => IsWorkspace ? "Content search and workspace questions" : "Browse files · Quick Open searches filenames";
     public string SectionAccessibleName => (IsWorkspace ? "Workspace section: " : "Folder section: ") + Name;
     public string SectionCount { get; private init; } = string.Empty;
     public string SectionNotice { get; set; } = string.Empty;

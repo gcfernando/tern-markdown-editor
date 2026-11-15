@@ -51,6 +51,8 @@ public static class CommandIds
     public const string ToggleTheme = "view.toggleTheme";
     public const string ShowHistory = "file.history";
     public const string ToggleReference = "view.toggleReference";
+    public const string ResetLayout = "view.resetLayout";
+    public const string Welcome = "help.welcome";
     public const string ToggleFocus = "view.toggleFocus";
     public const string ZoomIn = "view.zoomIn";
     public const string ZoomOut = "view.zoomOut";
@@ -76,6 +78,7 @@ public static class CommandIds
     public const string PasteImage = "insert.pasteImage";
     public const string ToggleTaskAtCaret = "task.toggleAtCaret";
     public const string ExportHtml = "export.html";
+    public const string ExportAs = "export.as";
     public const string ExportPdf = "export.pdf";
     public const string Settings = "app.settings";
     public const string Shortcuts = "app.shortcuts";
@@ -282,8 +285,7 @@ public sealed class CommandRegistry
         [CommandIds.InsertRule] = "Ctrl+Alt+Shift+R",
         [CommandIds.InsertTable] = "Ctrl+Alt+Shift+T",
         [CommandIds.InsertImage] = "Ctrl+Shift+M",
-        [CommandIds.ExportHtml] = "Ctrl+Alt+Shift+E",
-        [CommandIds.ExportPdf] = "Ctrl+Shift+E",
+        [CommandIds.ExportAs] = "Ctrl+Shift+E",
         [CommandIds.About] = "Shift+F1",
     };
     private readonly Dictionary<string, CommandDefinition> _commands = [];
@@ -307,6 +309,16 @@ public sealed class CommandRegistry
     /// <summary>Loads overrides from settings, silently dropping entries that are invalid, unknown or would clash.</summary>
     public IReadOnlyList<string> LoadOverrides(IReadOnlyDictionary<string, string> overrides)
     {
+        // The two former export entry points now share one dialog and one shortcut.
+        // An explicit new binding wins; otherwise preserve the former PDF choice, then HTML.
+        if (!overrides.ContainsKey(CommandIds.ExportAs)
+            && (overrides.TryGetValue(CommandIds.ExportPdf, out var oldExport) || overrides.TryGetValue(CommandIds.ExportHtml, out oldExport)))
+        {
+            var migrated = overrides.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            migrated[CommandIds.ExportAs] = oldExport;
+            migrated.Remove(CommandIds.ExportPdf); migrated.Remove(CommandIds.ExportHtml);
+            overrides = migrated;
+        }
         _overrides.Clear();
         var rejected = new List<string>();
         // Release all valid saved assignments first, so moves and swaps do not
@@ -461,7 +473,7 @@ public sealed class CommandRegistry
         new(CommandIds.OpenUrl, "Open from URL…", "File"),
         new(CommandIds.NewWorkspaceFile, "New File in Folder…", "File"),
         new(CommandIds.NewFolder, "New Folder…", "File"),
-        new(CommandIds.Print, "Print…", "File", "Ctrl+P"),
+        new(CommandIds.Print, "Print preview…", "File", "Ctrl+P"),
         new(CommandIds.Undo, "Undo", "Edit", "Ctrl+Z"),
         new(CommandIds.Redo, "Redo", "Edit", "Ctrl+Y"),
         new(CommandIds.OpenFolder, "Open Folder…", "File", "Ctrl+Shift+O"),
@@ -492,6 +504,8 @@ public sealed class CommandRegistry
         new(CommandIds.ViewReading, "Reading View", "View", "Ctrl+3"),
         new(CommandIds.ShowHistory, "Document Version History", "File", "Ctrl+Alt+H"),
         new(CommandIds.ToggleReference, "Toggle Reference Pane", "View", "Ctrl+Alt+2"),
+        new(CommandIds.ResetLayout, "Reset layout", "View", "Ctrl+Alt+Shift+F10"),
+        new(CommandIds.Welcome, "Replay first-note checklist", "Help", "Ctrl+Alt+Shift+F12"),
         new(CommandIds.ToggleFocus, "Toggle Focus Mode", "View", "F8"),
         new(CommandIds.ToggleSidebar, "Toggle Sidebar", "View", "Ctrl+Shift+B"),
         new(CommandIds.ToggleRightPanel, "Toggle Outline Panel", "View", "Ctrl+Alt+B"),
@@ -519,8 +533,7 @@ public sealed class CommandRegistry
         new(CommandIds.InsertTable, "Insert Table", "Insert"),
         new(CommandIds.InsertImage, "Insert Local Image…", "Insert"),
         new(CommandIds.PasteImage, "Paste Image as Attachment…", "Insert", "Ctrl+Alt+V"),
-        new(CommandIds.ExportHtml, "Export as HTML…", "Export"),
-        new(CommandIds.ExportPdf, "Export as PDF…", "Export"),
+        new(CommandIds.ExportAs, "Export as…", "File"),
         new(CommandIds.Settings, "Settings", "App", "Ctrl+OemComma"),
         new(CommandIds.Shortcuts, "Keyboard Shortcuts", "App", "Ctrl+OemQuestion"),
         new(CommandIds.About, "About Tern", "App"),

@@ -2,9 +2,12 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Tern.Rendering.Resources;
 
 namespace Tern.PreviewView;
@@ -20,8 +23,10 @@ internal sealed class ImageView : Border, IDisposable
     private sealed class ImageAutomationPeer(ImageView owner) : ControlAutomationPeer(owner)
     {
         protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Image;
-        // Loading text, raster surfaces and SVG internals all represent the same image.
-        protected override IReadOnlyList<AutomationPeer>? GetChildrenCore() => null;
+        // Keep the description on the image peer; actionable inspection/source controls
+        // remain in the automation tree for keyboard and screen-reader users.
+        protected override IReadOnlyList<AutomationPeer>? GetChildrenCore() => owner.GetVisualDescendants().OfType<Button>()
+            .Select(ControlAutomationPeer.CreatePeerForElement).OfType<AutomationPeer>().ToArray();
     }
 
     private const long MaxFileBytes = 16 * 1024 * 1024;
@@ -38,6 +43,8 @@ internal sealed class ImageView : Border, IDisposable
     };
 
     private readonly string _alt;
+    private ResourceDecision? _resolution;
+    internal ImageFailure Failure { get; private set; }
     private readonly object _ownership = new();
     private readonly List<Task> _loads = [];
     // Deterministic lifecycle checkpoint for tests; application callers leave this null.
@@ -101,6 +108,15 @@ internal sealed class ImageView : Border, IDisposable
 
     private Control Describe(ResourceDecision resolution)
     {
+        _resolution = resolution;
+        Failure = resolution switch
+        {
+            LocalFile { Exists: false } or Blocked { Reason: BlockReason.NotFound } => ImageFailure.Missing,
+            Blocked { Reason: BlockReason.FileTooLarge or BlockReason.UnsupportedImageType or BlockReason.InvalidDataUri or BlockReason.DataUrl } => ImageFailure.UnsupportedOrOverBudget,
+            Blocked { Reason: BlockReason.RemoteResourceBlocked } when _remoteImageLoader is not null => ImageFailure.None,
+            Blocked => ImageFailure.AccessBlocked,
+            _ => ImageFailure.None
+        };
         if (resolution is Blocked { Reason: BlockReason.RemoteResourceBlocked } remoteImage && _remoteImageLoader is not null)
         {
             _load = async token =>
@@ -134,13 +150,38 @@ internal sealed class ImageView : Border, IDisposable
     private Control Unavailable()
     {
         State = ImageState.Unavailable;
-        var panel = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+        if (Failure == ImageFailure.None) Failure = _resolution is Blocked { Reason: BlockReason.RemoteResourceBlocked } ? ImageFailure.DownloadFailed : ImageFailure.UnsupportedOrOverBudget;
+        var panel = new StackPanel { Spacing = 6, MinHeight = 48 };
         if (_alt.Length > 0)
         {
             panel.Children.Add(Message(_alt, muted: false));
         }
 
-        panel.Children.Add(Message("image unavailable", muted: true, italic: true));
+        panel.Children.Add(Message(Failure switch
+        {
+            ImageFailure.Missing => "Image missing · the local file was not found.",
+            ImageFailure.AccessBlocked => "Image access blocked · review its location in Source.",
+            ImageFailure.DownloadFailed => "Image download failed or was refused. The image service did not provide usable bytes.",
+            _ => "Image unavailable · unsupported, corrupt or over a rendering budget."
+        }, muted: true, italic: true));
+        var edit = new Button { Content = "Edit image source", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+        edit.Click += (_, _) => this.FindAncestorOfType<PreviewView>()?.RequestSourceEdit(this);
+        panel.Children.Add(edit);
+        var action = Failure switch { ImageFailure.Missing => ImageAction.Locate, ImageFailure.DownloadFailed => ImageAction.Retry,
+            ImageFailure.AccessBlocked => ImageAction.ReviewAccess, _ => (ImageAction?)null };
+        if (action is { } kind && _resolution is { } resolution)
+        {
+            var repair = new Button { Content = kind switch { ImageAction.Locate => "Locate image…", ImageAction.Retry => "Retry image", _ => "Review image access…" } };
+            repair.Click += (_, _) => this.FindAncestorOfType<PreviewView>()?.RequestImageAction(this, _alt, resolution, kind, () =>
+            {
+                if (_disposed || !_attached || _loading is not null || _load is null) return;
+                Failure = ImageFailure.None;
+                Child = Message(_alt.Length > 0 ? _alt : "Loading image…", true);
+                State = ImageState.Loading;
+                StartLoad(_load);
+            });
+            panel.Children.Add(repair);
+        }
         return panel;
     }
 
@@ -305,11 +346,50 @@ internal sealed class ImageView : Border, IDisposable
         }
         else
         {
-            Child = new Image { Source = bitmap.Bitmap, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly };
+            var image = new Image { Source = bitmap.Bitmap, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly };
+            var inspect = new Button { Content = "Inspect image", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+            inspect.Click += (_, _) => InspectImage(bitmap, inspect);
+            Child = new StackPanel { Spacing = 4, Children = { image, inspect } };
             State = ImageState.Loaded;
         }
 
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void InspectImage(DecodedImage decoded, Control returnFocus)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner || decoded.Bitmap is null) return;
+        var lease = decoded.Retain();
+        var window = new Window { Title = string.IsNullOrWhiteSpace(_alt) ? "Inspect image" : _alt, Width = 900, Height = 650, MinWidth = 360, MinHeight = 280 };
+        var image = new Image { Source = decoded.Bitmap, Stretch = Stretch.None };
+        AutomationProperties.SetName(image, _alt.Length > 0 ? _alt : "Image preview");
+        var zoom = new LayoutTransformControl { Child = image };
+        var factor = 1d;
+        var actions = new WrapPanel();
+        void Action(string label, System.Action action) { var button = new Button { Content = label, Margin = new Thickness(4) }; button.Click += (_, _) => action(); actions.Children.Add(button); }
+        Action("Zoom in", () => zoom.LayoutTransform = new ScaleTransform(factor = Math.Min(4, factor * 1.25), factor));
+        Action("Zoom out", () => zoom.LayoutTransform = new ScaleTransform(factor = Math.Max(.1, factor / 1.25), factor));
+        Action("Reset", () => zoom.LayoutTransform = new ScaleTransform(factor = 1, factor));
+        Action("Close", window.Close);
+        if (_resolution is LocalFile file)
+        {
+            var copy = new Button { Content = "Copy image location", Margin = new Thickness(4) };
+            copy.Click += async (_, _) =>
+            {
+                try { if (window.Clipboard is { } clipboard) { await clipboard.SetTextAsync(file.CanonicalPath); copy.Content = "Location copied"; } }
+                catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.ExternalException) { copy.Content = "Could not copy location"; }
+            };
+            actions.Children.Add(copy);
+        }
+        var layout = new Grid { Margin = new Thickness(12), RowDefinitions = new RowDefinitions("Auto,Auto,*") };
+        layout.Children.Add(actions);
+        var description = Message((_alt.Length > 0 ? _alt + " · " : "") + "Inspection uses the approved decoded image (up to 2048 pixels). No additional download.", true);
+        Grid.SetRow(description, 1); layout.Children.Add(description);
+        var scroll = new ScrollViewer { Content = zoom, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 2); layout.Children.Add(scroll); window.Content = layout;
+        window.KeyDown += (_, e) => { if (e.Key == Key.Escape) { window.Close(); e.Handled = true; } };
+        window.Closed += (_, _) => { lease.Dispose(); returnFocus.Focus(); };
+        window.Show(owner);
     }
 
     private static DecodedImage? LoadSvgBytes(byte[] data) =>
@@ -403,12 +483,30 @@ internal sealed class ImageView : Border, IDisposable
     private sealed class DecodedImage(Bitmap? bitmap, long pixels, byte[]? svgData = null) : IDisposable
     {
         private int _disposed;
+        private int _leases;
+        private bool _disposeRequested;
+
+        public IDisposable Retain()
+        {
+            lock (this) { if (_disposeRequested) throw new ObjectDisposedException(nameof(DecodedImage)); _leases++; }
+            return new ImageLease(this);
+        }
+        private sealed class ImageLease(DecodedImage owner) : IDisposable
+        {
+            private int _released;
+            public void Dispose() { if (Interlocked.Exchange(ref _released, 1) != 0) return; lock (owner) { owner._leases--; owner.TryDispose(); } }
+        }
 
         public Bitmap? Bitmap { get; } = bitmap;
         public byte[]? SvgData { get; } = svgData;
 
         public void Dispose()
         {
+            lock (this) { _disposeRequested = true; TryDispose(); }
+        }
+        private void TryDispose()
+        {
+            if (!_disposeRequested || _leases > 0) return;
             if (Interlocked.Exchange(ref _disposed, 1) != 0)
             {
                 return;
@@ -537,3 +635,5 @@ internal enum ImageState
     Unavailable,
     SvgPlaceholder,
 }
+
+internal enum ImageFailure { None, Missing, AccessBlocked, UnsupportedOrOverBudget, DownloadFailed }

@@ -50,7 +50,7 @@ public sealed class AIPromptPanel : Border, IDisposable
             MaxWidth = 280,
             PlaceholderText = "Choose an AI connection", HorizontalAlignment = HorizontalAlignment.Stretch,
             ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<WorkspaceConnection>((p, _) =>
-                new TextBlock { Text = p is null ? "" : p.Name + " · " + p.Location, TextTrimming = TextTrimming.CharacterEllipsis }),
+                new TextBlock { Text = p is null ? "" : p.Name + " · " + p.Capabilities + " · " + p.Location, TextTrimming = TextTrimming.CharacterEllipsis }),
         };
         LoadConnections(workspace);
         AutomationProperties.SetName(connections, "Writing AI connection");
@@ -73,6 +73,8 @@ public sealed class AIPromptPanel : Border, IDisposable
         var scopeHelp = GuideParts.Caption("");
         AutomationProperties.SetName(scopeHelp, "What the selected text scope shares");
         var shortcuts = new WrapPanel { ItemSpacing = 8, LineSpacing = 6 };
+        var create = new Button { Content = "Create content" };
+        var hasSelection = scope?.Items.Contains("Selected text") == true;
         var connectionField = GuideParts.Vertical(GuideParts.Caption("Connection"), connections);
         var setup = new Button { Content = "Set up connection", Classes = { "accent" } };
         var setupHint = GuideParts.Caption("Choose Set up connection to add a local or remote writing model.");
@@ -85,12 +87,13 @@ public sealed class AIPromptPanel : Border, IDisposable
             "Extract action items" => "Extract only explicit action items from the supplied text. Return a Markdown checklist with one item per task. Include owners and due dates only when stated. If there are no tasks, return 'No action items found.'",
             "Proofread" => "Correct spelling, grammar, and punctuation in the supplied text. Preserve tone, meaning, formatting, links, and code. Return only the corrected Markdown.",
             "Improve headings" => "Improve only the headings. Preserve their levels and all other Markdown.",
+            "Create content" => "Create Markdown from my instructions. Return only the new content to insert.\n\n",
             _ => ""
         };
         question.Text = initialInstruction ?? Starter(initialAction);
         foreach (var (label, action, description) in new[]
         {
-            ("Rewrite", "Rewrite", "Suggest clearer wording for the selected text."),
+            ("Improve selected text", "Rewrite", "Suggest clearer wording for the selected text."),
             ("Summarize", "Summarize", "Turn the selected text into a shorter summary."),
             ("Explain", "Explain", "Explain the selected text in plain language."),
             ("Extract tasks", "Extract action items", "Turn action items in the selected text into a checklist."),
@@ -137,6 +140,7 @@ public sealed class AIPromptPanel : Border, IDisposable
             scopeHelp.Text = scope?.SelectedItem switch
             {
                 "Selected text" => "Shares only the text you highlighted in Source.",
+                "Instruction only" => "Shares only your instruction. The generated result is inserted; existing note text is kept.",
                 _ when isEmptyDraft => "This note is empty, so only your instruction is shared.",
                 _ when scope is null => "Shares the entire note. To share only part of it, select that text in Source before opening Write with AI.",
                 _ => "Shares all the text in this note. Choose a smaller scope to share less."
@@ -145,6 +149,8 @@ public sealed class AIPromptPanel : Border, IDisposable
             question.PlaceholderText = selected ? "e.g. Make this shorter and keep the warning" : "e.g. Draft a short introduction for this note";
             question.IsEnabled = !isTool;
             shortcuts.IsVisible = selected && !isTool;
+            create.IsVisible = !hasSelection && !isTool && (scope is null || Equals(scope.SelectedItem, "Entire note"));
+            create.IsEnabled = !_busy;
             shortcuts.IsEnabled = !_busy;
             if (scope is not null) scope.IsEnabled = !_busy && !isTool;
             connectionField.IsVisible = !needsSetup;
@@ -160,7 +166,7 @@ public sealed class AIPromptPanel : Border, IDisposable
             destination.Text = profile is null
                 ? ""
                 : isTool ? "Tool server: " + profile.Destination + ". Your note is not sent when opening tools."
-                : $"{scope?.SelectedItem ?? "Entire note"} and your instruction go to {profile.Summary}.";
+                : $"{scope?.SelectedItem ?? "Entire note"} and your instruction go to:\n{workspace.Summary(profile).Description}";
             destination.IsVisible = !string.IsNullOrEmpty(destination.Text);
         }
         connections.SelectionChanged += (_, _) =>
@@ -221,10 +227,11 @@ public sealed class AIPromptPanel : Border, IDisposable
         var options = new WrapPanel { ItemSpacing = 12, LineSpacing = 8 };
         if (scope is not null) options.Children.Add(GuideParts.Vertical(GuideParts.Caption("Text to share"), scope));
         options.Children.Add(connectionField);
+        create.Click += (_, _) => { changeAction?.Invoke("Create content"); if (scope is not null) scope.SelectedItem = "Instruction only"; question.Text = Starter("Create content"); question.Focus(); };
         var contentScroll = new ScrollViewer
         {
             Content = GuideParts.Vertical(
-                promptTitle, promptHelp, shortcuts, question, options, scopeHelp, setupHint, destination, validation, status),
+                promptTitle, promptHelp, create, shortcuts, question, options, scopeHelp, setupHint, destination, validation, status),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
         var actions = GuideParts.Actions(settings, cancel, setup, tools, send);
@@ -252,7 +259,7 @@ public sealed class AIPromptPanel : Border, IDisposable
         var available = _writingOnly ? workspace.Connections.Where(profile => profile.CanWrite).ToArray() : workspace.Connections;
         _connections.ItemsSource = available;
         _connections.SelectedItem = workspace.SelectedConnection is { } current && available.Contains(current)
-            ? current : available.FirstOrDefault();
+            ? current : null;
     }
 
     internal void FocusQuestion() => DispatcherTimer.RunOnce(() =>

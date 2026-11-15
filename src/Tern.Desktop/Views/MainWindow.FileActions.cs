@@ -34,7 +34,12 @@ public partial class MainWindow
             _shell.SelectWorkspace(owner);
         }
         var parent = selected is null ? workspace.Root : selected.IsDirectory ? selected.FullPath : Path.GetDirectoryName(selected.FullPath)!;
-        var name = requestedName ?? await new FileNameWindow(folder, parent).ShowDialog<string?>(this);
+        if (requestedName is null)
+        {
+            await ShowCreationFormAsync(folder ? CreateItemKind.Folder : CreateItemKind.File, parent, workspace);
+            return;
+        }
+        var name = requestedName;
         if (string.IsNullOrWhiteSpace(name)) return;
         if (!folder && Path.GetExtension(name).Length == 0) name += ".md";
         var result = await Task.Run(() => folder ? workspace.FileOperations.CreateFolder(parent, name) : workspace.FileOperations.CreateFile(parent, name));
@@ -58,27 +63,11 @@ public partial class MainWindow
     private async Task PrintDocumentAsync()
     {
         if (_shown is not { } tab) return;
-        if (!OperatingSystem.IsWindows())
-        {
-            _shell.StatusMessage = "Native printing is available on Windows. Export PDF for this platform's print tools.";
-            return;
-        }
-
         var snapshot = tab.Session.GetSnapshot();
-        var options = new PreviewOptions { Profile = tab.Profile, DocumentPath = tab.FilePath ?? tab.ResourceDocumentPath, WorkspaceRoot = WorkspaceRootFor(tab) };
-        var text = await Task.Run(() => PlainTextExporter.Export(snapshot.Text, new PlainTextExportOptions { Preview = options }));
-        try
-        {
-            var owner = TryGetPlatformHandle()?.Handle ?? 0;
-            if (owner == 0) throw new InvalidOperationException("The native window is not available.");
-            var printed = await WindowsTextPrinter.ShowDialogAndPrintAsync(owner, tab.DisplayName, text);
-            _shell.StatusMessage = printed ? "Document sent to the selected printer." : "Printing cancelled.";
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or ExternalException)
-        {
-            _shell.StatusMessage = "Printing failed: " + ex.Message;
-            _dialogs?.ShowMessage("Printing failed", _shell.StatusMessage);
-        }
+        var options = ExportDefaults.PreviewOptions with { Profile = tab.Profile, DocumentPath = tab.FilePath ?? tab.ResourceDocumentPath, WorkspaceRoot = WorkspaceRootFor(tab),
+            Resolver = new Tern.Rendering.Resources.ResourceResolverOptions { AdditionalImageFiles = tab.LinkedImageFiles } };
+        await new PrintPreviewWindow(tab.DisplayName, snapshot.Text, options,
+            _remoteImages is null ? null : _remoteImages.FetchForExport).ShowDialog(this);
     }
 }
 

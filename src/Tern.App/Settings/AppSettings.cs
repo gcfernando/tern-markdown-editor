@@ -51,6 +51,7 @@ public sealed class AppSettings
     public ViewMode DefaultViewMode { get; set; } = ViewMode.Split;
 
     public bool RestoreSession { get; set; } = true;
+    public bool OnboardingDismissed { get; set; }
 
     /// <summary>Reload an unmodified document automatically when it changes on disk; modified ones always ask.</summary>
     public bool AutoReloadCleanDocuments { get; set; } = true;
@@ -68,6 +69,9 @@ public sealed class AppSettings
     public double SidebarWidth { get; set; } = 280;
 
     public bool SidebarVisible { get; set; } = true;
+    public bool InspectorVisible { get; set; } = true;
+    public double InspectorWidth { get; set; } = 260;
+    public double SourceShare { get; set; } = .5;
 
     /// <summary>Overrides of the default key bindings: command id to gesture text such as "Ctrl+Shift+P".</summary>
     public Dictionary<string, string> KeyBindings { get; set; } = [];
@@ -85,6 +89,8 @@ public sealed class AppSettings
         TabSize = Math.Clamp(TabSize, 1, 16);
         UiScale = Bounded(UiScale, 0.75, 2.5, 1.0);
         SidebarWidth = Bounded(SidebarWidth, 180, 800, 280);
+        InspectorWidth = Bounded(InspectorWidth, 180, 800, 260);
+        SourceShare = Bounded(SourceShare, .15, .85, .5);
         if (string.IsNullOrWhiteSpace(EditorFontFamily))
         {
             EditorFontFamily = new AppSettings().EditorFontFamily;

@@ -5,7 +5,7 @@ using PdfSharp.Pdf;
 namespace Tern.Export;
 
 /// <summary>The visual attributes of a run of text. <see cref="Link"/> is 0 for none, otherwise a 1-based index into the renderer's link table.</summary>
-internal readonly record struct TextStyle(bool Bold, bool Italic, bool Mono, bool Strike, bool Underline, bool Highlight, int Script, int Link);
+internal readonly record struct TextStyle(bool Bold, bool Italic, bool Mono, bool Strike, bool Underline, bool Highlight, int Script, int Link, bool Symbols = false, string? FallbackFamily = null);
 
 internal enum AtomKind
 {
@@ -64,17 +64,17 @@ internal sealed class PdfTypography : IDisposable
     private const double DescentFactor = LineSpacing - BaselineFactor;
 
     private readonly XGraphics _measure = XGraphics.CreateMeasureContext(new XSize(4000, 4000), XGraphicsUnit.Point, XPageDirection.Downwards);
-    private readonly Dictionary<(bool Mono, bool Bold, bool Italic, int Size), XFont> _fonts = [];
+    private readonly Dictionary<(bool Mono, bool Bold, bool Italic, bool Symbols, string? Family, int Size), XFont> _fonts = [];
     private readonly Dictionary<XFont, Dictionary<string, double>> _widths = [];
     private readonly Dictionary<XFont, double> _spaces = [];
 
     public XFont Font(TextStyle style, double size)
     {
         var effective = EffectiveSize(style, size);
-        var key = (style.Mono, style.Bold, style.Italic, (int)Math.Round(effective * 10));
+        var key = (style.Mono, style.Bold, style.Italic, style.Symbols, style.FallbackFamily, (int)Math.Round(effective * 10));
         if (!_fonts.TryGetValue(key, out var font))
         {
-            var family = style.Mono ? SystemFontResolver.MonoFamily : SystemFontResolver.SansFamily;
+            var family = style.FallbackFamily ?? (style.Symbols ? SystemFontResolver.SymbolFamily : style.Mono ? SystemFontResolver.MonoFamily : SystemFontResolver.SansFamily);
             var fontStyle = (style.Bold, style.Italic) switch
             {
                 (true, true) => XFontStyleEx.BoldItalic,
@@ -87,6 +87,20 @@ internal sealed class PdfTypography : IDisposable
         }
 
         return font;
+    }
+
+    public bool HasGlyph(int codePoint, TextStyle style, double size) =>
+        PdfSharp.Fonts.GlyphHelper.GlyphIndexFromCodePoint(codePoint, Font(style, size)) != 0;
+
+    public TextStyle GlyphStyle(int codePoint, TextStyle style, double size)
+    {
+        if (HasGlyph(codePoint, style, size)) return style;
+        foreach (var family in new[] { SystemFontResolver.SymbolFamily, SystemFontResolver.ExtendedSymbolFamily, SystemFontResolver.InternationalFamily })
+        {
+            var fallback = style with { FallbackFamily = family, Bold = false, Italic = false };
+            if (HasGlyph(codePoint, fallback, size)) return fallback;
+        }
+        return style;
     }
 
     public static double EffectiveSize(TextStyle style, double size)
@@ -274,9 +288,9 @@ internal sealed class PdfTypography : IDisposable
             }
         }
 
-        if (low < text.Length && char.IsHighSurrogate(text[low - 1]) && low > 1)
+        if (low < text.Length && char.IsHighSurrogate(text[low - 1]))
         {
-            low--;
+            low = low > 1 ? low - 1 : 2;
         }
 
         return low;
@@ -309,8 +323,8 @@ internal sealed class PdfTypography : IDisposable
 internal static class PdfText
 {
     /// <summary>
-    /// Removes control and invisible joiner characters and replaces characters outside the Basic Multilingual Plane
-    /// (for example emoji) with '?', because the PDF font encoding used here addresses BMP code points only.
+    /// Removes invalid surrogates and invisible formatting characters. Valid Unicode scalar values are retained;
+    /// PDFsharp supports supplementary code points and the renderer chooses a symbol fallback where needed.
     /// </summary>
     public static string Safe(string? text)
     {
@@ -321,7 +335,7 @@ internal static class PdfText
             var c = cleaned[i];
             if (char.IsHighSurrogate(c) && i + 1 < cleaned.Length && char.IsLowSurrogate(cleaned[i + 1]))
             {
-                builder.Append('?');
+                builder.Append(c).Append(cleaned[i + 1]);
                 i++;
             }
             else if (char.IsSurrogate(c))

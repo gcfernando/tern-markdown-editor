@@ -24,7 +24,8 @@ public sealed class ScrollbarDragTests(ITestOutputHelper output)
             var root = new DirectoryInfo(AppContext.BaseDirectory);
             while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
             Assert.NotNull(root);
-            markdown = File.ReadAllText(Path.Combine(root.FullName, "MD Files Samples 02", "supervised_learning.md"));
+            var current = Path.Combine(root.FullName, "inputs", "Data-Science-and-Machine-Learning.md");
+            markdown = File.ReadAllText(File.Exists(current) ? current : Path.Combine(root.FullName, "MD Files Samples 02", "supervised_learning.md"));
         }
         var (window, view) = Harness.Show(Harness.Build(markdown), width, 600);
         try
@@ -51,6 +52,16 @@ public sealed class ScrollbarDragTests(ITestOutputHelper output)
             window.MouseUp(point + new Vector(0, 70), MouseButton.Left); Harness.Pump(window);
             var released = view.Scroller.Offset.Y; Harness.Pump(window, 8);
             Assert.InRange(Math.Abs(view.Scroller.Offset.Y - released), 0, 2);
+            // Extremes must remain reachable despite estimated block heights
+            // changing while the pointer is held down.
+            point = thumb.TranslatePoint(new Point(thumb.Bounds.Width / 2, thumb.Bounds.Height / 2), window)!.Value;
+            window.MouseMove(point);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseMove(point + new Vector(0, 1200)); Harness.Pump(window, 8);
+            Assert.InRange(view.Scroller.Extent.Height - view.Scroller.Viewport.Height - view.Scroller.Offset.Y, 0, 2);
+            window.MouseMove(point - new Vector(0, 1200)); Harness.Pump(window, 8);
+            Assert.InRange(view.Scroller.Offset.Y, 0, 2);
+            window.MouseUp(point - new Vector(0, 1200), MouseButton.Left); Harness.Pump(window);
         }
         finally { window.Close(); }
     }

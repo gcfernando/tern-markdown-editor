@@ -53,7 +53,7 @@ public sealed class CompleteDownloadWorkflowTests
         var server = new AssetServer();
         var dialog = new OpenUrlWindow(Loader(server), Url);
         var result = dialog.ShowDialog<MarkdownUrlDocument?>(fixture.Window);
-        var download = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Download and Open"));
+        var download = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Save portable copy…"));
         download.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var document = await result.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.NotNull(document);

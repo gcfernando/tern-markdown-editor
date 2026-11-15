@@ -37,6 +37,8 @@ public sealed record PdfExportOptions
 {
     /// <summary>Optional host retrieval of live remote image bytes; unsupported PDF formats produce a warning.</summary>
     public Func<string, byte[]?>? RemoteImageBytes { get; init; }
+    /// <summary>Optional host rasterizer for already-sanitized SVG bytes. It must return a bounded PNG image.</summary>
+    public Func<byte[], byte[]?>? SvgImageBytes { get; init; }
     /// <summary>How the Markdown is parsed, and which folders local images may come from.</summary>
     public PreviewOptions Preview { get; init; } = ExportDefaults.PreviewOptions;
 

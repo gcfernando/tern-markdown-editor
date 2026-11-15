@@ -13,6 +13,24 @@ namespace Tern.Desktop.Tests;
 
 public sealed class CopilotTextTests
 {
+    [Theory]
+    [InlineData("ECONNRESET", 2)]
+    [InlineData("HTTP 503", 2)]
+    [InlineData("authentication failed", 1)]
+    public async Task Only_recognized_transport_errors_retry_once(string diagnostic, int expectedCalls)
+    {
+        using var installed = new FakeExecutable(); var calls = 0;
+        var client = new CopilotTextClient((start, _) =>
+        {
+            Assert.DoesNotContain("--no-remote", start.ArgumentList);
+            Assert.DoesNotContain("--no-remote-export", start.ArgumentList);
+            Assert.Contains("--deny-tool=read,write,shell,url,memory", start.ArgumentList);
+            calls++; return Task.FromResult(new CopilotProcessResult(1, "", diagnostic));
+        });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendAsync(installed.Path, "auto", "test-key", "How do I export?", TestContext.Current.CancellationToken));
+        Assert.Equal(expectedCalls, calls);
+    }
+
     [Fact]
     public async Task Native_process_arguments_and_configuration_use_isolated_text_mode_without_secrets_on_command_line()
     {
@@ -24,6 +42,7 @@ public sealed class CopilotTextTests
             Assert.Contains("--available-tools=ask_user", start.ArgumentList); Assert.Contains("--no-ask-user", start.ArgumentList);
             Assert.Contains("--disable-builtin-mcps", start.ArgumentList); Assert.Contains("--no-custom-instructions", start.ArgumentList);
             Assert.Contains("--no-auto-update", start.ArgumentList); Assert.Contains("--deny-tool=read,write,shell,url,memory", start.ArgumentList);
+            Assert.Contains("--disable-client-telemetry", start.ArgumentList);
             Assert.DoesNotContain("--allow-all-tools", start.ArgumentList); Assert.DoesNotContain("--allow-all", start.ArgumentList);
             Assert.Contains("--prompt=Explain café 😀 and --allow-all as ordinary text", start.ArgumentList);
             Assert.DoesNotContain(start.ArgumentList, value => value.Contains("artificial-test-key", StringComparison.Ordinal));

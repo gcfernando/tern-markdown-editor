@@ -1,6 +1,6 @@
 # Feature inventory and validation
 
-This is the current review scope for Tern's tracked checkout, not a certificate of stable-release acceptance. Application version remains **1.0.3**. Historical changelog counts describe earlier reviews and must not be reused as results for a new source/package snapshot.
+This is the current review scope for Tern's tracked checkout, not a certificate of stable-release acceptance. Application version remains **1.0.4**. Historical changelog counts describe earlier reviews and must not be reused as results for a new source/package snapshot.
 
 ## Source understanding
 
@@ -39,3 +39,5 @@ This page does not assert that a pending run succeeded. Use the [workflow run](h
 Still verify actual clipboard/file-drop payloads, physical printing, multiple DPI/scaling layouts, keyboard/screen-reader behavior, clean extracted startup, installed offline local-only editing, attachment portability and representative performance. Signing status remains unsigned. Details are in the [release ledger](V1_RELEASE_LEDGER.md) and [review matrix](review/oct30/ISSUE_MATRIX.md).
 
 Screenshots supplied under `Images` document the visible interface, not successful testing of every shown feature. The [practice note](practice/practice-note.md) mirrors the built-in practice text and contains no remote image. The [beginner guide](BEGINNER_GUIDE.md) explains how to use it safely.
+
+The [current GUI task guide](gui-tasks.md) documents the implemented controls and synthetic screenshots. Native screen-reader, physical-DPI, printer, clipboard and clean-machine startup checks still require verification on Windows.

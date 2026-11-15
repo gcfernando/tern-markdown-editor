@@ -11,8 +11,18 @@ public sealed class AIWorkspaceService
     private readonly IAICredentialStore _credentials;
     private readonly Func<AIConnectionClient> _createClient;
     private readonly string _selectionPath;
+    private bool _selectionCleared;
+    private readonly string _helpSelectionPath;
+    private bool _helpSelectionLoaded;
+    private readonly Dictionary<WorkspaceConnection, DateTimeOffset> _testedAt = [];
+    public string? HelpSelectedId { get; private set; }
+    public WorkspaceConnection? HelpSelectedConnection => Connections.FirstOrDefault(c => c.Id == HelpSelectedId && c.CanWrite);
+    public event EventHandler? Reloaded;
+    public ConnectionSummary Summary(WorkspaceConnection connection) => new(connection.Id, connection.Name, connection.Capabilities,
+        connection.Destination, connection.Model, ValidationStatus(connection), _testedAt.TryGetValue(connection, out var time) ? time : null);
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _retryAt = new(StringComparer.Ordinal);
     private readonly Dictionary<WorkspaceConnection, string> _validation = [];
+    private readonly Dictionary<string, (object Configuration, string CredentialDigest)> _validationContext = [];
     private readonly Dictionary<string, (object Configuration, string CredentialDigest, DateTimeOffset Expires, AIConnectionCheck? Check)> _writingChecks = [];
 
     private static string CredentialDigest(string value) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
@@ -33,6 +43,7 @@ public sealed class AIWorkspaceService
         _createCopilot = createCopilotClient ?? (() => new CopilotTextClient());
         _createClient = createClient ?? (() => new AIConnectionClient());
         _selectionPath = Path.Combine(settingsDirectory, "active-ai-connection.json");
+        _helpSelectionPath = Path.Combine(settingsDirectory, "help-ai-connection.json");
     }
 
     public IReadOnlyList<AIConnectionProfile> Profiles { get; private set; } = [];
@@ -54,13 +65,52 @@ public sealed class AIWorkspaceService
         Profiles = profiles;
         Connections = profiles.Select(p => new WorkspaceConnection(p.Id, p.Name, "api", p.Model, p.Endpoint))
             .Concat(integrations.Select(p => new WorkspaceConnection(p.Id, p.Name, p.Kind, p.Model, p.Destination))).ToArray();
-        if (!Connections.Any(p => p.Id == SelectedId)) SelectedId = Connections.Count > 0 ? Connections[0].Id : null;
+        foreach (var id in _validationContext.Keys.ToArray())
+        {
+            var same = false;
+            try
+            {
+                var previous = _validationContext[id];
+                if (profiles.FirstOrDefault(p => p.Id == id) is { } api)
+                {
+                    var input = Inputs(api);
+                    same = Equals(previous.Configuration, input with { Credential = "" }) && previous.CredentialDigest == CredentialDigest(input.Credential);
+                }
+                else if (integrations.FirstOrDefault(p => p.Id == id) is { } integration)
+                    same = Equals(previous.Configuration, integration) && previous.CredentialDigest == CredentialDigest(_integrations.ReadSecret(integration));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or InvalidOperationException) { same = false; }
+            if (same) continue;
+            foreach (var key in _validation.Keys.Where(c => c.Id == id).ToArray()) { _validation.Remove(key); _testedAt.Remove(key); }
+            _writingChecks.Remove(id); _validationContext.Remove(id);
+        }
+        if (SelectedId is not null && !Connections.Any(p => p.Id == SelectedId)) { SelectedId = null; _selectionCleared = true; }
+        else if (SelectedId is null && !_selectionCleared) SelectedId = Connections.FirstOrDefault()?.Id;
+        if (!_helpSelectionLoaded)
+        {
+            _helpSelectionLoaded = true;
+            try { if (File.Exists(_helpSelectionPath)) HelpSelectedId = JsonSerializer.Deserialize<string>(File.ReadAllText(_helpSelectionPath)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { HelpSelectedId = null; }
+        }
+        if (HelpSelectedConnection is null) HelpSelectedId = null;
+        Reloaded?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SelectHelp(string? id)
+    {
+        if (id is not null && !Connections.Any(p => p.Id == id && p.CanWrite)) throw new ArgumentException("Choose a text-generation connection.", nameof(id));
+        HelpSelectedId = id;
+        Directory.CreateDirectory(Path.GetDirectoryName(_helpSelectionPath)!);
+        var temporary = _helpSelectionPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllText(temporary, JsonSerializer.Serialize(id)); File.Move(temporary, _helpSelectionPath, true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
     public void Select(string id)
     {
         if (!Connections.Any(p => p.Id == id)) throw new ArgumentException("Choose an available saved AI connection.", nameof(id));
         SelectedId = id;
+        _selectionCleared = false;
         Directory.CreateDirectory(Path.GetDirectoryName(_selectionPath)!);
         var temporary = _selectionPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -153,6 +203,7 @@ public sealed class AIWorkspaceService
             if (reviewed.Kind != integration.Kind || reviewed.Model != integration.Model || reviewed.Destination != integration.Destination)
                 throw new InvalidOperationException("The connection changed. Reopen the request and review its destination.");
             var credential = _integrations.ReadSecret(integration);
+            _validationContext[profileId] = (integration, CredentialDigest(credential));
             var copilotClient = _createCopilot();
             if (!ReuseCheck(profileId, integration, credential, out _))
             {
@@ -167,7 +218,7 @@ public sealed class AIWorkspaceService
             if (!targetIsCurrent()) throw new InvalidOperationException("The active note changed during validation. Nothing was generated.");
             string answer;
             try { answer = await copilotClient.SendAsync(integration.Destination, integration.Model, credential, message, token); }
-            catch { _writingChecks.Remove(profileId); throw; }
+            catch { _writingChecks.Remove(profileId); _validation[reviewed] = "Last request failed"; throw; }
             token.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException("Copilot returned an empty answer. Your note has not changed.");
             return answer;
@@ -176,6 +227,7 @@ public sealed class AIWorkspaceService
         if (profile is null || reviewed.Kind != "api" || reviewed.Model != profile.Model || reviewed.Destination != profile.Endpoint)
             throw new InvalidOperationException("The connection changed. Reopen the request and review its destination.");
         var inputs = Inputs(profile);
+        _validationContext[profileId] = (inputs with { Credential = "" }, CredentialDigest(inputs.Credential));
         using var client = _createClient();
         var reused = ReuseCheck(profileId, inputs with { Credential = "" }, inputs.Credential, out var cachedCheck) && cachedCheck is not null;
         var check = reused
@@ -211,7 +263,7 @@ public sealed class AIWorkspaceService
         }
         catch (AIServiceException ex) when (ex.RetryAt is { } until)
         { _writingChecks.Remove(profileId); _retryAt[profileId] = until; throw; }
-        catch { _writingChecks.Remove(profileId); throw; }
+        catch { _writingChecks.Remove(profileId); _validation[reviewed] = "Last request failed"; throw; }
 
         async Task<T> CheckAsync<T>(Func<Task<T>> checkConnection)
         {
@@ -219,6 +271,7 @@ public sealed class AIWorkspaceService
             {
                 var result = await checkConnection();
                 _validation[reviewed] = "Last check passed";
+                _testedAt[reviewed] = DateTimeOffset.UtcNow;
                 return result;
             }
             catch (OperationCanceledException) { _validation[reviewed] = "Last check canceled"; throw; }

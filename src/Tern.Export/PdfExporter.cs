@@ -54,7 +54,7 @@ public static class PdfExporter
         var pageCount = renderer.PageCount;
         using var stream = new MemoryStream();
         pdf.Save(stream, closeStream: false);
-        return new PdfExportResult(stream.ToArray(), pageCount, warnings.Distinct(StringComparer.Ordinal).ToList(), document.Truncated || !complete);
+        return new PdfExportResult(PdfUnicodeMap.Correct(stream.ToArray()), pageCount, warnings.Distinct(StringComparer.Ordinal).ToList(), document.Truncated || !complete);
     }
 
     /// <summary>Exports to a file (written atomically) and returns the result.</summary>

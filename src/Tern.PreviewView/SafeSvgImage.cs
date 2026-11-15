@@ -180,8 +180,16 @@ internal static partial class SafeSvgImage
                             }
                             else if (node is XElement span)
                             {
-                                if (span.Name.LocalName != "tspan" || span.Attributes().Any(attribute => attribute.Name.LocalName is "x" or "y" or "rotate" or "textLength" or "lengthAdjust" or "text-anchor" or "transform" or "filter" or "clip-path" or "dominant-baseline")) throw Invalid();
+                                if (span.Name.LocalName != "tspan" || span.Attributes().Any(attribute => attribute.Name.LocalName is "rotate" or "textLength" or "lengthAdjust" or "text-anchor" or "transform" or "filter" or "clip-path" or "dominant-baseline")) throw Invalid();
                                 var spanPaint = inheritedPaint.Read(span);
+                                // Common badges position individual runs explicitly. Accept scalar
+                                // coordinates only; anchored chunks and coordinate lists need a fuller layout engine.
+                                if (Attr(span, "x") is { } x)
+                                {
+                                    if (paint.Anchor != "start") throw Invalid();
+                                    penX = Length(x) - Length(Attr(element, "x"));
+                                }
+                                if (Attr(span, "y") is { } y) penY = Length(y) - Length(Attr(element, "y"));
                                 penX += Length(Attr(span, "dx"));
                                 penY += Length(Attr(span, "dy"));
                                 if (Math.Abs(penX) > 1_000_000 || Math.Abs(penY) > 1_000_000) throw Invalid();

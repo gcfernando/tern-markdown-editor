@@ -56,7 +56,9 @@ public sealed class UnifiedWorkspaceConnectionTests
         reopened.Select(mcp.Id); Assert.False(reopened.SelectedConnection!.CanWrite);
         integrations.Remove(mcp.Id); reopened.Reload();
         Assert.DoesNotContain(reopened.Connections, p => p.Id == mcp.Id);
-        Assert.NotNull(reopened.SelectedConnection);
+        Assert.Null(reopened.SelectedConnection);
+        reopened.Reload(); Assert.Null(reopened.SelectedConnection);
+        reopened.Select(api.Id); Assert.Equal(api.Id, reopened.SelectedId);
     }
 
     [Fact]
@@ -129,7 +131,7 @@ public sealed class UnifiedWorkspaceConnectionTests
         { await Task.Delay(20, TestContext.Current.CancellationToken); Dispatcher.UIThread.RunJobs(); }
         var review = Assert.Single(f.Window.OverlayLayer.Children.OfType<AIEditReview>());
         Assert.Equal("# Original", note.CurrentText);
-        review.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Apply"))
+        review.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Apply changes"))
             .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.False(f.Window.IsOverlayOpen); Assert.Equal("# Better draft", note.CurrentText); Assert.Equal(2, calls);
         await f.Window.RunCommandAsync(Tern.App.Commands.CommandIds.Undo); Assert.Equal("# Original", note.CurrentText);
@@ -158,7 +160,8 @@ public sealed class UnifiedWorkspaceConnectionTests
         var tools = Assert.Single(f.Window.OwnedWindows.OfType<MCPConnectionsWindow>());
         Assert.Equal(profile.Destination, tools.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "MCP server endpoint").Text);
         tools.Close();
-        store.Remove(profile.Id); Dispatcher.UIThread.RunJobs(); Assert.False(f.Window.AIBar.IsVisible);
+        store.Remove(profile.Id); Dispatcher.UIThread.RunJobs(); Assert.Null(f.Window.AIConnectionPicker.SelectedItem);
+        Assert.Contains("set up", f.Window.FindControl<Button>("AIEntryButton")!.Content!.ToString());
     }
 
     private static IntegrationProfile Profile(Folder folder, string kind) => new(Guid.NewGuid().ToString("N"), kind, kind,

@@ -47,6 +47,8 @@ public sealed partial class DocumentTab : ObservableObject, IDisposable
         }
     }
     public string? SourceUrl { get; set; }
+    public bool IsCachedSource { get; set; }
+    public IReadOnlyList<string> SourceWarnings { get; set; } = [];
     /// <summary>A local draft explicitly created outside all workspace roots.</summary>
     public bool IsStandaloneDraft { get; set; }
     public string? RecoveryName { get; set; }

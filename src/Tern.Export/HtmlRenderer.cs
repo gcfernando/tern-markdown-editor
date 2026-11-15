@@ -109,7 +109,14 @@ internal sealed partial class HtmlRenderer(SafeResourceResolver resolver, ImageE
                 }
 
                 _html.Append('>');
-                HtmlText.Escape(_html, code.Code.TrimEnd('\r', '\n'));
+                var source = code.Code.TrimEnd('\r', '\n');
+                foreach (var token in Tern.PreviewView.CodeSyntaxHighlighter.Tokenize(source, code.Language))
+                {
+                    if (token.Kind != Tern.PreviewView.CodeTokenKind.Plain)
+                        _html.Append("<span class=\"syntax-").Append(token.Kind.ToString().ToLowerInvariant()).Append("\">");
+                    HtmlText.Escape(_html, source.Substring(token.Start, token.Length));
+                    if (token.Kind != Tern.PreviewView.CodeTokenKind.Plain) _html.Append("</span>");
+                }
                 _html.Append("</code></pre>\n");
                 break;
             case ThematicBreakNode:

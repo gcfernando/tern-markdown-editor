@@ -37,17 +37,20 @@ public static partial class HtmlExporter
         var images = new ImageEmbedder(options.MaxInlineImageBytes, options.MaxTotalImageBytes, warnings, options.RemoteImageBytes);
         var body = new HtmlRenderer(resolver, images, options.IncludeFrontMatter, warnings).Render(document);
         var title = ResolveTitle(document, options);
-        var cssHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(HtmlTheme.Css)));
+        // HTML parsers normalize CRLF/CR to LF before applying CSP hashes. Hash and emit
+        // that same canonical text, regardless of this source file's checkout line endings.
+        var css = HtmlTheme.Css.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var cssHash = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(css)));
         var theme = options.Theme.ToString().ToLowerInvariant();
         var language = LanguageTag().IsMatch(options.Language) ? options.Language : "en";
 
-        var html = new StringBuilder(body.Length + HtmlTheme.Css.Length + 1024);
+        var html = new StringBuilder(body.Length + css.Length + 1024);
         html.Append("<!DOCTYPE html>\n<html lang=\"").Append(language).Append("\" data-theme=\"").Append(theme).Append("\">\n<head>\n")
             .Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'sha256-").Append(cssHash).Append("'; base-uri 'none'; form-action 'none'\">\n")
             .Append("<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"color-scheme\" content=\"light dark\">\n")
             .Append("<meta name=\"generator\" content=\"Tern\">\n<title>");
         HtmlText.Escape(html, title);
-        html.Append("</title>\n<style>").Append(HtmlTheme.Css).Append("</style>\n</head>\n<body>\n<main class=\"markdown-body\">\n")
+        html.Append("</title>\n<style>").Append(css).Append("</style>\n</head>\n<body>\n<main class=\"markdown-body\">\n")
             .Append(body).Append("</main>\n</body>\n</html>\n");
 
         return new HtmlExportResult(html.ToString(), title, warnings.Distinct(StringComparer.Ordinal).ToList(), document.Truncated, images.Count);

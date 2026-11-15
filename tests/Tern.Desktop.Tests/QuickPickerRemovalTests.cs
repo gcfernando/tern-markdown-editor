@@ -20,7 +20,7 @@ public sealed class QuickPickerRemovalTests
     [AvaloniaTheory]
     [InlineData(ThemeChoice.Paper)]
     [InlineData(ThemeChoice.Midnight)]
-    public async Task Both_remove_icons_use_the_current_theme_danger_color(ThemeChoice theme)
+    public async Task Forgetting_references_uses_labeled_overflow_actions_in_both_themes(ThemeChoice theme)
     {
         using var fixture = new DesktopFixture();
         fixture.Shell.Settings.Theme = theme;
@@ -29,14 +29,15 @@ public sealed class QuickPickerRemovalTests
         await fixture.Window.ShowNavAsync("Files");
         fixture.Window.ShowQuickOpen("");
         Pump(fixture);
-        Assert.True(Application.Current!.TryGetResource("Tern.Danger", Application.Current.ActualThemeVariant, out var danger));
-        var expected = Assert.IsAssignableFrom<ISolidColorBrush>(danger).Color;
-        var buttons = fixture.Window.GetVisualDescendants().OfType<Button>().Where(b => AutomationProperties.GetName(b) == "Remove file reference" && b.IsEffectivelyVisible).ToArray();
+        var buttons = fixture.Window.GetVisualDescendants().OfType<Button>().Where(b => AutomationProperties.GetName(b) is "Recent entry actions" or "File reference actions" && b.IsEffectivelyVisible).ToArray();
         Assert.Equal(2, buttons.Length);
         Assert.All(buttons, button =>
         {
-            var icon = Assert.IsType<Avalonia.Controls.Shapes.Path>(button.Content);
-            Assert.Equal(expected, Assert.IsAssignableFrom<ISolidColorBrush>(icon.Stroke).Color);
+            var actions = Assert.IsType<MenuFlyout>(button.Flyout);
+            actions.ShowAt(button);
+            Pump(fixture);
+            Assert.Contains(actions.Items.OfType<MenuItem>(), item => item.Header?.ToString()?.Contains("forget", StringComparison.OrdinalIgnoreCase) == true);
+            actions.Hide();
         });
     }
 
@@ -56,8 +57,8 @@ public sealed class QuickPickerRemovalTests
         var picker = fixture.Window.Picker!;
         var item = Assert.Single(picker.Results.Items.OfType<PickerItem>(), r => Equals(r.Payload, path));
         Assert.NotNull(item.RemoveReference);
-        var remove = Assert.Single(picker.Results.GetVisualDescendants().OfType<Button>(), b => Equals(b.DataContext, item) && AutomationProperties.GetName(b) == "Remove file reference");
-        Assert.NotNull(Assert.IsType<Avalonia.Controls.Shapes.Path>(remove.Content).Data);
+        var remove = Assert.Single(picker.Results.GetVisualDescendants().OfType<Button>(), b => Equals(b.DataContext, item) && AutomationProperties.GetName(b) == "Recent entry actions");
+        Assert.IsType<MenuFlyout>(remove.Flyout);
         Assert.True(remove.Bounds.Width >= 32 && remove.Bounds.Height >= 36);
         Assert.True(remove.TranslatePoint(default, picker)!.Value.X > picker.Bounds.Width / 2);
         if (!missing) Capture(fixture, "quick-open-before-remove.png");
@@ -66,6 +67,8 @@ public sealed class QuickPickerRemovalTests
         fixture.Window.MouseMove(point);
         fixture.Window.MouseDown(point, MouseButton.Left);
         fixture.Window.MouseUp(point, MouseButton.Left);
+        Pump(fixture);
+        Assert.Single(Assert.IsType<MenuFlyout>(remove.Flyout).Items.OfType<MenuItem>()).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
         Pump(fixture);
         Assert.True(fixture.Window.IsOverlayOpen);
         Assert.Same(active, fixture.Shell.ActiveTab);

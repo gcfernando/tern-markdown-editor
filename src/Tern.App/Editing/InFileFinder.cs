@@ -49,7 +49,8 @@ public static class InFileFinder
 
         const string BufferPath = "buffer";
         var finder = new FindReplace(new SingleTextProvider(BufferPath, text));
-        var preview = await finder.PreviewAsync([BufferPath], options, cancellationToken).ConfigureAwait(false);
+        // Pattern compilation and matching must never occupy the UI thread.
+        var preview = await Task.Run(() => finder.PreviewAsync([BufferPath], options with { IncludePreview = false }, cancellationToken), cancellationToken).ConfigureAwait(false);
         if (preview.HasError)
         {
             return new InFileFindResult([], preview.PatternError, false);

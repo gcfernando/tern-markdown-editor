@@ -13,6 +13,14 @@ namespace Tern.Desktop.Views;
 /// <summary>Shared construction helpers for the code-built dialog windows.</summary>
 internal static class DialogParts
 {
+    /// <summary>One themed, vertically scrollable panel shell shared by compact popup surfaces.</summary>
+    public static Flyout PanelFlyout(Control? content = null)
+    {
+        var flyout = new Flyout { Content = content };
+        flyout.FlyoutPresenterClasses.Add("tern-popup");
+        return flyout;
+    }
+
     /// <summary>Keep setup steps in one stable viewport, sized like the settings window that opened them.</summary>
     public static void SetupWizard(Window window, string title)
     {
@@ -20,7 +28,7 @@ internal static class DialogParts
         Setup(window, title, 940, 760, stableViewport: true);
     }
 
-    public static void Setup(Window window, string title, double width, double height, bool stableViewport = false)
+    public static void Setup(Window window, string title, double width, double height, bool stableViewport = false, bool guidance = true)
     {
         window.Title = title;
         window.Width = width;
@@ -85,6 +93,7 @@ internal static class DialogParts
         window.Opened += (_, _) =>
         {
             opened = true;
+            if (guidance) GuidanceStrip.Install(window);
             if (stableViewport && window.Owner is Window owner &&
                 (owner is SettingsWindow || owner.Classes.Contains("ai-connection-wizard")))
             {
@@ -197,6 +206,14 @@ internal static class DialogParts
         grid.Children.Add(control);
         Grid.SetColumn(control, 1);
         control.HorizontalAlignment = HorizontalAlignment.Left;
+        grid.SizeChanged += (_, _) =>
+        {
+            var stacked = grid.Bounds.Width < GuideParts.Scaled(480);
+            grid.ColumnDefinitions = new ColumnDefinitions(stacked ? "*" : "200,*");
+            grid.RowDefinitions = new RowDefinitions(stacked ? "Auto,Auto" : "Auto");
+            Grid.SetColumn(control, stacked ? 0 : 1); Grid.SetRow(control, stacked ? 1 : 0);
+            control.HorizontalAlignment = HorizontalAlignment.Stretch;
+        };
         return grid;
     }
 

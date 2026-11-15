@@ -36,6 +36,7 @@ public static class Startup
         if (shell.Tabs.Count == 0)
         {
             shell.NewStartupDocument();
+            window.ShowFirstUse();
         }
     }
 

@@ -89,7 +89,8 @@ public sealed class ButtonContentAlignmentTests
         Dispatcher.UIThread.RunJobs();
         fixture.Window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
-        foreach (var name in new[] { "StatusEncoding", "StatusLineEnding", "StatusProfile" })
+        // Compact layouts move profile selection into the document details action.
+        foreach (var name in new[] { "StatusEncoding", "StatusLineEnding" })
         {
             var button = fixture.Window.FindControl<Button>(name);
             Assert.NotNull(button);
@@ -117,14 +118,14 @@ public sealed class ButtonContentAlignmentTests
                         var label = Assert.Single(button.GetVisualDescendants().OfType<TextBlock>(),
                             t => t.IsEffectivelyVisible && t.Text == (string)button.Content!);
                         Visual textArea = button;
-                        // Fluent disclosure headers reserve a separate right-hand chevron column.
+                        // Shared and Fluent disclosure headers reserve a separate right-hand chevron column.
                         // Their label belongs in the text column, not over the chevron's space.
                         if (button.Name == "ExpanderHeader")
                         {
                             var presenter = Assert.Single(button.GetVisualDescendants().OfType<ContentPresenter>(),
                                 p => p.Name == "PART_ContentPresenter");
                             var chevron = Assert.Single(button.GetVisualDescendants().OfType<Border>(),
-                                b => b.Name == "ExpandCollapseChevronBorder");
+                                b => b.Name is "TernDisclosureChevron" or "ExpandCollapseChevronBorder");
                             var labelEnd = label.TranslatePoint(new Point(label.Bounds.Width, 0), button);
                             var chevronStart = chevron.TranslatePoint(default, button);
                             Assert.True(labelEnd.HasValue && chevronStart.HasValue);

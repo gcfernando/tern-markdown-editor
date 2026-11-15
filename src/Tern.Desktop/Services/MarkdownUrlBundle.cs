@@ -19,12 +19,14 @@ public sealed partial class MarkdownUrlLoader
     { ".md", ".markdown", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".pdf", ".txt", ".csv", ".json", ".yaml", ".yml", ".zip", ".docx", ".xlsx", ".pptx" };
 
     /// <summary>Downloads one document and its direct file/image dependencies; never crawls linked pages.</summary>
-    public async Task<MarkdownUrlDocument> LoadBundleAsync(string url, CancellationToken cancellationToken = default)
+    public async Task<MarkdownUrlDocument> LoadBundleAsync(string url, CancellationToken cancellationToken = default, IProgress<UrlLoadProgress>? progress = null)
     {
         using var operationDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         operationDeadline.CancelAfter(TimeSpan.FromMinutes(2));
         cancellationToken = operationDeadline.Token;
+        progress?.Report(new("Fetching Markdown"));
         var document = await LoadAsync(url, cancellationToken).ConfigureAwait(false);
+        progress?.Report(new("Finding directly referenced assets"));
         var parsed = Markdig.Markdown.Parse(document.Text, MarkdownPipelines.For(MarkdownProfile.Extended));
         var links = MarkdownAnalyzer.Analyze(document.Text, parsed, MarkdownProfile.Extended).Links
             .Where(l => l.Kind is LinkKind.Image or LinkKind.Inline or LinkKind.ReferenceDefinition)
@@ -62,6 +64,8 @@ public sealed partial class MarkdownUrlLoader
             .GroupBy(item => item.Address!.AbsoluteUri, StringComparer.Ordinal).Take(MaximumAssetCount)
             .Select(group => (Address: group.First().Address!, Image: group.Any(item => item.Image))).ToArray();
         long admittedBytes = bytes;
+        var completedAssets = 0;
+        progress?.Report(new("Fetching referenced assets", 0, dependencies.Length));
         await Parallel.ForEachAsync(dependencies, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken }, async (dependency, token) =>
         {
             try
@@ -78,6 +82,7 @@ public sealed partial class MarkdownUrlLoader
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
             { prefetched[dependency.Address.AbsoluteUri] = ([], null, ex.Message); }
+            finally { progress?.Report(new("Fetching referenced assets", Interlocked.Increment(ref completedAssets), dependencies.Length)); }
         }).ConfigureAwait(false);
         foreach (var link in links.DistinctBy(l => l.Range))
         {
@@ -292,7 +297,7 @@ public static class MarkdownUrlCache
             }
             var documentPath = Path.Combine(directory, "document.md"); RejectLinks(documentPath);
             return new MarkdownUrlDocument(new Uri(metadata.Source), metadata.Name, await File.ReadAllTextAsync(documentPath, cancellationToken).ConfigureAwait(false))
-            { OriginalText = await File.ReadAllTextAsync(originalPath, cancellationToken).ConfigureAwait(false), Assets = assets, CachedPath = documentPath, RequestedUrl = MarkdownUrlLoader.GetFetchAddress(url).AbsoluteUri };
+            { OriginalText = await File.ReadAllTextAsync(originalPath, cancellationToken).ConfigureAwait(false), Assets = assets, CachedPath = documentPath, WasCached = true, Warnings = metadata.Warnings, RequestedUrl = MarkdownUrlLoader.GetFetchAddress(url).AbsoluteUri };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return null; }
     }

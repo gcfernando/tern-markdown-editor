@@ -18,7 +18,7 @@ public sealed class CopilotGuidePromptTests
         Assert.InRange(message.Length, 1, CopilotTextClient.MaximumPromptCharacters);
         Assert.DoesNotContain("@", message, StringComparison.Ordinal);
         Assert.EndsWith("\n\nUSER QUESTION\n" + question, message, StringComparison.Ordinal);
-        var features = FeatureCatalog.Search(registry, question);
+        var features = GuideQuestionPrompt.Relevant(registry, question);
         if (features.Count > 0) Assert.Contains(features[0].Name + ": " + features[0].Description, message, StringComparison.Ordinal);
     }
 
@@ -28,7 +28,7 @@ public sealed class CopilotGuidePromptTests
         var registry = CommandRegistry.CreateDefault(); const string question = "How to use AI for MD files";
         var message = GuideQuestionPrompt.Build(registry, question, forCopilot: false);
         var reference = string.Join('\n', registry.Commands.Select(c => c.Title + " | " + c.Category + " | " + Gesture.Describe(registry.GetGesture(c.Id))));
-        var relevant = string.Join('\n', FeatureCatalog.Search(registry, question).Take(8)
+        var relevant = string.Join('\n', GuideQuestionPrompt.Relevant(registry, question)
             .Select(f => f.Name + ": " + f.Description + " " + string.Join(" ", f.Steps)));
         Assert.Contains("\n\nTERN COMMANDS\n" + reference + "\n\nRELEVANT GUIDE\n" + relevant, message, StringComparison.Ordinal);
     }

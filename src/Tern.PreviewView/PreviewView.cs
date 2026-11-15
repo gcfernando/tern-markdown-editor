@@ -47,6 +47,7 @@ public sealed class PreviewView : Decorator
     private readonly BlockPanel _panel;
     private readonly Border _banner;
     private readonly TextBlock _bannerText;
+    private readonly SearchHighlightLayer _searchHighlight;
 
     private BlockFactory _factory;
     private Func<string, CancellationToken, Task<byte[]?>>? _remoteImageLoader;
@@ -71,6 +72,8 @@ public sealed class PreviewView : Decorator
     private int _reportedLine = 1;
     private bool _programmatic;
     private bool _correctionQueued;
+    private bool _draggingScrollbar;
+    private double _dragProgress;
     private Control? _flashed;
     private DispatcherTimer? _flashTimer;
     private bool _rebuildOnAttach;
@@ -117,7 +120,12 @@ public sealed class PreviewView : Decorator
         var layout = new DockPanel();
         DockPanel.SetDock(_banner, Dock.Top);
         layout.Children.Add(_banner);
-        layout.Children.Add(_scroller);
+        _searchHighlight = new SearchHighlightLayer(this) { IsHitTestVisible = false, ClipToBounds = true };
+        var reading = new Grid();
+        reading.Children.Add(_scroller);
+        reading.Children.Add(_searchHighlight);
+        layout.Children.Add(reading);
+        LayoutUpdated += (_, _) => { if (SearchMatch is not null) _searchHighlight.InvalidateVisual(); };
 
         var root = new Border { Child = layout };
         PreviewTheme.Bind(root, Border.BackgroundProperty, PreviewKeys.Background);
@@ -191,6 +199,46 @@ public sealed class PreviewView : Decorator
 
     internal ScrollViewer Scroller => _scroller;
 
+    private bool _canToggleTasks;
+    /// <summary>The host permits task interaction for the currently rendered source.</summary>
+    public bool CanToggleTasks
+    {
+        get => _canToggleTasks;
+        set { if (_canToggleTasks == value) return; _canToggleTasks = value; Rebuild(); }
+    }
+    public event EventHandler<TaskActivatedEventArgs>? TaskActivated;
+    public event EventHandler<ImageActionEventArgs>? ImageActionRequested;
+
+    internal void RequestImageAction(Control source, string alt, ResourceDecision resolution, ImageAction action, Action retry)
+    {
+        if (Document is not { } document) return;
+        var relative = -1;
+        for (Visual? current = source; current is not null; current = current.GetVisualParent())
+        {
+            if (relative < 0 && current is Control control && control.GetValue(BlockFactory.RelativeLineProperty) is var line and >= 0) relative = line;
+            if (current is BlockHost host)
+            {
+                ImageActionRequested?.Invoke(this, new ImageActionEventArgs(document, host.Slot.Node.Source.StartLine + Math.Max(0, relative), alt, resolution, action, retry));
+                return;
+            }
+        }
+    }
+
+    internal void RequestTaskActivation(Control source, bool wasChecked)
+    {
+        if (!CanToggleTasks || Document is not { } document) return;
+        var relative = -1;
+        for (Visual? current = source; current is not null; current = current.GetVisualParent())
+        {
+            if (relative < 0 && current is Control control && control.GetValue(BlockFactory.RelativeLineProperty) is var line and >= 0) relative = line;
+            if (current is BlockHost host)
+            {
+                TaskActivated?.Invoke(this, new TaskActivatedEventArgs(document, host.Slot.Node.Source.StartLine + Math.Max(0, relative), wasChecked));
+                return;
+            }
+        }
+    }
+
     /// <summary>Moves one reading page without requiring a precise scrollbar drag.</summary>
     public void ScrollByPage(int direction) => _scroller.Offset = new Vector(0,
         Math.Max(0, _scroller.Offset.Y + direction * Math.Max(48, _scroller.Viewport.Height - 48)));
@@ -213,16 +261,20 @@ public sealed class PreviewView : Decorator
             bar.Orientation == Orientation.Vertical && bar.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault() == _scroller))
         {
             bar.Classes.Add("reading-scrollbar");
-            bar.Width = bar.MinWidth = 26;
+            bar.Width = bar.MinWidth = 18;
             bar.AllowAutoHide = false;
             PreviewTheme.Bind(bar, ScrollBar.BackgroundProperty, PreviewKeys.CodeBackground);
             PreviewTheme.Bind(bar, ScrollBar.ForegroundProperty, PreviewKeys.Foreground);
             AutomationProperties.SetName(bar, "Reading scrollbar");
-            ToolTip.SetTip(bar, "Drag the large grip to scroll. Click the track for a page, or use Page Up / Page Down.");
+            ToolTip.SetTip(bar, "Drag the grip to scroll. Click the track for a page, or use Page Up / Page Down.");
             bar.ApplyTemplate();
             foreach (var thumb in bar.GetVisualDescendants().OfType<Thumb>())
             {
-                thumb.MinHeight = 64; thumb.MinWidth = 22;
+                thumb.MinHeight = 24; thumb.MinWidth = 14;
+                thumb.DragStarted -= OnScrollbarDragStarted;
+                thumb.DragCompleted -= OnScrollbarDragCompleted;
+                thumb.DragStarted += OnScrollbarDragStarted;
+                thumb.DragCompleted += OnScrollbarDragCompleted;
                 thumb.ApplyTemplate();
                 foreach (var border in thumb.GetVisualDescendants().OfType<Border>())
                 {
@@ -236,9 +288,65 @@ public sealed class PreviewView : Decorator
 
     internal BlockPanel Panel => _panel;
 
+    private void OnScrollbarDragStarted(object? sender, VectorEventArgs e)
+    {
+        _draggingScrollbar = true;
+        _dragProgress = _scroller.Offset.Y / Math.Max(1, _scroller.Extent.Height - _scroller.Viewport.Height);
+        _programmatic = false;
+        _expectedOffset = null;
+    }
+
+    private void OnScrollbarDragCompleted(object? sender, VectorEventArgs e)
+    {
+        _draggingScrollbar = false;
+        CaptureAnchor(_scroller.Offset.Y);
+    }
+
     internal Border Banner => _banner;
 
     internal TextBlock BannerText => _bannerText;
+
+    internal sealed record SearchHighlight(int Start, int Length, string Source);
+    internal SearchHighlight? SearchMatch { get; private set; }
+    internal IReadOnlyList<SearchHighlight> SearchMatches { get; private set; } = [];
+
+    /// <summary>Persistently highlights the selected source match in rendered text, including virtualized blocks.</summary>
+    public void HighlightSearchMatch(int start, int length, string source)
+    {
+        HighlightSearchMatches(length > 0 ? [(start, length)] : [], 0, source);
+    }
+
+    /// <summary>Source-ordered matches for one current document, with a distinct active result.</summary>
+    public void HighlightSearchMatches(IReadOnlyList<(int Start, int Length)> matches, int activeIndex, string source)
+    {
+        SearchMatches = matches.Select(m => new SearchHighlight(m.Start, m.Length, source)).ToArray();
+        SearchMatch = activeIndex >= 0 && activeIndex < SearchMatches.Count ? SearchMatches[activeIndex] : null;
+        _searchHighlight.InvalidateVisual();
+    }
+
+    /// <summary>Realizes the source block, then reveals the exact rendered glyphs, including nested scrollers.</summary>
+    public bool RevealSearchMatch(int line)
+    {
+        if (SearchMatch is null) return false;
+        ScrollToSourceLine(line);
+        UpdateLayout();
+        foreach (var text in this.GetVisualDescendants().OfType<RichTextBlock>())
+        {
+            if (!text.IsEffectivelyVisible) continue;
+            var range = text.SearchRanges(activeOnly: true).FirstOrDefault();
+            if (range.Length == 0) continue;
+            var rect = text.TextLayout.HitTestTextRange(range.Start, range.Length).FirstOrDefault();
+            if (rect.Width <= 0) continue;
+            var target = rect.Translate(new Vector(text.Padding.Left, text.Padding.Top));
+            text.BringIntoView(target.Inflate(12));
+            UpdateLayout();
+            // Keep later height corrections anchored at the revealed position.
+            CaptureAnchor(_scroller.Offset.Y);
+            _searchHighlight.InvalidateVisual();
+            return true;
+        }
+        return false;
+    }
 
     /// <summary>Scrolls so the block holding <paramref name="line"/> (1-based) is at the top of the viewport.</summary>
     public void ScrollToSourceLine(int line)
@@ -646,6 +754,14 @@ public sealed class PreviewView : Decorator
     private void CorrectAnchor()
     {
         _correctionQueued = false;
+        if (_draggingScrollbar)
+        {
+            // A thumb controls a fraction of the whole document. Newly measured
+            // blocks must not pull the grip back to an earlier source anchor.
+            _scroller.Offset = new Vector(0, _dragProgress * Math.Max(0, _scroller.Extent.Height - _scroller.Viewport.Height));
+            CaptureAnchor(_scroller.Offset.Y);
+            return;
+        }
         if (_anchorSlot is null || _anchorIndex >= _panel.Slots.Count || _panel.Slots[_anchorIndex] != _anchorSlot)
         {
             return;
@@ -666,6 +782,8 @@ public sealed class PreviewView : Decorator
         _panel.SetViewport(offset - _page.Padding.Top, _scroller.Viewport.Height);
         var moved = Math.Abs(offset - _lastOffset) > 0.5;
         _lastOffset = offset;
+        if (_draggingScrollbar && e.ExtentDelta == default && e.ViewportDelta == default)
+            _dragProgress = Math.Clamp(offset / Math.Max(1, _scroller.Extent.Height - _scroller.Viewport.Height), 0, 1);
         if (!moved)
         {
             return;
@@ -813,6 +931,8 @@ public sealed class PreviewView : Decorator
             RaiseSourceLine(e.Source);
         }
     }
+
+    internal void RequestSourceEdit(Control source) => RaiseSourceLine(source);
 
     private void RaiseSourceLine(object? source)
     {

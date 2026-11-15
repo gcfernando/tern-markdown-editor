@@ -13,7 +13,7 @@ public static class DocumentCommandPolicy
     // Retained for existing hosts; opening a file never creates a pending conversion.
     public static bool RequiresCrlfSave(DocumentSession document) => false;
 
-    public static bool IsOutputCommand(string id) => id is CommandIds.Print or CommandIds.ExportHtml or CommandIds.ExportPdf;
+    public static bool IsOutputCommand(string id) => id is CommandIds.Print or CommandIds.ExportAs or CommandIds.ExportHtml or CommandIds.ExportPdf;
 
     public static string? DisabledReason(string id, DocumentCommandContext context) =>
         IsOutputCommand(id) && !CanExecute(id, context)
@@ -45,7 +45,7 @@ public static class DocumentCommandPolicy
             CommandIds.LibrarySearch or CommandIds.LibraryBrokenLinks or CommandIds.LibraryTasks => context.HasWorkspace,
             CommandIds.ReloadFromDisk or CommandIds.RevealInExplorer
                 or CommandIds.ShowHistory => document is { HasFile: true } && !context.IsBusy,
-            CommandIds.Print or CommandIds.ExportHtml or CommandIds.ExportPdf => document is not null && !context.IsBusy
+            CommandIds.Print or CommandIds.ExportAs or CommandIds.ExportHtml or CommandIds.ExportPdf => document is not null && !context.IsBusy
                 && (document.HasFile || !string.IsNullOrWhiteSpace(document.Buffer.GetText())),
             CommandIds.Find or CommandIds.GoToLine or CommandIds.GoToHeading or CommandIds.CloseTab
                 or CommandIds.ViewSource or CommandIds.ViewSplit or CommandIds.ViewReading

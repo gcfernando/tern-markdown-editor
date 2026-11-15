@@ -16,14 +16,14 @@ internal static class ImageAttachmentImporter
         && WorkspacePaths.PathsEqual(FileIdentity.ResolvePhysicalPath(Path.GetDirectoryName(document)!),
             Path.GetDirectoryName(FileIdentity.ResolvePhysicalPath(path))!);
 
-    public static void LinkExisting(DocumentTab tab, byte[] bytes, string path, int offset, long revision)
+    public static void LinkExisting(DocumentTab tab, byte[] bytes, string path, int offset, long revision, string? altText = null)
     {
         if (tab.IsReadOnly || tab.FilePath is not { } document) throw new IOException("Save a writable document before inserting an attachment.");
         var source = FileIdentity.ResolvePhysicalPath(path);
         ValidateImage(bytes, Path.GetFileName(source));
         if (!tab.Session.IsCurrent(revision)) throw new IOException("The document changed while reading the image. Try again.");
         RegisterSelectedImage(tab, source);
-        InsertLink(tab, document, source, Path.GetFileName(path), offset);
+        InsertLink(tab, document, source, Path.GetFileName(path), offset, altText);
     }
 
     public static string SuggestUniqueName(string folder, string name)
@@ -38,10 +38,11 @@ internal static class ImageAttachmentImporter
         throw new IOException("Choose a different attachment name; too many copies use this name.");
     }
 
-    public static async Task<string> InsertAsync(DocumentTab tab, byte[] bytes, string folder, string name, int offset, long revision, bool allowExternalDestination = false)
+    public static async Task<string> InsertAsync(DocumentTab tab, byte[] bytes, string folder, string name, int offset, long revision, bool allowExternalDestination = false, string? altText = null, Func<bool>? isCurrent = null)
     {
         if (tab.IsReadOnly || tab.FilePath is not { } document) throw new IOException("Save a writable document before inserting an attachment.");
         ValidateImage(bytes, name);
+        if (isCurrent?.Invoke() == false || !tab.Session.IsCurrent(revision)) throw new IOException("The intended document changed. Insert the image again.");
         var targetFolder = FileIdentity.ResolvePhysicalPath(folder);
         var root = FileIdentity.ResolvePhysicalPath(Path.GetDirectoryName(document)!);
         if (!allowExternalDestination && !WorkspacePaths.IsSameOrUnder(root, targetFolder))
@@ -55,13 +56,13 @@ internal static class ImageAttachmentImporter
         try
         {
             await File.WriteAllBytesAsync(staged, bytes);
-            if (!tab.Session.IsCurrent(revision) || tab.FilePath != document || tab.IsReadOnly) throw new IOException("The document changed while choosing the attachment. Try again.");
+            if (isCurrent?.Invoke() == false || !tab.Session.IsCurrent(revision) || tab.FilePath != document || tab.IsReadOnly) throw new IOException("The document changed while choosing the attachment. Try again.");
             // Re-resolve the directory before committing so a changed link cannot redirect the copy.
             if (FileIdentity.ResolvePhysicalPath(folder) != targetFolder) throw new IOException("The attachment folder changed. Try again.");
             File.Move(staged, target, overwrite: false);
             committed = true;
             RegisterSelectedImage(tab, target);
-            InsertLink(tab, document, target, name, offset);
+            InsertLink(tab, document, target, name, offset, altText);
             return target;
         }
         catch (Exception ex) when (committed)
@@ -73,15 +74,15 @@ internal static class ImageAttachmentImporter
         finally { File.Delete(staged); }
     }
 
-    private static void InsertLink(DocumentTab tab, string document, string target, string name, int offset)
+    private static void InsertLink(DocumentTab tab, string document, string target, string name, int offset, string? altText)
     {
         var relative = Path.GetRelativePath(Path.GetDirectoryName(document)!, target).Replace(Path.DirectorySeparatorChar, '/');
         var escaped = string.Join('/', relative.Split('/').Select(Uri.EscapeDataString));
-        var alt = Path.GetFileNameWithoutExtension(name).Replace("[", "\\[", StringComparison.Ordinal).Replace("]", "\\]", StringComparison.Ordinal);
+        var alt = (altText ?? Path.GetFileNameWithoutExtension(name)).Replace("\\", "\\\\", StringComparison.Ordinal).Replace("[", "\\[", StringComparison.Ordinal).Replace("]", "\\]", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
         tab.ApplyEdits([TextEdit.Insert(offset, $"![{alt}]({escaped})")]);
     }
 
-    private static void RegisterSelectedImage(DocumentTab tab, string path)
+    internal static void RegisterSelectedImage(DocumentTab tab, string path)
     {
         var root = Path.GetDirectoryName(tab.FilePath!)!;
         if (WorkspacePaths.IsSameOrUnder(root, path)) return;

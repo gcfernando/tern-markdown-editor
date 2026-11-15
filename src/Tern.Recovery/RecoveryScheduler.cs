@@ -82,6 +82,9 @@ public sealed class RecoveryScheduler : IDisposable
         return succeeded;
     }
 
+    /// <summary>Explicitly retries protection for the intended tracked session, using its latest snapshot.</summary>
+    public Task<bool> RetryAsync(DocumentSession session) => FlushAsync(session);
+
     public void Dispose()
     {
         lock (_gate)

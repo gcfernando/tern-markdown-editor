@@ -11,6 +11,11 @@ internal readonly record struct CodeToken(int Start, int Length, CodeTokenKind K
 /// </summary>
 internal static partial class CodeSyntaxHighlighter
 {
+    internal static bool IsKnownLanguage(string? language) => (language?.Trim().ToLowerInvariant().Split(' ', '{')[0]) is
+        "html" or "xml" or "svg" or "xhtml" or "python" or "py" or "python3" or "sql" or "tsql" or "postgresql" or "mysql"
+        or "bash" or "sh" or "shell" or "zsh" or "powershell" or "ps1" or "pwsh" or "dockerfile" or "csharp" or "cs" or "c#"
+        or "javascript" or "js" or "typescript" or "ts" or "java" or "c" or "cpp" or "c++" or "php" or "go" or "golang" or "rust" or "rs"
+        or "kotlin" or "kt" or "kts" or "swift" or "css" or "json" or "jsonc" or "yaml" or "yml" or "toml" or "ini" or "kusto" or "kql";
     private const int MaxTokens = 6000;
     private static readonly HashSet<string> PythonKeywords = Words("and as assert async await break case class continue def del elif else except finally for from global if import in is lambda match nonlocal not or pass raise return try while with yield");
     private static readonly HashSet<string> CStyleKeywords = Words("abstract as async await base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach from get if implicit in int interface internal is lock long namespace new null object operator out override params partial private protected public readonly record ref required return sbyte sealed select set short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using value var virtual void volatile when where while with yield export function import let extends implements package synchronized throws transient instanceof super final boolean");
@@ -194,17 +199,6 @@ internal static partial class CodeSyntaxHighlighter
         }
         else tokens.Add(new CodeToken(start, length, kind));
     }
-
-    public static string ThemeKey(CodeTokenKind kind) => kind switch
-    {
-        CodeTokenKind.Keyword => PreviewKeys.CodeKeyword,
-        CodeTokenKind.String => PreviewKeys.CodeString,
-        CodeTokenKind.Function => PreviewKeys.CodeFunction,
-        CodeTokenKind.Type => PreviewKeys.CodeType,
-        CodeTokenKind.Constant => PreviewKeys.CodeConstant,
-        CodeTokenKind.Comment => PreviewKeys.CodeComment,
-        _ => PreviewKeys.CodeForeground,
-    };
 
     private static bool IsPythonPrefix(string text, int start)
     {

@@ -165,9 +165,9 @@ public class RenderingTests
             Assert.Equal(ImageState.Unavailable, images[2].State);
             Assert.Equal(ImageState.Unavailable, images[3].State);
             Assert.Equal(ImageState.Loaded, images[4].State);
-            var texts = Harness.All<TextBlock>(images[1]).Select(t => t.Text).ToList();
-            Assert.Contains(texts, t => (t ?? "").Contains("image unavailable", StringComparison.Ordinal));
-            Assert.Contains(Harness.All<TextBlock>(images[2]).Select(t => t.Text), t => (t ?? "").Contains("image unavailable", StringComparison.Ordinal));
+            Assert.Equal(ImageFailure.UnsupportedOrOverBudget, images[1].Failure);
+            Assert.Equal(ImageFailure.Missing, images[2].Failure);
+            Assert.Equal(ImageFailure.AccessBlocked, images[3].Failure);
             Assert.True(Harness.All<Image>(images[0]).Count == 1);
             Assert.True(ImageView.LivePixels > 0);
             window.Close();

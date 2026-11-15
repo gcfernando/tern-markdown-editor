@@ -6,6 +6,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Tern.Rendering.Preview;
 
 namespace Tern.PreviewView;
@@ -23,7 +24,7 @@ internal sealed class FitScroller : Border
     private readonly Control? _diagramTools;
     private readonly TextBlock? _diagramHint;
 
-    public FitScroller(Control content)
+    public FitScroller(Control content, bool showDiagramTools = true)
     {
         Content = content;
         _scroller = new ScrollViewer
@@ -33,7 +34,7 @@ internal sealed class FitScroller : Border
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             Content = content,
         };
-        if (content is DiagramControl diagram)
+        if (content is DiagramControl diagram && showDiagramTools)
         {
             _diagramHint = new TextBlock { Text = "Wide diagram — scroll sideways below", TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Margin = new Thickness(0, 0, 10, 0) };
@@ -104,11 +105,11 @@ internal sealed class CodeBlockView : Border
 
         var label = new TextBlock
         {
-            Text = Language ?? string.Empty,
+            Text = CodeSyntaxHighlighter.IsKnownLanguage(Language) ? Language : "Plain text",
             FontSize = Math.Max(10, fontSize * 0.78),
             FontWeight = FontWeight.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            IsVisible = false,
+            IsVisible = true,
         };
         PreviewTheme.Bind(label, TextBlock.ForegroundProperty, PreviewKeys.Muted);
         LanguageLabel = label;
@@ -178,6 +179,9 @@ internal sealed class CodeBlockView : Border
             var note = new TextBlock { Text = notice, FontSize = fontSize * 0.85, FontStyle = FontStyle.Italic, Margin = new Thickness(14, 0, 14, 8), TextWrapping = TextWrapping.Wrap };
             PreviewTheme.Bind(note, TextBlock.ForegroundProperty, PreviewKeys.Muted);
             stack.Children.Add(note);
+            var edit = new Button { Content = "Edit source" };
+            edit.Click += (_, _) => this.FindAncestorOfType<PreviewView>()?.RequestSourceEdit(this);
+            stack.Children.Add(edit);
         }
 
         Child = stack;
@@ -202,10 +206,13 @@ internal sealed class CodeBlockView : Border
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null)
         {
+            _copyLabel.Text = "Clipboard unavailable";
             return;
         }
 
-        await clipboard.SetTextAsync(_code);
+        try { await clipboard.SetTextAsync(_code); }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or System.Runtime.InteropServices.ExternalException)
+        { _copyLabel.Text = "Could not copy"; ToolTip.SetTip(_copyButton, ex.Message); return; }
         _copyLabel.Text = "Copied";
         _resetTimer.Stop();
         _resetTimer.Start();

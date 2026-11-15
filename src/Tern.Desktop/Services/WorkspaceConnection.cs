@@ -4,6 +4,8 @@ namespace Tern.Desktop.Services;
 public sealed record WorkspaceConnection(string Id, string Name, string Kind, string Model, string Destination)
 {
     public bool CanWrite => Kind is "api" or "copilot";
+    public string Capabilities => CanWrite ? "Text generation" : "Tools";
+    public string DisplaySummary => Name + " · " + Capabilities + " · " + Summary;
     public string Endpoint => Destination;
     public string ProviderLabel => Kind switch { "copilot" => "GitHub Copilot", "mcp" => "MCP tools", _ => "AI API" };
     public string Location => Kind != "copilot" && Uri.TryCreate(Destination, UriKind.Absolute, out var uri) && uri.IsLoopback

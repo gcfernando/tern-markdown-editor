@@ -40,6 +40,7 @@ internal sealed class PdfRenderer : IDisposable
     private readonly List<(int Level, PdfOutline Outline)> _outlineStack = [];
     private readonly List<Bar> _bars = [];
     private readonly Dictionary<EmbeddedImage, PdfImage?> _imageCache = [];
+    private long _rasterizedBytes;
 
     private XGraphics? _gfx;
     private PdfPage? _page;
@@ -277,7 +278,7 @@ internal sealed class PdfRenderer : IDisposable
                 Alert(alert);
                 break;
             case CodeBlockNode code:
-                CodeBlock(code.Code);
+                CodeBlock(code.Code, code.Language);
                 break;
             case ThematicBreakNode:
                 Begin(10);
@@ -592,70 +593,71 @@ internal sealed class PdfRenderer : IDisposable
         PopBar(bar);
     }
 
-    private void CodeBlock(string code)
+    private sealed record CodeRun(string Text, XFont Font, XColor Color, double Width);
+
+    private void CodeBlock(string code, string? language = null)
     {
         const double padding = 6;
         var size = _size * 0.88;
-        var font = _typography.Font(new TextStyle(false, false, true, false, false, false, 0, 0), size);
+        var style = new TextStyle(false, false, true, false, false, false, 0, 0);
         var lineHeight = size * 1.35;
-        var charWidth = Math.Max(1, _typography.Width("MMMMMMMMMM", font) / 10);
-        var columns = Math.Max(8, (int)((_width - (2 * padding)) / charWidth));
-
-        var lines = new List<string>();
-        foreach (var raw in PdfText.Safe(code.TrimEnd('\r', '\n')).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n'))
+        var source = PdfText.Safe(code.TrimEnd('\r', '\n')).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var tokens = Tern.PreviewView.CodeSyntaxHighlighter.Tokenize(source, language);
+        var lines = new List<List<CodeRun>> { new() };
+        var tokenIndex = 0;
+        var position = 0;
+        var lineWidth = 0d;
+        foreach (var rune in source.EnumerateRunes())
         {
-            if (raw.Length == 0)
+            while (tokenIndex + 1 < tokens.Count && position >= tokens[tokenIndex].Start + tokens[tokenIndex].Length) tokenIndex++;
+            var kind = tokens.Count > 0 ? tokens[tokenIndex].Kind : Tern.PreviewView.CodeTokenKind.Plain;
+            position += rune.Utf16SequenceLength;
+            if (rune.Value == '\n') { lines.Add(new()); lineWidth = 0; continue; }
+            var face = _typography.GlyphStyle(rune.Value, style, size);
+            if (!_typography.HasGlyph(rune.Value, face, size))
+                _warnings.Add($"The installed PDF fonts cannot display U+{rune.Value:X}. Install a font covering this character before sharing this PDF.");
+            var font = _typography.Font(face, size);
+            var text = rune.ToString();
+            var width = _typography.Width(text, font);
+            if (lineWidth > 0 && lineWidth + width > _width - 2 * padding)
+            { lines.Add(new()); lineWidth = 0; }
+            var color = kind switch
             {
-                lines.Add(string.Empty);
-                continue;
-            }
-
-            for (var start = 0; start < raw.Length; start += columns)
-            {
-                lines.Add(raw.Substring(start, Math.Min(columns, raw.Length - start)));
-            }
+                Tern.PreviewView.CodeTokenKind.Keyword => XColor.FromArgb(207, 34, 46),
+                Tern.PreviewView.CodeTokenKind.String => XColor.FromArgb(10, 48, 105),
+                Tern.PreviewView.CodeTokenKind.Function => XColor.FromArgb(130, 80, 223),
+                Tern.PreviewView.CodeTokenKind.Type => XColor.FromArgb(149, 56, 0),
+                Tern.PreviewView.CodeTokenKind.Constant => XColor.FromArgb(5, 80, 174),
+                Tern.PreviewView.CodeTokenKind.Comment => Muted,
+                _ => Ink,
+            };
+            var current = lines[^1];
+            if (current.Count > 0 && current[^1].Font == font && current[^1].Color == color)
+                current[^1] = current[^1] with { Text = current[^1].Text + text, Width = current[^1].Width + width };
+            else current.Add(new(text, font, color, width));
+            lineWidth += width;
         }
-
-        Begin((Math.Min(lines.Count, 3) * lineHeight) + (2 * padding));
+        Begin(Math.Min(lines.Count, 3) * lineHeight + 2 * padding);
         var index = 0;
-        var fill = new XSolidBrush(Soft);
-        var border = new XPen(Rule, 0.7);
-        var text = new XSolidBrush(Ink);
         while (index < lines.Count)
         {
-            var available = _bottom - _y - (2 * padding);
-            var count = (int)Math.Floor(available / lineHeight);
-            if (count < 1)
-            {
-                if (_y > _top + 0.5)
-                {
-                    NewPage();
-                    continue;
-                }
-
-                count = 1;
-            }
-
-            count = Math.Min(count, lines.Count - index);
-            var height = (count * lineHeight) + (2 * padding);
-            _gfx!.DrawRectangle(border, fill, _x, _y, _width, height);
+            var count = (int)Math.Floor((_bottom - _y - 2 * padding) / lineHeight);
+            if (count < 1 && _y > _top + 0.5) { NewPage(); continue; }
+            count = Math.Min(Math.Max(1, count), lines.Count - index);
+            var height = count * lineHeight + 2 * padding;
+            _gfx!.DrawRectangle(new XPen(Rule, 0.7), new XSolidBrush(Soft), _x, _y, _width, height);
             for (var k = 0; k < count; k++)
             {
-                var line = lines[index + k];
-                if (line.Length > 0)
+                var x = _x + padding;
+                foreach (var run in lines[index + k])
                 {
-                    _gfx.DrawString(line, font, text, new XPoint(_x + padding, _y + padding + (k * lineHeight) + (size * BaselineFactor)), XStringFormats.BaseLineLeft);
+                    _gfx.DrawString(run.Text, run.Font, new XSolidBrush(run.Color), new XPoint(x, _y + padding + k * lineHeight + size * BaselineFactor), XStringFormats.BaseLineLeft);
+                    x += run.Width;
                 }
             }
-
-            _y += height;
-            index += count;
-            if (index < lines.Count)
-            {
-                NewPage();
-            }
+            _y += height; index += count;
+            if (index < lines.Count) NewPage();
         }
-
         _gap = _blockGap;
     }
 
@@ -1166,7 +1168,7 @@ internal sealed class PdfRenderer : IDisposable
         }
     }
 
-    private static void AddText(List<Atom> sink, string text, TextStyle style)
+    private void AddText(List<Atom> sink, string text, TextStyle style)
     {
         var safe = PdfText.Safe(text);
         var i = 0;
@@ -1189,7 +1191,21 @@ internal sealed class PdfRenderer : IDisposable
                     i++;
                 }
 
-                sink.Add(new Atom(AtomKind.Word, safe[start..i], style));
+                // Keep ordinary text in its requested face, and split only missing glyphs into a symbol face.
+                // This preserves both searchable Unicode and emphasis around emoji in headings and tables.
+                var run = new StringBuilder();
+                var runStyle = style;
+                foreach (var rune in safe[start..i].EnumerateRunes())
+                {
+                    var nextStyle = _typography.GlyphStyle(rune.Value, style, _size);
+                    if (!_typography.HasGlyph(rune.Value, nextStyle, _size))
+                        _warnings.Add($"The installed PDF fonts cannot display U+{rune.Value:X}. Install a font covering this character before sharing this PDF.");
+                    if (run.Length > 0 && runStyle != nextStyle)
+                    { sink.Add(new Atom(AtomKind.Word, run.ToString(), runStyle)); run.Clear(); }
+                    runStyle = nextStyle;
+                    run.Append(rune.ToString());
+                }
+                if (run.Length > 0) sink.Add(new Atom(AtomKind.Word, run.ToString(), runStyle));
             }
         }
     }
@@ -1221,11 +1237,20 @@ internal sealed class PdfRenderer : IDisposable
         }
 
         PdfImage? loaded = null;
-        if (embedded.MediaType is "image/png" or "image/jpeg")
+        var bytes = embedded.Data;
+        var supported = embedded.MediaType is "image/png" or "image/jpeg";
+        if (embedded.MediaType == "image/svg+xml" && _options.SvgImageBytes is { } rasterize)
+        {
+            var png = rasterize(bytes);
+            if (png is not null && png.Length <= _options.MaxImageBytes && png.Length <= _options.MaxTotalImageBytes - _rasterizedBytes
+                && png.AsSpan().StartsWith(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
+            { bytes = png; supported = true; _rasterizedBytes += png.Length; }
+        }
+        if (supported)
         {
             try
             {
-                var image = XImage.FromStream(new MemoryStream(embedded.Data));
+                var image = XImage.FromStream(new MemoryStream(bytes));
                 loaded = new PdfImage(image, image.PointWidth, image.PointHeight);
                 if (loaded.Width <= 0 || loaded.Height <= 0)
                 {

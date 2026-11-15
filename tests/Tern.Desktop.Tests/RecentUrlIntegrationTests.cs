@@ -40,8 +40,8 @@ public sealed class RecentUrlIntegrationTests
         Assert.Equal(source.AbsoluteUri, row.Path); Assert.Equal("online.md", row.Title);
         Assert.Contains("Online", row.Detail, StringComparison.Ordinal); Assert.True(row.CanRemoveReference); Assert.False(row.IsMissing);
         var remove = fixture.Window.FindControl<ListBox>("SideList")!.GetVisualDescendants().OfType<Button>()
-            .Single(b => ReferenceEquals(b.DataContext, row) && AutomationProperties.GetName(b) == "Remove file reference");
-        remove.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            .Single(b => ReferenceEquals(b.DataContext, row) && AutomationProperties.GetName(b) == "File reference actions");
+        GuiContractActions.InvokeFileReferenceAction(remove, fixture.Window);
         Assert.Empty(fixture.Shell.Recent.Urls); Assert.Empty(new RecentItemsStore(AppPaths.Under(fixture.AppData).StateDirectory).Urls);
         Assert.Same(draft, fixture.Shell.ActiveTab); Assert.Equal("edited # Online\n", draft.CurrentText);
         Assert.Null(draft.FilePath); Assert.True(draft.IsDirty);

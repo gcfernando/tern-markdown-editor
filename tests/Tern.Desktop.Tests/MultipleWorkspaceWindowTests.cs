@@ -170,10 +170,11 @@ public sealed class MultipleWorkspaceWindowTests
         var image = Assert.Single(paragraph.Inlines.OfType<ImageNode>());
         Assert.Equal(imagePath, Assert.IsType<LocalFile>(image.Resolution).CanonicalPath);
 
-        var exportCommand = fixture.Window.RunCommandAsync(CommandIds.ExportHtml);
+        var exportCommand = fixture.Window.RunCommandAsync(CommandIds.ExportAs);
         await Task.Yield();
         Settle(fixture);
         var dialog = Assert.Single(fixture.Window.OwnedWindows.OfType<ExportWindow>());
+        dialog.Format = Tern.Desktop.Views.ExportFormat.Html;
         try
         {
             var output = Path.Combine(fixture.AppData, "owned-export.html");

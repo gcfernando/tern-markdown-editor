@@ -115,6 +115,10 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         InitializeComponent();
+        ConfigureCompactAI();
+        ConfigureWelcome();
+        ConfigureAuthoringToolbar();
+        _shell.Activities.Changed += OnActivityChanged;
         ConfigureContextMenus();
         Closed += (_, _) => { foreach (var request in _onlineRequests.Values.ToArray()) request.Cancel(); };
         SideList.AddHandler(PointerPressedEvent, TrackLibraryPointer, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -155,23 +159,7 @@ public sealed partial class MainWindow : Window, IDisposable
         AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
         SizeChanged += (_, _) =>
         {
-            Breadcrumb.IsVisible = Width >= 1120;
-            DocumentCaption.IsVisible = Width >= 1180;
-            SearchBox.Width = Width < 1120 ? 200 : 300;
-            if (!_focusMode && Width < 1180 && RightPanel.IsVisible)
-            {
-                _wideInspectorWidth = Body.ColumnDefinitions[4].Width;
-                _compactInspector = true;
-                RightPanel.IsVisible = false;
-                Body.ColumnDefinitions[4].Width = new GridLength(0);
-            }
-            else if (!_focusMode && Width >= 1180 && _compactInspector)
-            {
-                _compactInspector = false;
-                RightPanel.IsVisible = true;
-                Body.ColumnDefinitions[4].Width = _wideInspectorWidth;
-            }
-            UpdatePanelRestoreButtons();
+            UpdateResponsiveLayout();
         };
         Closing += OnWindowClosing;
         Activated += async (_, _) => await CheckExternalChangesAsync();
@@ -180,8 +168,10 @@ public sealed partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
+        _endWalkthrough?.Invoke();
         if (_windowClosed) return;
         _windowClosed = true;
+        _shell.Activities.Changed -= OnActivityChanged;
         StopObservingAIConnections();
         foreach (var prompt in OverlayLayer.Children.OfType<AIPromptPanel>()) prompt.Dispose();
         _previewGeneration++;
@@ -345,7 +335,11 @@ public sealed partial class MainWindow : Window, IDisposable
             case nameof(ShellViewModel.StatusMessage):
                 StatusMessage.Text = _shell.StatusMessage;
                 break;
+            case nameof(ShellViewModel.ActiveDocumentState):
+                UpdateStatus();
+                break;
             case nameof(ShellViewModel.Workspace):
+                _picker?.InvalidateScopeIfChanged();
                 RefreshWorkspace();
                 break;
             case nameof(ShellViewModel.WorkspaceRevealPath):
@@ -525,11 +519,14 @@ public sealed partial class MainWindow : Window, IDisposable
             application.Resources["Tern.MenuItemHeight"] = 24 * s.UiScale + 12;
         }
         Preview.ReduceMotion = s.ReduceMotion;
+        SyncScrollingCheck.IsChecked = s.SyncScroll;
+        FullReadingWidthCheck.IsChecked = s.PreviewFullWidth;
         Body.ColumnDefinitions[0].Width = s.SidebarVisible ? new GridLength(s.SidebarWidth) : new GridLength(0);
         Sidebar.IsVisible = s.SidebarVisible;
         SearchHint.Text = Gesture.Describe(_shell.Registry.GetGesture(CommandIds.QuickOpen));
         RefreshCommandHints();
         ApplyEditorColors();
+        UpdateResponsiveLayout();
         UpdatePanelRestoreButtons();
     }
 
@@ -639,7 +636,7 @@ public sealed partial class MainWindow : Window, IDisposable
             // Supersede queued generations without throwing expected cancellation into
             // the parser. Bounded work already running finishes off the UI thread;
             // generation/revision checks discard obsolete results before presentation.
-            var document = await Task.Run(() => PreviewBuilder.Build(snapshot.Text, options, null, token), token);
+            var document = await Task.Run(() => PreviewBuilder.Build(snapshot.Text, options));
             if (_windowClosed || generation != _previewGeneration || !ReferenceEquals(tab, _shown)
                 || !tab.Session.IsCurrent(snapshot.Revision)) return;
             // A navigation request may arrive while this build is awaiting parsing.
@@ -650,11 +647,15 @@ public sealed partial class MainWindow : Window, IDisposable
             Preview.Document = document;
             _renderedPreviewTab = tab;
             _renderedPreviewRevision = snapshot.Revision;
+            Preview.CanToggleTasks = !tab.IsReadOnly;
+            RefreshPreviewFindHighlight();
+            UpdateFirstNoteChecklist();
             context.ReadingLine = Math.Max(1, restoreLine);
             if (context.PendingAnchor is { } anchor)
                 GoToAnchor(anchor);
             else
                 ScrollPreviewTo(Math.Max(1, restoreLine));
+            QueueFindReveal();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         {
@@ -698,9 +699,39 @@ public sealed partial class MainWindow : Window, IDisposable
                 _shell.StatusMessage = "The linked heading or anchor was not found: #" + e.Fragment;
             e.Handled = true;
         };
-        Preview.SourceLineActivated += (_, e) => GoToLine(e.Line, 0);
+        Preview.SourceLineActivated += (_, e) =>
+        {
+            if (ReferenceEquals(_renderedPreviewTab, _shown) && _shown?.Session.IsCurrent(_renderedPreviewRevision) == true) GoToLine(e.Line, 0);
+            else _shell.StatusMessage = "The preview changed. Wait for Reading to update, then try again.";
+        };
+        Preview.ImageActionRequested += async (_, e) => await RepairPreviewImageAsync(e);
+        Preview.TaskActivated += async (_, e) =>
+        {
+            if (_taskActivationBusy) return;
+            var tab = _renderedPreviewTab;
+            if (tab is null || !ReferenceEquals(tab, _shown) || !ReferenceEquals(e.Document, Preview.Document)
+                || !tab.Session.IsCurrent(_renderedPreviewRevision) || !CanRunCommand(CommandIds.ToggleTask))
+            { _shell.StatusMessage = "The task preview changed. Wait for Reading to update, then try again."; return; }
+            var snapshot = tab.Session.GetSnapshot();
+            var profile = tab.Profile;
+            _taskActivationBusy = true;
+            try
+            {
+            var analysis = tab.Analysis ?? await Task.Run(() => Tern.Markdown.MarkdownAnalyzer.Analyze(snapshot.Text, profile));
+            if (_windowClosed || !ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(snapshot.Revision) || tab.IsReadOnly || !ReferenceEquals(e.Document, Preview.Document)) return;
+            var task = analysis.Tasks.SingleOrDefault(t => t.Line == e.Line);
+            if (task is null || task.Checked != e.WasChecked || task.Marker.Start < 0 || task.Marker.End > tab.CurrentText.Length) return;
+            var marker = tab.CurrentText[task.Marker.Start..task.Marker.End];
+            var replacement = marker switch { "[ ]" => "[x]", "[x]" or "[X]" => "[ ]", " " => "x", "x" or "X" => " ", _ => null };
+            if (replacement is null) return;
+            tab.ApplyEdits([new Tern.Domain.Text.TextEdit(task.Marker.Start, task.Marker.Length, replacement)]);
+            _shell.StatusMessage = "Task updated in the note. Undo to revert; Save to update the file.";
+            }
+            finally { _taskActivationBusy = false; }
+        };
         Preview.TopSourceLineChanged += (_, e) =>
         {
+            UpdateCurrentSection(e.Line);
             if (_shell.ViewMode == ViewMode.Reading && !Preview.SuppressNotifications && _shown is { } readingTab)
                 ContextFor(readingTab).ReadingLine = Math.Max(1, e.Line);
             if (_scrollDragOwner == ScrollDragOwner.Source || _switchingDocument || !ReferenceEquals(_renderedPreviewTab, _shown) || _shown?.Session.IsCurrent(_renderedPreviewRevision) != true || !_shell.Settings.SyncScroll || _shell.ViewMode != ViewMode.Split || Preview.SuppressNotifications || _syncingScroll)
@@ -800,24 +831,30 @@ public sealed partial class MainWindow : Window, IDisposable
         SourceButton.IsChecked = mode == ViewMode.Source;
         SplitButton.IsChecked = mode == ViewMode.Split;
         ReadingButton.IsChecked = mode == ViewMode.Reading;
+        SyncScrollingCheck.IsEnabled = mode == ViewMode.Split;
         EditorHost.IsVisible = mode != ViewMode.Reading;
         PreviewHost.IsVisible = mode != ViewMode.Source;
         ContentSplitter.IsVisible = _shown is not null && mode == ViewMode.Split;
         var columns = ContentGrid.ColumnDefinitions;
-        columns[0].Width = mode == ViewMode.Reading ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        columns[0].Width = mode == ViewMode.Reading ? new GridLength(0) : new GridLength(mode == ViewMode.Split ? _shell.Settings.SourceShare : 1, GridUnitType.Star);
         columns[1].Width = mode == ViewMode.Split ? new GridLength(1) : new GridLength(0);
-        columns[2].Width = mode == ViewMode.Source ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        columns[2].Width = mode == ViewMode.Source ? new GridLength(0) : new GridLength(mode == ViewMode.Split ? 1 - _shell.Settings.SourceShare : 1, GridUnitType.Star);
         if (mode != ViewMode.Source)
         {
             RebuildPreview();
         }
-        Dispatcher.UIThread.Post(FocusVisibleContent, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (FindBar.IsVisible) FindBox.Focus();
+            else FocusVisibleContent();
+        }, DispatcherPriority.Loaded);
         UpdatePanelRestoreButtons();
     }
 
     private void FocusVisibleContent()
     {
         if (_windowClosed || _shown is null) return;
+        if (EmptyText.IsVisible) { EmptyText.GetVisualDescendants().OfType<Button>().FirstOrDefault()?.Focus(); return; }
         if (_shell.ViewMode == ViewMode.Reading) Preview.Focus(); else Editor.Focus();
     }
 
@@ -829,12 +866,13 @@ public sealed partial class MainWindow : Window, IDisposable
         var tab = _shown;
         var hasTab = tab is not null;
         var online = tab is { IsExternalDraft: true, FilePath: null };
-        LocationBadge.IsVisible = hasTab;
-        LocationBadgeText.Text = online ? "Online files" : "Local files";
+        LocationBadge.IsVisible = hasTab && Width >= 1180 * Math.Max(1, _shell.Settings.UiScale);
+        LocationBadgeText.Text = online ? tab!.IsCachedSource ? "From URL · cached copy" : "From URL" : tab?.FilePath is not null ? tab.SourceUrl is null ? "Local file" : "Saved local copy" : "Unsaved draft";
         ToolTip.SetTip(LocationBadge, online
             ? "This tab was opened from a URL. Save As creates a local file; changes are not uploaded."
             : "This tab is a local file or a new local document. Linked web images may still load from their source.");
-        EmptyText.IsVisible = !hasTab;
+        EmptyText.IsVisible = !hasTab || _welcomeIsOpen && tab is { IsUntitled: true } && tab.CurrentText.Length == 0;
+        UpdateFirstNoteChecklist();
         ContentSplitter.IsVisible = hasTab && _shell.ViewMode == ViewMode.Split;
         InspectorContent.IsVisible = hasTab;
         InspectorEmpty.IsVisible = !hasTab;

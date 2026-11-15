@@ -268,18 +268,32 @@ public sealed class RemoteImageLoaderTests
         using var directory = new CacheDirectory();
         var active = 0;
         var maximum = 0;
+        var firstFour = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         using var cache = new RemoteImageLoader( new Handler(async (_, token) =>
         {
             var current = Interlocked.Increment(ref active);
             int before;
             do { before = Volatile.Read(ref maximum); if (current <= before) break; }
             while (Interlocked.CompareExchange(ref maximum, current, before) != before);
-            try { await Task.Delay(30, token); return Image(Png); }
+            if (current == 4) firstFour.TrySetResult();
+            try { await release.Task.WaitAsync(token); return Image(Png); }
             finally { Interlocked.Decrement(ref active); }
-        }), PublicDns);
-        var results = await Task.WhenAll(Enumerable.Range(0, 12).Select(i => cache.LoadAsync("https://images.example/" + i, CancellationToken.None)));
+        // Exercise the concurrency boundary independently from request deadlines.
+        // Timeout_returns_null_but_caller_cancellation_propagates covers timeout behavior.
+        }), PublicDns, Timeout.InfiniteTimeSpan);
+        var requests = Enumerable.Range(0, 12).Select(i => cache.LoadAsync("https://images.example/" + i, deadline.Token)).ToArray();
+        try
+        {
+            await firstFour.Task.WaitAsync(deadline.Token);
+            Assert.Equal(4, Volatile.Read(ref active));
+            Assert.Equal(4, Volatile.Read(ref maximum));
+        }
+        finally { release.TrySetResult(); }
+        var results = await Task.WhenAll(requests).WaitAsync(deadline.Token);
         Assert.All(results, bytes => Assert.Equal(Png, bytes));
-        Assert.InRange(maximum, 1, 4);
+        Assert.Equal(4, maximum);
     }
 
     private static HttpResponseMessage Image(byte[] bytes) => new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };

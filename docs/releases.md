@@ -1,6 +1,8 @@
 # Downloads and releases
 
-Tern's distribution target is **Windows x64**. Application version metadata remains **1.0.3**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
+Tern's distribution target is **Windows x64**. Application version metadata remains **1.0.4**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
+
+See the [1.0.4 release notes](release-notes-1.0.4.md) for export, print-preview, search and help recovery changes.
 
 ## Download and verify
 
@@ -12,7 +14,7 @@ Get-FileHash .\Tern-win-x64.zip -Algorithm SHA256
 
 Compare the result with the entry for the same filename in the checksum file from that release. A checksum checks consistency with the supplied manifest; it does not identify a trusted publisher or guarantee security.
 
-Extract the **entire** ZIP to a writable folder and run `Tern.exe`. Keep its runtime, Avalonia/native dependencies, notices, license files and other companion files together. This package is self-contained: it bundles .NET rather than requiring a separately installed runtime. The current runtime is .NET **10.0.14**; package versions such as `Microsoft.Data.Sqlite` **10.0.14** are different dependencies, not the bundled runtime version.
+Extract the **entire** ZIP to a writable folder and run `Tern.exe`. Keep its runtime, Avalonia/native dependencies, notices, license files and other companion files together. This package is self-contained: it bundles .NET rather than requiring a separately installed runtime. The bundled runtime is pinned to .NET **10.0.15**; package versions such as `Microsoft.Data.Sqlite` **10.0.14** are different dependencies, not the bundled runtime version.
 
 ## Signing and Windows warnings
 
@@ -79,3 +81,19 @@ To roll back, close Tern and reopen a retained complete earlier package. State c
 Verify startup from a clean extracted package, local editing and save conflicts, recovery, copied attachments, representative PDF/HTML output and offline local-document use. Check native clipboard/drop, printers, DPI and assistive technology on real Windows systems. Use synthetic text for optional network/provider tests. Record the package hash, source commit, Windows version, scaling and exact checks completed; do not label unperformed checks as passed.
 
 Return to the [README](../README.md) or [documentation index](../documentation.md).
+
+### Help, export and guidance improvements
+
+- **Ask & learn:** AI connection and conversation actions sit above the larger question box. Answers render Markdown headings, emphasis, lists, code and tables in one reading area, with the newest answer revealed first. Copy conversation and Start new conversation become available when an answer is visible. What is shared? explains the submitted data. Without a writing connection, Tern answers from installed guides; provider failures also recover to an explicitly labelled offline answer.
+- **Export state:** changing Choose a format clears the destination, resets format options and clears completion status and notes. Open file and Show in folder appear only for the current complete successful result. Editing the destination or options, starting another export, or an export failure hides them. Actions share an aligned footer; Export notes start collapsed and only appear when needed.
+- **Readable TXT:** paragraphs wrap to a preferred 80-character width. Compact tables stay aligned; wide tables become labelled records. Numbered link references keep long URLs out of prose and retain relative and section destinations. Code indentation, nested lists and Unicode remain intact. Text files cannot display fonts, colours or actual images.
+- **PDF badges:** supported inert SVG images use the same bounded native renderer as preview and are embedded as PNG images. Unsupported SVG features still produce an export note instead of silently dropping content. HTML retains permitted SVG images.
+- **Next step guidance:** the main window and shared dialog shell show a contextual tip and installed Learn more help. Export tips change for destination selection, progress, success and failure. Ask & learn has its own question and answer guidance.
+
+### Latest screen usability improvements
+
+Ask & learn gives the answer more space once it is ready; the question editor stays available in a compact form for follow-ups. Click a picker result once to choose it, or use Up/Down and Enter. The welcome panel is larger and centered.
+
+In Write with AI, highlight text before opening the panel to use the selection actions. Create content appears only with no selection and Entire note selected. Review the sharing scope and connection, write your instruction, then choose Generate for review. The raw request/JSON section has been removed.
+
+In Review AI suggestion, compare the complete BEFORE and AFTER text. Use Back to improve the instruction, Copy result to copy the full suggestion, Apply changes to accept the proposal, or Close to keep your note unchanged. Insert result preserves the original text and adds the generated content. Applied edits remain unsaved and can be undone. Narrow screens stack the comparison vertically. Disclosure sections use the same themed appearance and keyboard focus cues throughout the app.

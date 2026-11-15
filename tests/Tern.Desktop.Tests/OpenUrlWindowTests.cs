@@ -14,6 +14,29 @@ namespace Tern.Desktop.Tests;
 
 public sealed class OpenUrlWindowTests
 {
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Fetch_latest_bypasses_cache_only_after_explicit_activation(bool latest)
+    {
+        using var f = new DesktopFixture();
+        const string url = "http://localhost:8000/note.md";
+        var cache = Path.Combine(f.Docs, "cache");
+        await MarkdownUrlCache.WriteAsync(cache, url, new MarkdownUrlDocument(new Uri(url), "note.md", "# Cached\n"));
+        var handler = new Handler();
+        using var loader = new MarkdownUrlLoader(handler, (_, _) => Task.FromResult(new[] { IPAddress.Loopback }));
+        var window = new OpenUrlWindow(loader, url, cacheRoot: cache, activities: f.Shell.Activities);
+        var result = window.ShowDialog<MarkdownUrlDocument?>(f.Window); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+        Assert.Equal(0, handler.Calls);
+        window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, latest ? "Fetch latest" : "Open working copy"))
+            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var document = await result.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.NotNull(document); Assert.Equal(latest ? 1 : 0, handler.Calls);
+        Assert.Equal(!latest, document.WasCached);
+        if (!latest) Assert.Equal("# Cached\n", document.Text);
+        Assert.Contains(f.Shell.Activities.Items, item => item.State == Tern.App.Shell.ActivityState.Completed);
+    }
+
     [AvaloniaFact]
     public async Task Prefilled_history_address_is_manual_unless_explicitly_requested()
     {
@@ -42,8 +65,8 @@ public sealed class OpenUrlWindowTests
         var status = window.GetVisualDescendants().OfType<TextBlock>().Single(t => AutomationProperties.GetName(t) == "Markdown URL status");
         var originalBrush = status.Foreground;
         var field = window.GetVisualDescendants().OfType<TextBox>().Single();
-        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open"));
-        var download = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Download and Open"));
+        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open working copy"));
+        var download = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save portable copy…"));
         Assert.False(open.IsEnabled); Assert.False(download.IsEnabled);
         field.Text = "fdsfsfsdf";
         Assert.False(open.IsEnabled); Assert.False(download.IsEnabled);
@@ -77,7 +100,7 @@ public sealed class OpenUrlWindowTests
         using var loader = new MarkdownUrlLoader(new FailureHandler(scenario),
             (_, _) => Task.FromResult(new[] { IPAddress.Loopback }), TimeSpan.FromMilliseconds(100));
         var window = new OpenUrlWindow(loader, "http://localhost:8000/note.md"); window.Show(fixture.Window);
-        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open"));
+        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open working copy"));
         var cancel = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Cancel request"));
         open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         for (var i = 0; i < 100 && cancel.IsEnabled; i++)
@@ -97,7 +120,7 @@ public sealed class OpenUrlWindowTests
         using var loader = new MarkdownUrlLoader(new FailureHandler(-2),
             (_, _) => Task.FromResult(new[] { IPAddress.Loopback }), TimeSpan.FromSeconds(10));
         var window = new OpenUrlWindow(loader, "http://localhost:8000/note.md"); window.Show(fixture.Window);
-        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open"));
+        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open working copy"));
         var cancel = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Cancel request"));
         open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.False(open.IsEnabled); Assert.True(cancel.IsEnabled);
@@ -134,7 +157,7 @@ public sealed class OpenUrlWindowTests
         field.Text = "http://localhost:8000/notes.md"; Dispatcher.UIThread.RunJobs();
         Assert.Equal(0, handler.Calls);
         Assert.Contains("localhost:8000/notes.md", window.GetVisualDescendants().OfType<TextBlock>().Single(t => AutomationProperties.GetName(t) == "Markdown fetch address").Text, StringComparison.Ordinal);
-        window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open working copy")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var document = await result.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.NotNull(document); Assert.Equal("localhost", document.SourceUrl.Host); Assert.Equal(1, handler.Calls);
     }
@@ -153,7 +176,7 @@ public sealed class OpenUrlWindowTests
         Dispatcher.UIThread.RunJobs();
         Assert.Contains("raw.githubusercontent.com/owner/repo/main/notes.md", window.GetVisualDescendants().OfType<TextBlock>().Single(t => AutomationProperties.GetName(t) == "Markdown fetch address").Text, StringComparison.Ordinal);
         Assert.Equal(0, handler.Calls);
-        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open"));
+        var open = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Open working copy"));
         Assert.DoesNotContain(open.GetVisualAncestors(), a => a is ScrollViewer);
         open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var document = await result.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);

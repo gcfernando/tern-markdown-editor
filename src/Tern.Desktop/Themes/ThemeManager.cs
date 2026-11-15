@@ -14,6 +14,11 @@ public static class ThemeManager
     public const string Panel = "Tern.Panel";
     public const string Surface = "Tern.Surface";
     public const string Border = "Tern.Border";
+    public const string ControlBorder = "Tern.ControlBorder";
+    public const string Success = "Tern.Success";
+    public const string ErrorBackground = "Tern.ErrorBackground";
+    public const string WarningBackground = "Tern.WarningBackground";
+    public const string SuccessBackground = "Tern.SuccessBackground";
     public const string Text = "Tern.Text";
     public const string Muted = "Tern.Muted";
     public const string Accent = "Tern.Accent";
@@ -85,6 +90,12 @@ public static class ThemeManager
         Brush(Panel, panel);
         Brush(Surface, surface);
         Brush(Border, border);
+        var dark = bg == "#131719";
+        Brush(ControlBorder, dark ? "#6B7885" : "#7B8694");
+        Brush(Success, dark ? "#6BC8B8" : "#156E66");
+        Brush(ErrorBackground, dark ? "#3A2024" : "#FEE2E2");
+        Brush(WarningBackground, dark ? "#382C1B" : "#FEF3C7");
+        Brush(SuccessBackground, dark ? "#243C3A" : "#DCEBE7");
         Brush(Text, text);
         Brush(Muted, muted);
         Brush(Accent, accent);

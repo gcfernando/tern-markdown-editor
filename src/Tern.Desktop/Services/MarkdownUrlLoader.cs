@@ -8,12 +8,15 @@ using Tern.Filesystem;
 
 namespace Tern.Desktop.Services;
 
+public sealed record UrlLoadProgress(string Phase, int? Completed = null, int? Total = null);
+
 public sealed record MarkdownUrlDocument(Uri SourceUrl, string SuggestedFileName, string Text, TextFileFormat? Format = null)
 {
     public string? OriginalText { get; init; }
     public IReadOnlyDictionary<string, byte[]> Assets { get; init; } = new Dictionary<string, byte[]>();
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public string? CachedPath { get; init; }
+    public bool WasCached { get; init; }
     public string? RequestedUrl { get; init; }
 }
 

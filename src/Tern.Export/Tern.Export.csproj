@@ -7,6 +7,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- One bounded lexical implementation keeps native preview and export colours aligned. -->
+    <Compile Include="../Tern.PreviewView/CodeSyntaxHighlighter.cs" Link="Syntax/CodeSyntaxHighlighter.cs" />
+    <Compile Include="../Tern.PreviewView/CodeSyntaxHighlighter.Markup.cs" Link="Syntax/CodeSyntaxHighlighter.Markup.cs" />
     <ProjectReference Include="..\Tern.Domain\Tern.Domain.csproj" />
     <ProjectReference Include="..\Tern.Filesystem\Tern.Filesystem.csproj" />
     <ProjectReference Include="..\Tern.Markdown\Tern.Markdown.csproj" />

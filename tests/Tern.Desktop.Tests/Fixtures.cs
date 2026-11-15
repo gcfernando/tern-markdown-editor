@@ -86,6 +86,7 @@ internal sealed class DesktopFixture : IDisposable
         Window = new MainWindow(Shell, aiWorkspace: createAI?.Invoke(Shell.Paths.SettingsDirectory))
         {
             TableDimensionsPicker = () => Task.FromResult<TableDimensions?>(new(3, 3)),
+            LinkInputPicker = label => Task.FromResult<LinkInput?>(new(label.Length == 0 ? "link text" : label, "https://example.com")),
             ImageImportChoicePicker = _ => Task.FromResult(ImageImportChoice.Link),
         };
         Window.Width = 1440;

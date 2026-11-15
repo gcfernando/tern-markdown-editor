@@ -42,7 +42,8 @@ public sealed class CorpusLocalAssetTests
                 await image.LoadingCompletion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken); Harness.Pump(window);
                 var surface = image.Child;
                 var loaded = image.State == ImageState.Loaded && surface is { Bounds.Width: > 0, Bounds.Height: > 0 }
-                    && (surface is Image { Source: not null } || surface.GetType().Name == "SvgControl");
+                    && (Harness.All<Image>(image).Any(i => i.Source is not null && i.Bounds.Width > 0 && i.Bounds.Height > 0)
+                        || surface.GetType().Name == "SvgControl");
                 using var capture = Harness.Capture(window); loaded &= capture is not null;
                 var framePath = Path.Combine(frames, hash + ".png"); capture?.Save(framePath, new PngBitmapEncoderOptions());
                 if (!loaded) failures.Add(destination + " => " + image.State);

@@ -1,5 +1,10 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <StreamGeometry x:Key="Tern.Icon.Close">M2,2 L14,14 M2,14 L14,2</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Trash">M2,4 H14 M6,2 H10 M4,4 L5,14 H11 L12,4 M7,6 V12 M9,6 V12</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.NewDocument">M3,1 H10 L14,5 V15 H3 Z M10,1 V5 H14 M6,10 H12 M9,7 V13</StreamGeometry>
+  </Styles.Resources>
 
   <Style Selector="Window">
     <Setter Property="Background" Value="{DynamicResource Tern.Bg}" />
@@ -10,6 +15,17 @@
 
   <Style Selector="MenuItem">
     <Setter Property="MinHeight" Value="{DynamicResource Tern.MenuItemHeight}" />
+  </Style>
+  <Style Selector="GridSplitter">
+    <Setter Property="Focusable" Value="True" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="Transparent"><Border Width="1" HorizontalAlignment="Center" Background="{DynamicResource Tern.Border}" /></Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="GridSplitter:focus-visible /template/ Border">
+    <Setter Property="Background" Value="{DynamicResource Tern.Accent}" />
   </Style>
   <Style Selector="Expander.ai-advanced /template/ ToggleButton">
     <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
@@ -49,20 +65,42 @@
     <Setter Property="CornerRadius" Value="8" />
   </Style>
 
+  <Style Selector="FlyoutPresenter.tern-popup">
+    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontFamily" Value="Segoe UI, Inter, Noto Sans, Arial, sans-serif" />
+    <Setter Property="Background" Value="{DynamicResource Tern.Panel}" />
+    <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" ClipToBounds="True">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Padding="{TemplateBinding Padding}" HorizontalContentAlignment="Stretch" />
+          </ScrollViewer>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
   <Style Selector="Button">
     <Setter Property="MinHeight" Value="32" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Background" Value="{DynamicResource Tern.Panel}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="6" />
     <Setter Property="Padding" Value="10,5" />
   </Style>
   <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource Tern.Hover}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
   </Style>
   <Style Selector="Button.accent">
@@ -102,19 +140,63 @@
   <Style Selector="Expander">
     <Setter Property="HeaderTemplate">
       <DataTemplate>
-        <TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center"
+        <TextBlock Text="{ReflectionBinding}" TextWrapping="Wrap" TextAlignment="Center"
                    HorizontalAlignment="Stretch" VerticalAlignment="Center" />
       </DataTemplate>
     </Setter>
   </Style>
-  <Style Selector="Expander.library-shortcuts /template/ ToggleButton#ExpanderHeader">
+  <Style Selector="Expander">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{DynamicResource Tern.Surface}" BorderBrush="{DynamicResource Tern.Border}"
+                BorderThickness="1" CornerRadius="8" Padding="6">
+          <StackPanel>
+            <ToggleButton x:Name="ExpanderHeader" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
+            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              IsVisible="{TemplateBinding IsExpanded}" Margin="10" />
+          </StackPanel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Expander /template/ ToggleButton#ExpanderHeader">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="Padding" Value="10,5" />
     <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="ShortcutsHeaderSurface" Background="{TemplateBinding Background}"
+                Padding="{TemplateBinding Padding}" CornerRadius="6">
+          <Grid ColumnDefinitions="*,Auto">
+            <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" />
+            <Border x:Name="TernDisclosureChevron" Background="Transparent" BorderBrush="Transparent" BorderThickness="0"
+                    Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+            <Path x:Name="ShortcutsChevron" Data="M0,0 L5,5 L10,0" Width="10" Height="5"
+                  Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.5"
+                  VerticalAlignment="Center" RenderTransformOrigin="50%,50%" />
+            </Border>
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
   </Style>
-  <Style Selector="Expander.library-shortcuts /template/ ToggleButton#ExpanderHeader:pointerover /template/ ContentPresenter">
+  <Style Selector="Expander /template/ ToggleButton#ExpanderHeader:pointerover">
     <Setter Property="Background" Value="{DynamicResource Tern.Hover}" />
+    <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
+  </Style>
+  <Style Selector="Expander /template/ ToggleButton#ExpanderHeader:pressed">
+    <Setter Property="Background" Value="{DynamicResource Tern.AccentSoft}" />
+  </Style>
+  <Style Selector="Expander /template/ ToggleButton#ExpanderHeader:checked /template/ Path#ShortcutsChevron">
+    <Setter Property="RenderTransform"><RotateTransform Angle="180" /></Setter>
+  </Style>
+  <Style Selector="Expander /template/ ToggleButton#ExpanderHeader:focus-visible /template/ Border#ShortcutsHeaderSurface">
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" />
+    <Setter Property="BorderThickness" Value="1" />
   </Style>
   <Style Selector="ToggleButton.seg">
     <Setter Property="Background" Value="Transparent" />
@@ -152,7 +234,7 @@
   <Style Selector="TextBox">
     <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
     <Setter Property="CornerRadius" Value="6" />
   </Style>
   <!-- Fluent paints hover/focus backgrounds from its own brushes, which made a focused box render black. -->
@@ -172,7 +254,7 @@
   </Style>
   <Style Selector="ComboBox">
     <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
     <Setter Property="CornerRadius" Value="6" />
   </Style>
 
@@ -272,5 +354,8 @@
     <Setter Property="Padding" Value="7,8" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="MinHeight" Value="36" />
+  </Style>
+  <Style Selector="Button:disabled, ToggleButton:disabled">
+    <Setter Property="Opacity" Value="0.45" />
   </Style>
 </Styles>

@@ -210,10 +210,10 @@ internal static partial class PdfText
 
     private sealed class FontState
     {
-        public Dictionary<int, char>? Map { get; set; }
+        public Dictionary<int, string>? Map { get; set; }
     }
 
-    private static void Walk(CSequence sequence, Dictionary<string, Dictionary<int, char>> maps, StringBuilder builder, FontState state)
+    private static void Walk(CSequence sequence, Dictionary<string, Dictionary<int, string>> maps, StringBuilder builder, FontState state)
     {
         foreach (var item in sequence)
         {
@@ -247,7 +247,7 @@ internal static partial class PdfText
         }
     }
 
-    private static void Decode(string raw, Dictionary<int, char>? map, StringBuilder builder)
+    private static void Decode(string raw, Dictionary<int, string>? map, StringBuilder builder)
     {
         if (map is null)
         {
@@ -258,13 +258,13 @@ internal static partial class PdfText
         for (var i = 0; i + 1 < raw.Length; i += 2)
         {
             var code = (raw[i] << 8) | raw[i + 1];
-            builder.Append(map.TryGetValue(code, out var ch) ? ch : '\uFFFD');
+            builder.Append(map.TryGetValue(code, out var ch) ? ch : "\uFFFD");
         }
     }
 
-    private static Dictionary<string, Dictionary<int, char>> LoadFontMaps(PdfPage page)
+    private static Dictionary<string, Dictionary<int, string>> LoadFontMaps(PdfPage page)
     {
-        var result = new Dictionary<string, Dictionary<int, char>>(StringComparer.Ordinal);
+        var result = new Dictionary<string, Dictionary<int, string>>(StringComparer.Ordinal);
         var fonts = page.Resources.Elements.GetDictionary("/Font");
         if (fonts is null)
         {
@@ -287,15 +287,15 @@ internal static partial class PdfText
         return result;
     }
 
-    private static Dictionary<int, char> ParseCMap(string cmap)
+    private static Dictionary<int, string> ParseCMap(string cmap)
     {
-        var map = new Dictionary<int, char>();
+        var map = new Dictionary<int, string>();
         foreach (Match section in CharSection().Matches(cmap))
         {
             foreach (Match m in BfChar().Matches(section.Groups[1].Value))
             {
                 map[int.Parse(m.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture)] =
-                    (char)int.Parse(m.Groups[2].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                    Encoding.BigEndianUnicode.GetString(Convert.FromHexString(m.Groups[2].Value));
             }
         }
 
@@ -305,10 +305,10 @@ internal static partial class PdfText
             {
                 var from = int.Parse(m.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 var to = int.Parse(m.Groups[2].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                var target = int.Parse(m.Groups[3].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+                var target = uint.Parse(m.Groups[3].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 for (var code = from; code <= to; code++)
                 {
-                    map[code] = (char)(target + code - from);
+                    map[code] = Encoding.BigEndianUnicode.GetString(Convert.FromHexString((target + code - from).ToString("X" + m.Groups[3].Value.Length, CultureInfo.InvariantCulture)));
                 }
             }
         }
@@ -322,9 +322,9 @@ internal static partial class PdfText
     [GeneratedRegex("beginbfrange(.*?)endbfrange", RegexOptions.CultureInvariant | RegexOptions.Singleline)]
     private static partial Regex RangeSection();
 
-    [GeneratedRegex("<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]{4})>", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]{4,8})>", RegexOptions.CultureInvariant)]
     private static partial Regex BfChar();
 
-    [GeneratedRegex("<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]{4})>", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]{4,8})>", RegexOptions.CultureInvariant)]
     private static partial Regex BfRange();
 }

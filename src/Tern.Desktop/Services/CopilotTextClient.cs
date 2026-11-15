@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Tern.Desktop.Services;
 
-internal sealed record CopilotProcessResult(int ExitCode, string Output);
+internal sealed record CopilotProcessResult(int ExitCode, string Output, string Error = "");
 
 /// <summary>Opt-in native Copilot CLI text mode, using an isolated configuration and no workspace context.</summary>
 public sealed class CopilotTextClient
@@ -35,6 +35,13 @@ public sealed class CopilotTextClient
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromSeconds(90));
             var result = await _run(start, deadline.Token).ConfigureAwait(false);
+            // Retry only a recognized transport failure, once, in the same isolated
+            // context. Never retry account/permission errors or change the model.
+            if (result.ExitCode != 0 && IsTransient(result.Error))
+            {
+                await Task.Delay(300, deadline.Token).ConfigureAwait(false);
+                result = await _run(start, deadline.Token).ConfigureAwait(false);
+            }
             if (result.ExitCode != 0) throw new InvalidOperationException($"Copilot CLI exited with code {result.ExitCode}. Check the installed CLI version, Copilot entitlement, model and token's Copilot Requests permission. Raw CLI diagnostics are not displayed.");
             if (result.Output.Length > MaximumOutputCharacters) throw new InvalidOperationException("Copilot output exceeds its size limit.");
             return result.Output.Replace(token, "[redacted]", StringComparison.Ordinal).Trim();
@@ -64,7 +71,7 @@ public sealed class CopilotTextClient
         { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = working, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         string[] flags = ["--available-tools=ask_user", "--no-ask-user", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update",
-            "--no-remote", "--no-remote-export", "--no-experimental", "--no-bash-env", "--no-eager-powershell-resolution", "--disallow-temp-dir",
+            "--disable-client-telemetry", "--no-experimental", "--no-bash-env", "--no-eager-powershell-resolution", "--disallow-temp-dir",
             "--deny-tool=read,write,shell,url,memory", "--silent", "--no-color", "--stream=off", "--output-format=text", "--log-level=none"];
         foreach (var flag in flags) start.ArgumentList.Add(flag);
         start.ArgumentList.Add("--model=" + model);
@@ -106,11 +113,11 @@ public sealed class CopilotTextClient
             }
             catch { stop.Cancel(); throw; }
         }
-        var output = ReadAsync(process.StandardOutput, true); var errors = ReadAsync(process.StandardError, false);
+        var output = ReadAsync(process.StandardOutput, true); var errors = ReadAsync(process.StandardError, true);
         try
         {
             await Task.WhenAll(process.WaitForExitAsync(stop.Token), output, errors).ConfigureAwait(false);
-            return new CopilotProcessResult(process.ExitCode, await output.ConfigureAwait(false));
+            return new CopilotProcessResult(process.ExitCode, await output.ConfigureAwait(false), await errors.ConfigureAwait(false));
         }
         finally
         {
@@ -121,6 +128,9 @@ public sealed class CopilotTextClient
             }
         }
     }
+
+    private static bool IsTransient(string error) => new[] { "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "socket hang up", "HTTP 502", "HTTP 503", "HTTP 504" }
+        .Any(value => error.Contains(value, StringComparison.OrdinalIgnoreCase));
 
     private static void RemoveWorkingCopy(string path, string allowedParent)
     {

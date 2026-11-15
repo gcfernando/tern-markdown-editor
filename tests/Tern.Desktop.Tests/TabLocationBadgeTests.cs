@@ -15,18 +15,18 @@ public sealed class TabLocationBadgeTests
         using var fixture = new DesktopFixture();
         var path = await fixture.WriteAsync("same.md", "# Local source\n");
         var local = (await fixture.Shell.OpenFileAsync(path))!; Pump(fixture);
-        Assert.Equal("Local files", Badge(fixture));
+        Assert.Equal("Local file", Badge(fixture));
         await fixture.Window.OpenUrlDocumentAsync(new MarkdownUrlDocument(new Uri("https://example.com/same.md"), "same.md", "# Online copy\n"));
         var online = fixture.Shell.ActiveTab!; Pump(fixture);
         Assert.NotSame(local, online); Assert.Equal(local.DisplayName, online.DisplayName);
-        Assert.Equal("Online files", Badge(fixture)); Assert.Null(online.FilePath);
+        Assert.Equal("From URL", Badge(fixture)); Assert.Null(online.FilePath);
         foreach (var mode in new[] { CommandIds.ViewSource, CommandIds.ViewSplit, CommandIds.ViewReading })
         {
-            await fixture.Window.RunCommandAsync(mode); Pump(fixture); Assert.Equal("Online files", Badge(fixture));
+            await fixture.Window.RunCommandAsync(mode); Pump(fixture); Assert.Equal("From URL", Badge(fixture));
         }
-        fixture.Shell.ActiveTab = local; Pump(fixture); Assert.Equal("Local files", Badge(fixture));
-        fixture.Shell.ActiveTab = online; Pump(fixture); Assert.Equal("Online files", Badge(fixture));
-        fixture.Shell.NewDocument(); Pump(fixture); Assert.Equal("Local files", Badge(fixture));
+        fixture.Shell.ActiveTab = local; Pump(fixture); Assert.Equal("Local file", Badge(fixture));
+        fixture.Shell.ActiveTab = online; Pump(fixture); Assert.Equal("From URL", Badge(fixture));
+        fixture.Shell.NewDocument(); Pump(fixture); Assert.Equal("Unsaved draft", Badge(fixture));
         Assert.Equal("# Online copy\n", online.CurrentText); Assert.Equal("# Local source\n", await File.ReadAllTextAsync(path));
     }
 
@@ -35,14 +35,14 @@ public sealed class TabLocationBadgeTests
     {
         using var fixture = new DesktopFixture();
         await fixture.Window.OpenUrlDocumentAsync(new MarkdownUrlDocument(new Uri("http://localhost:8000/from-server.md"), "from-server.md", "# From server\n"));
-        var online = fixture.Shell.ActiveTab!; Pump(fixture); Assert.Equal("Online files", Badge(fixture));
+        var online = fixture.Shell.ActiveTab!; Pump(fixture); Assert.Equal("From URL", Badge(fixture));
         await fixture.Window.RunCommandAsync(CommandIds.SaveAs); Pump(fixture); // Scripted picker cancels.
-        Assert.Null(online.FilePath); Assert.Equal("Online files", Badge(fixture)); Assert.False(online.IsDirty);
+        Assert.Null(online.FilePath); Assert.Equal("From URL", Badge(fixture)); Assert.False(online.IsDirty);
         Assert.Equal("http://localhost:8000/from-server.md", online.SourceUrl);
         var path = Path.Combine(fixture.Docs, "saved-copy.md");
         var outcome = await online.SaveAsAsync(path, overwriteExisting: false, cancellationToken: TestContext.Current.CancellationToken);
         Assert.IsType<SaveSucceeded>(outcome); Pump(fixture);
-        Assert.Equal("Local files", Badge(fixture)); Assert.Equal(path, online.FilePath);
+        Assert.Equal("Saved local copy", Badge(fixture)); Assert.Equal(path, online.FilePath);
         Assert.Equal("# From server\n", await File.ReadAllTextAsync(path));
     }
 
@@ -55,7 +55,7 @@ public sealed class TabLocationBadgeTests
         var online = fixture.Shell.ActiveTab!;
         var outcome = await online.SaveAsAsync(collision, overwriteExisting: false, cancellationToken: TestContext.Current.CancellationToken);
         Assert.IsNotType<SaveSucceeded>(outcome); Pump(fixture);
-        Assert.Null(online.FilePath); Assert.Equal("Online files", Badge(fixture));
+        Assert.Null(online.FilePath); Assert.Equal("From URL", Badge(fixture));
         Assert.Equal("Online edits", online.CurrentText); Assert.Equal("Keep disk file", await File.ReadAllTextAsync(collision));
     }
 

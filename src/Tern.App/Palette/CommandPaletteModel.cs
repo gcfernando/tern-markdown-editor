@@ -8,6 +8,15 @@ public sealed record PaletteEntry(string CommandId, string Title, string Categor
 /// <summary>Filters the command list for the palette: every typed word must appear in the title or category, and title matches rank first.</summary>
 public static class CommandPaletteModel
 {
+    private static readonly IReadOnlyDictionary<string, string[]> Aliases = new Dictionary<string, string[]>
+    {
+        [CommandIds.Heading1] = ["make a title", "add a title", "big heading"],
+        [CommandIds.InsertImage] = ["add a picture", "insert photo", "add image"],
+        [CommandIds.InsertLink] = ["add a link", "link a page"],
+        [CommandIds.InsertTable] = ["make a table", "add columns"],
+        [CommandIds.ToggleTask] = ["make a checklist", "add a todo"],
+        [CommandIds.InsertCodeBlock] = ["add code", "code example"],
+    };
     public static IReadOnlyList<PaletteEntry> Filter(CommandRegistry registry, string? query)
     {
         var words = (query ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -16,6 +25,8 @@ public static class CommandPaletteModel
         foreach (var command in registry.Commands)
         {
             var rank = Rank(command, words);
+            if (rank < 0 && Aliases.TryGetValue(command.Id, out var aliases)
+                && aliases.Any(alias => words.All(word => alias.Contains(word, StringComparison.OrdinalIgnoreCase)))) rank = 2;
             if (rank < 0)
             {
                 if (!helpMatches.Contains(command.Id)) continue;

@@ -34,7 +34,8 @@ public sealed class ImageAccessibilityTests
             Assert.Same(peer, ControlAutomationPeer.CreatePeerForElement(image));
             Assert.Equal(AutomationControlType.Image, peer.GetAutomationControlType());
             Assert.Equal("Image: Readable badge", peer.GetName());
-            Assert.Empty(peer.GetChildren());
+            if (success) Assert.Empty(peer.GetChildren());
+            else Assert.Contains(peer.GetChildren(), action => action.GetName() == "Edit image source");
         }
         finally { window.Close(); await image.LoadingCompletion.WaitAsync(TimeSpan.FromSeconds(3)); }
     }
@@ -60,7 +61,7 @@ public sealed class ImageAccessibilityTests
                 var peer = ControlAutomationPeer.CreatePeerForElement(image);
                 Assert.Equal(AutomationControlType.Image, peer.GetAutomationControlType());
                 Assert.Equal("Image: " + image.Alt, peer.GetName());
-                Assert.Empty(peer.GetChildren());
+                Assert.Contains(peer.GetChildren(), action => action.GetName() == "Edit image source");
             }
         }
         finally { window.Close(); }

@@ -14,10 +14,12 @@ public sealed class InsertTableWindow : Window
     internal TextBox ColumnsInput { get; } = new() { Text = "3", Width = 120 };
     internal Button InsertButton { get; } = new() { Content = "Insert table", IsDefault = true };
     private readonly TextBlock _validation = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _summary = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Grid _preview = new() { ColumnSpacing = 3, RowSpacing = 3 };
 
-    public InsertTableWindow()
+    public InsertTableWindow(bool replacesSelection = false)
     {
-        DialogParts.Setup(this, "Insert Table", 480, 300);
+        DialogParts.Setup(this, "Insert Table", 540, 460);
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close(null);
         InsertButton.Click += (_, _) => { if (Dimensions is { } dimensions) Close(dimensions); };
@@ -30,8 +32,10 @@ public sealed class InsertTableWindow : Window
             Children =
             {
                 new TextBlock { Text = "Rows include the header. Choose 1–100 rows and 1–20 columns.", TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = replacesSelection ? "This table will replace the selected text." : "The table will be inserted at the cursor.", TextWrapping = TextWrapping.Wrap },
                 DialogParts.Labeled("Rows (including header)", RowsInput),
-                DialogParts.Labeled("Columns", ColumnsInput), _validation, buttons,
+                DialogParts.Labeled("Columns", ColumnsInput), _validation, _summary, _preview,
+                new TextBlock { Text = "Edit Column 1, Column 2… headings in Source after insertion. Preview shows at most 6 rows and 6 columns.", TextWrapping = TextWrapping.Wrap }, buttons,
             },
         };
         AutomationProperties.SetName(InsertButton, "Insert table");
@@ -52,6 +56,23 @@ public sealed class InsertTableWindow : Window
         InsertButton.IsEnabled = Dimensions is not null;
         _validation.Text = InsertButton.IsEnabled ? string.Empty : "Enter whole numbers: 1–100 rows and 1–20 columns.";
         _validation.IsVisible = !InsertButton.IsEnabled;
-        if (IsVisible) DialogParts.FitContentHeight(this, 300);
+        if (Dimensions is { } dimensions)
+        {
+            _preview.Children.Clear(); _preview.ColumnDefinitions.Clear(); _preview.RowDefinitions.Clear();
+            _summary.Text = $"{dimensions.Columns} columns, {dimensions.Rows - 1} body rows + header";
+            for (var c = 0; c < Math.Min(6, dimensions.Columns); c++) _preview.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
+            for (var r = 0; r < Math.Min(6, dimensions.Rows); r++)
+            {
+                _preview.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                for (var c = 0; c < Math.Min(6, dimensions.Columns); c++)
+                {
+                    var cell = new Border { BorderThickness = new Avalonia.Thickness(1), Padding = new Avalonia.Thickness(4), MinHeight = 22,
+                        Child = new TextBlock { Text = r == 0 ? "Column " + (c + 1) : "", TextTrimming = TextTrimming.CharacterEllipsis, FontWeight = r == 0 ? FontWeight.SemiBold : FontWeight.Normal } };
+                    cell.Bind(Border.BorderBrushProperty, this.GetResourceObservable("Tern.Border"));
+                    Grid.SetRow(cell, r); Grid.SetColumn(cell, c); _preview.Children.Add(cell);
+                }
+            }
+        }
+        if (IsVisible) DialogParts.FitContentHeight(this, 460);
     }
 }

@@ -15,8 +15,8 @@ namespace Tern.Desktop.Tests;
 public sealed class UrlOpenIntentTests
 {
     [AvaloniaTheory]
-    [InlineData("Open", false)]
-    [InlineData("Download and Open", true)]
+    [InlineData("Open working copy", false)]
+    [InlineData("Save portable copy…", true)]
     public async Task Explicit_action_returns_validated_text_and_the_requested_intent_without_writing(string action, bool download)
     {
         using var fixture = new DesktopFixture();

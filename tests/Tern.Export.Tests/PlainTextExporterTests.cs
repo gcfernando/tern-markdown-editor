@@ -43,7 +43,8 @@ public sealed class PlainTextExporterTests
     public void ShowsLinkTargetsImagesMathAndFootnotes()
     {
         var text = Export("See [site](https://example.com) and ![logo](logo.png) with $\\alpha$ here[^1].\n\n[^1]: Note text.");
-        Assert.Contains("site (https://example.com/)", text, StringComparison.Ordinal);
+        Assert.Contains("site [L1]", text, StringComparison.Ordinal);
+        Assert.Contains("[L1] https://example.com/", text, StringComparison.Ordinal);
         Assert.Contains("[image: logo]", text, StringComparison.Ordinal);
         Assert.Contains("α", text, StringComparison.Ordinal);
         Assert.Contains("Note text.", text, StringComparison.Ordinal);
@@ -53,7 +54,7 @@ public sealed class PlainTextExporterTests
     public void ClampsHeadingUnderlinesAndRulesToTheWidthWithoutRewrappingText()
     {
         var longTitle = string.Join(' ', Enumerable.Repeat("word", 30));
-        var lines = Export($"# {longTitle}\n\n{longTitle}\n\n---", new PlainTextExportOptions { Width = 40 }).Split('\n');
+        var lines = Export($"# {longTitle}\n\n{longTitle}\n\n---", new PlainTextExportOptions { Width = 40, ReadableLayout = false }).Split('\n');
         Assert.Equal(longTitle, lines[0]);
         Assert.Equal(new string('=', 40), lines[1]);
         Assert.Equal(longTitle, lines[3]);

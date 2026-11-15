@@ -4,7 +4,7 @@ namespace Tern.App.Help;
 public static class GuideQuery
 {
     private static readonly HashSet<string> Fillers = new(StringComparer.Ordinal)
-    { "how", "do", "does", "i", "we", "can", "could", "would", "should", "to", "use", "using", "the", "a", "an", "for", "in", "on", "with", "my", "me", "please", "tern", "what", "is", "are", "of", "it", "want", "make", "where", "why", "when", "explain", "show", "tell", "about", "help" };
+    { "how", "do", "does", "i", "we", "can", "could", "would", "should", "to", "use", "using", "the", "a", "an", "for", "in", "on", "with", "my", "me", "please", "tern", "what", "is", "are", "of", "it", "want", "make", "where", "why", "when", "explain", "show", "tell", "about", "help", "beginner", "beginners", "simply" };
 
     public static string[] Words(string? text)
     {
@@ -15,6 +15,8 @@ public static class GuideQuery
             {
                 "md" => "markdown", "chatgpt" or "chatbot" => "ai", "saving" or "saved" or "saves" => "save",
                 "printing" => "print", "searching" => "search", "formatting" => "format", "opening" => "open",
+                "connections" or "connect" or "connecting" => "connection", "scrolling" => "scroll", "headings" => "heading",
+                "exports" or "exporting" => "export", "shortcuts" => "shortcut", "themes" => "theme",
                 "pictures" or "picture" or "images" => "image", "pasting" => "paste", "recovered" or "recovering" => "recovery",
                 _ => w
             }).Distinct(StringComparer.Ordinal).ToArray();

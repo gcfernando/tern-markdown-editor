@@ -42,10 +42,11 @@ public class DialogTests
     // ---- Settings -----------------------------------------------------------------------------------------------
 
     [AvaloniaFact]
-    public async Task Settings_window_edits_the_settings_object()
+    public async Task Settings_edits_are_staged_and_Done_commits_the_working_copy()
     {
-        var settings = new AppSettings();
-        var window = new SettingsWindow(settings);
+        var live = new AppSettings();
+        var window = new SettingsWindow(live);
+        var settings = window.WorkingSettings;
         window.Show();
         await Settle();
 
@@ -72,9 +73,15 @@ public class DialogTests
         external.IsChecked = false;
         Assert.False(settings.AllowExternalLinkOpening);
 
+        Assert.Equal(new AppSettings().Theme, live.Theme);
+        Assert.Equal(new AppSettings().EditorFontSize, live.EditorFontSize);
+        Assert.True(live.AllowExternalLinkOpening);
         Find<Button>(window, "Close settings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Dispatcher.UIThread.RunJobs();
         Assert.False(window.IsVisible);
+        Assert.Equal(ThemeChoice.Paper, live.Theme);
+        Assert.Equal(19, live.EditorFontSize);
+        Assert.False(live.AllowExternalLinkOpening);
     }
 
     [AvaloniaFact]
@@ -108,7 +115,7 @@ public class DialogTests
         await Settle();
         Find<ComboBox>(window, "Theme").SelectedItem = ThemeChoice.Paper;
         Find<NumericUpDown>(window, "Reading width").Value = 900;
-        window.Close();
+        Find<Button>(window, "Close settings").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         f.Shell.SaveSettings();
 
         var reloaded = new SettingsStore(Path.Combine(f.AppData, "settings")).Load();
@@ -228,7 +235,7 @@ public class DialogTests
         await Settle();
 
         Assert.True(await window.ExportAsync(output));
-        Assert.Contains("Exported to", window.StatusText, StringComparison.Ordinal);
+        Assert.Contains("Export complete", window.StatusText, StringComparison.Ordinal);
 
         var html = await File.ReadAllTextAsync(output);
         Assert.StartsWith("<!DOCTYPE html", html, StringComparison.OrdinalIgnoreCase);
@@ -320,7 +327,7 @@ public class DialogTests
     private static MergeResult Conflicting() => ThreeWayMerger.Merge("one\ntwo\nthree\n", "one\nMINE\nthree\n", "one\nDISK\nthree\n");
 
     [AvaloniaFact]
-    public async Task Merge_window_defaults_to_mine_and_accepts_the_merged_text()
+    public async Task Merge_window_requires_explicit_review_before_accepting_mine()
     {
         var merge = Conflicting();
         Assert.Equal(1, merge.ConflictCount);
@@ -329,6 +336,9 @@ public class DialogTests
         await Settle();
 
         Assert.Contains("MINE", Find<TextBox>(window, "Merged result").Text, StringComparison.Ordinal);
+        Assert.False(Find<Button>(window, "Accept merged text").IsEnabled);
+        Find<Button>(window, "Keep mine").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.True(Find<Button>(window, "Accept merged text").IsEnabled);
         Find<Button>(window, "Accept merged text").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.Equal("one\nMINE\nthree\n", await result);
     }
@@ -369,7 +379,7 @@ public class DialogTests
         cleanWindow.Show();
         await Settle();
         Assert.Equal("A\nb\nC\n", Find<TextBox>(cleanWindow, "Merged result").Text);
-        Assert.False(Find<ListBox>(cleanWindow, "Conflicts").IsVisible);
+        Assert.DoesNotContain(cleanWindow.GetVisualDescendants().OfType<ListBox>(), list => AutomationProperties.GetName(list) == "Conflicts" && list.IsEffectivelyVisible);
         cleanWindow.Close();
     }
 

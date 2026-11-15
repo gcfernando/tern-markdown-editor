@@ -13,12 +13,13 @@ public sealed class AILiveBarTests
     public void Saving_renaming_editing_and_deleting_connections_updates_the_bar_immediately()
     {
         using var f = new DesktopFixture();
-        Assert.False(f.Window.AIBar.IsVisible);
+        Assert.Equal("AI · set up", f.Window.AIEntryButton.Content);
+        Assert.DoesNotContain(f.Window.AIBar, f.Window.MainToolbarGrid.Children);
         var store = new AIProfileStore(f.Shell.Paths.SettingsDirectory);
         var manager = new AIConnectionManager(store, new Vault());
         var first = new AIConnectionProfile(Guid.NewGuid().ToString("N"), "Local writing", "ollama-chat", "http://localhost:11434/api/chat", "model-one");
         var current = manager.Save(first, "", []);
-        Assert.True(f.Window.AIBar.IsVisible);
+        Assert.Contains("Local writing", f.Window.AIEntryButton.Content?.ToString());
         Assert.Equal(first.Id, Assert.IsType<WorkspaceConnection>(f.Window.AIConnectionPicker.SelectedItem).Id);
         var changed = first with { Name = "Renamed writing", Model = "model-two" };
         current = manager.Save(changed, null, current);
@@ -28,10 +29,12 @@ public sealed class AILiveBarTests
         current = manager.Save(second, "", current);
         Assert.Equal(2, f.Window.AIConnectionPicker.ItemCount);
         current = manager.Remove(first.Id, current);
-        Assert.True(f.Window.AIBar.IsVisible);
+        Assert.Equal("AI · set up", f.Window.AIEntryButton.Content);
+        Assert.Null(f.Window.AIConnectionPicker.SelectedItem);
+        f.Window.AIConnectionPicker.SelectedItem = Assert.Single(f.Window.AIWorkspace.Connections);
         Assert.Equal(second.Id, Assert.IsType<WorkspaceConnection>(f.Window.AIConnectionPicker.SelectedItem).Id);
         manager.Remove(second.Id, current);
-        Assert.False(f.Window.AIBar.IsVisible);
+        Assert.Equal("AI · set up", f.Window.AIEntryButton.Content);
         Assert.Equal(0, f.Window.MainToolbarGrid.RowSpacing);
     }
 
@@ -42,12 +45,12 @@ public sealed class AILiveBarTests
         var store = new AIProfileStore(f.Shell.Paths.SettingsDirectory);
         var profile = new AIConnectionProfile(Guid.NewGuid().ToString("N"), "External connection", "ollama-chat", "http://localhost:11434/api/chat", "one");
         store.Save([profile]);
-        await Until(() => f.Window.AIBar.IsVisible);
+        await Until(() => f.Window.AIConnectionPicker.ItemCount == 1);
         store.Save([profile with { Name = "Updated externally", Model = "two" }]);
         await Until(() => (f.Window.AIConnectionPicker.SelectedItem as WorkspaceConnection)?.Name == "Updated externally");
         Assert.Contains("two", f.Window.AIConnectionSummary.Text, StringComparison.Ordinal);
         File.Delete(store.FilePath);
-        await Until(() => !f.Window.AIBar.IsVisible);
+        await Until(() => f.Window.AIConnectionPicker.ItemCount == 0);
     }
 
     [AvaloniaFact]
