@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Tern.App.Commands;
 using Tern.App.Help;
 using Tern.Desktop.Services;
@@ -19,6 +20,7 @@ internal sealed class HelpTutorView : UserControl, IDisposable
     internal HelpAnswerView Transcript { get; } = new();
     private readonly GuidanceStrip _guidance = new("Choose a connection, or ask using the installed offline guides.", "help");
     private readonly TextBlock _destination = GuideParts.Caption("");
+    private readonly TextBlock _offlineNotice = GuideParts.Body("");
     private readonly TextBlock _status = GuideParts.Body("Type a Tern question, such as ‘How do I export a PDF?’, to get started.");
     private readonly StackPanel _references = new() { Spacing = 8 };
     private readonly AIWorkspaceService _workspace;
@@ -41,6 +43,7 @@ internal sealed class HelpTutorView : UserControl, IDisposable
         AutomationProperties.SetName(Transcript, "Tutor conversation transcript");
         AutomationProperties.SetName(_destination, "Help AI destination and capability");
         AutomationProperties.SetLiveSetting(_status, AutomationLiveSetting.Polite);
+        Question.TextChanged += (_, _) => UpdateDestination();
         var setup = new Button { Content = "Manage connections" };
         setup.Click += async (_, _) => { await configure(); workspace.Reload(); };
         var cancel = new Button { Content = "Cancel answer", IsEnabled = false };
@@ -147,13 +150,17 @@ internal sealed class HelpTutorView : UserControl, IDisposable
         Grid.SetColumn(setup, 1);
         var conversation = GuideParts.Actions(clear, copy, privacyButton); conversation.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
         AutomationProperties.SetName(conversation, "Conversation options");
-        var header = GuideParts.Vertical(GuideParts.Title("Ask about Tern"), GuideParts.Caption("AI connection · optional"), connectionRow, _destination, conversation);
+        var browse = new Button { Content = "Browse installed guides" };
+        browse.Click += (_, _) => { if (this.FindAncestorOfType<Window>() is { } window && window.Content is TabControl tabs) tabs.SelectedIndex = 0; };
+        var notice = GuideParts.Card(GuideParts.Vertical(_offlineNotice, GuideParts.Caption("Offline help finds matching guide steps. It does not generate answers or interpret conversation history."), browse));
+        var header = GuideParts.Vertical(GuideParts.Title("Ask about Tern"), notice, GuideParts.Caption("Help connection · optional"), connectionRow, _destination, conversation);
         var questionBody = GuideParts.Vertical(GuideParts.Caption("Your Tern question"), Question, GuideParts.Actions(cancel, SendButton));
         var questionPane = new ScrollViewer { Content = questionBody, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         void FitQuestion()
         {
             // Keep a generous composer before submission; give reading the larger
             // share once an answer arrives. The question remains available for follow-ups.
+            notice.IsVisible = !Transcript.IsVisible;
             Question.MinHeight = Transcript.IsVisible ? 80 : 160;
             Question.MaxHeight = Transcript.IsVisible ? 112 : 240;
             _destination.IsVisible = !Transcript.IsVisible;
@@ -165,7 +172,7 @@ internal sealed class HelpTutorView : UserControl, IDisposable
         var related = GuideParts.Details("Related installed guides", new ScrollViewer { MaxHeight = 140, Content = _references, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
         related.IsVisible = false;
         _references.Children.CollectionChanged += (_, _) => related.IsVisible = _references.Children.Count > 0;
-        var empty = GuideParts.Body("Your formatted answer will appear here. Try a Tern question about search, export, printing or AI connections.");
+        var empty = GuideParts.Body("Installed guidance or an AI answer will appear here after submission. Try a Tern question about search, export or printing.");
         AutomationProperties.SetName(empty, "Answer area guidance");
         var answers = new Grid { Children = { empty, Transcript } };
         Transcript.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty) empty.IsVisible = !Transcript.IsVisible; };
@@ -193,7 +200,13 @@ internal sealed class HelpTutorView : UserControl, IDisposable
     private void UpdateDestination()
     {
         _destination.Text = Connections.SelectedItem is WorkspaceConnection profile ? profile.Name + " · " + profile.Kind + " · text generation" : "Offline guides selected. Choose an AI connection above for an AI answer.";
-        SendButton.IsEnabled = _request is null;
+        var offline = Connections.SelectedItem is not WorkspaceConnection { CanWrite: true };
+        _offlineNotice.Text = _workspace.Connections.Count == 0
+            ? "No AI connection is configured. You can use the installed Tern guides for help. AI-generated answers require a connection."
+            : offline ? "Offline guides are selected. AI-generated answers require a text-generation connection."
+            : "An AI connection is selected. Your question is sent only when you choose Send question.";
+        SendButton.Content = offline ? "Find guide steps" : "Send question";
+        SendButton.IsEnabled = _request is null && !string.IsNullOrWhiteSpace(Question.Text);
     }
     private async Task ShowOfflineAnswer(string question, string? failure = null)
     {

@@ -4,6 +4,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+env:
+  AVALONIA_TELEMETRY_OPTOUT: '1'
 permissions:
   contents: read
 # Every main push has independent evidence and release identity; never cancel it.
@@ -53,6 +55,13 @@ jobs:
             artifacts/test-results/**/*.trx
             artifacts/release-build/smoke/*.json
             artifacts/release-build/smoke/*.log
+            artifacts/release-build/standalone-smoke/*.json
+            artifacts/release-build/standalone-smoke/*.log
+            artifacts/release-build/msi-extraction/*.json
+            artifacts/release-build/msi-extraction/*.log
+            artifacts/release-build/msi-verification.json
+            artifacts/release-build/msi-wizard-checks.json
+            artifacts/release-build/*.validation.log
           if-no-files-found: warn
           retention-days: 30
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -60,6 +69,8 @@ jobs:
           name: Tern-win-x64
           path: |
             artifacts/release/Tern-win-x64.zip
+            artifacts/release/Tern.exe
+            artifacts/release/Tern-*.msi
             artifacts/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -88,4 +99,4 @@ jobs:
         run: |
           set -euo pipefail
           version=$(python -c "import xml.etree.ElementTree as E; print(E.parse('Directory.Build.props').findtext('.//Version'))")
-          python .github/scripts/publish_main_release.py --project Tern --version "$version" artifacts/main-download/Tern-win-x64.zip
+          python .github/scripts/publish_main_release.py --project Tern --version "$version" artifacts/main-download/Tern-win-x64.zip artifacts/main-download/Tern.exe "artifacts/main-download/Tern-$version.msi"

@@ -524,8 +524,8 @@ public partial class MainWindow
             ? $"Recovered copy of {original} (not saved)" : tab.DisplayName + " (not saved)");
         StatusPosition.Text = $"Ln {caret.Line}, Col {caret.Column}";
         StatusWords.Text = $"{tab.Analysis?.WordCount ?? 0:N0} words";
-        StatusEncoding.Content = tab.EncodingText;
-        StatusLineEnding.Content = tab.LineEndingText;
+        StatusEncoding.Content = "Encoding: " + tab.EncodingText;
+        StatusLineEnding.Content = "Line endings: " + tab.LineEndingText;
         StatusProfile.Content = tab.Profile switch
         {
             Tern.Markdown.MarkdownProfile.Gfm => "GFM",
@@ -600,19 +600,19 @@ public partial class MainWindow
             return;
         }
 
-        ShowPicker("Choose line ending", string.Empty,
-            query => new[] { (LineEnding.CrLf, "CRLF (Windows)"), (LineEnding.Lf, "LF (Unix / macOS)"), (LineEnding.Cr, "CR (classic Mac)") }
-                .Where(o => string.IsNullOrWhiteSpace(query) || o.Item2.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Select(o => new PickerItem(o.Item2, "Convert now; keep this choice when saving", string.Empty, o.Item1)).ToArray(), item =>
+        var menu = new ContextMenu();
+        foreach (var (ending, label) in new[] { (LineEnding.CrLf, "CRLF (Windows)"), (LineEnding.Lf, "LF (Unix / macOS)"), (LineEnding.Cr, "CR (classic Mac)") })
         {
-            HideOverlay();
-            if (item.Payload is LineEnding ending && ReferenceEquals(tab, _shown) && CanRunCommand(Tern.App.Commands.CommandIds.ChangeLineEnding))
+            var item = new MenuItem { Header = label };
+            item.Click += (_, _) =>
             {
-                tab.ConvertLineEndings(ending);
-            }
-
-            UpdateStatus();
-        });
+                if (ReferenceEquals(tab, _shown) && CanRunCommand(Tern.App.Commands.CommandIds.ChangeLineEnding)) tab.ConvertLineEndings(ending);
+                UpdateStatus();
+            };
+            menu.Items.Add(item);
+        }
+        StatusLineEnding.ContextMenu = menu;
+        menu.Open(StatusLineEnding);
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)

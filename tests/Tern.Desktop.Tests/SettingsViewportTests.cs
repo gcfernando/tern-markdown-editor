@@ -47,7 +47,7 @@ public sealed class SettingsViewportTests
             Assert.InRange(point.Y, 0, window.ClientSize.Height - button.Bounds.Height);
         }
         var navigation = Assert.Single(window.GetVisualDescendants().OfType<ListBox>(), l => AutomationProperties.GetName(l) == "Settings categories");
-        Assert.Equal(FeatureCatalog.SettingsFeatures.Select(f => f.Category).Append("AI connections").Distinct(StringComparer.Ordinal).Count(), navigation.ItemCount);
+        Assert.Equal(FeatureCatalog.SettingsFeatures.Select(f => f.Category).Append("AI connections").Append("Windows integration").Distinct(StringComparer.Ordinal).Count(), navigation.ItemCount);
         if (minimum)
         {
             Assert.True(choice.IsEffectivelyVisible);

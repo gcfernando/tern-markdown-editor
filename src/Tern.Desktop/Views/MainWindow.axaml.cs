@@ -872,6 +872,7 @@ public sealed partial class MainWindow : Window, IDisposable
             ? "This tab was opened from a URL. Save As creates a local file; changes are not uploaded."
             : "This tab is a local file or a new local document. Linked web images may still load from their source.");
         EmptyText.IsVisible = !hasTab || _welcomeIsOpen && tab is { IsUntitled: true } && tab.CurrentText.Length == 0;
+        SetWelcomeDetailsVisibility();
         UpdateFirstNoteChecklist();
         ContentSplitter.IsVisible = hasTab && _shell.ViewMode == ViewMode.Split;
         InspectorContent.IsVisible = hasTab;

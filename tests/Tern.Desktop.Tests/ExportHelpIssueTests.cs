@@ -66,9 +66,9 @@ public sealed class ExportHelpIssueTests
         window.Show(f.Window); await window.Preparation; Pump(window);
         try
         {
-            var preview = Assert.Single(window.GetVisualDescendants().OfType<Tern.PreviewView.PreviewView>());
-            Assert.NotNull(preview.Document);
-            Assert.Contains(preview.Document.Outline, h => h.Text == "Print sample");
+            var preview = Assert.Single(window.GetVisualDescendants().OfType<Image>());
+            Assert.NotNull(preview.Source);
+            Assert.True(window.PageCount > 0);
             foreach (var theme in new[] { ThemeChoice.Midnight, ThemeChoice.Paper })
             {
                 f.Shell.Settings.Theme = theme; f.Shell.Settings.UiScale = 1;
@@ -111,7 +111,7 @@ public sealed class ExportHelpIssueTests
         await f.Window.RunCommandAsync(CommandIds.Welcome); Pump(f.Window);
         var card = Assert.Single(f.Window.OverlayLayer.Children.OfType<Border>());
         Assert.True(card.Bounds.Height < f.Window.Bounds.Height - 150);
-        Assert.Contains(card.GetVisualDescendants().OfType<TextBlock>(), t => t.Text?.Contains("1. Write in Source", StringComparison.Ordinal) == true);
+        Assert.Contains(card.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "1. Write in Source → 2. Choose Reading → 3. Save with Ctrl+S");
         Capture(f.Window, "welcome-Midnight");
         var close = card.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Close"));
         close.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

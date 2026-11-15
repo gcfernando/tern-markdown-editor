@@ -25,7 +25,7 @@ class RuntimeInventoryTests(unittest.TestCase):
         inventory = json.loads((root / "licenses/dependency-inventory.json").read_text())
         runtime = inventory["runtime"]
         desktop = ET.parse(root / "src/Tern.Desktop/Tern.Desktop.csproj")
-        self.assertEqual(desktop.findtext(".//RuntimeFrameworkVersion"), runtime["version"])
+        self.assertEqual(desktop.find(".//FrameworkReference[@Update='Microsoft.NETCore.App']").get("RuntimeFrameworkVersion"), runtime["version"])
         self.assertEqual(runtime["id"], "Microsoft.NETCore.App.Runtime.win-x64")
         self.assertEqual(len(runtime["notices"]), 2)
         for notice in runtime["notices"]:

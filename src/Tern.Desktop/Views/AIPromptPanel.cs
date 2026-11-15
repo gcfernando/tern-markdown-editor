@@ -73,8 +73,6 @@ public sealed class AIPromptPanel : Border, IDisposable
         var scopeHelp = GuideParts.Caption("");
         AutomationProperties.SetName(scopeHelp, "What the selected text scope shares");
         var shortcuts = new WrapPanel { ItemSpacing = 8, LineSpacing = 6 };
-        var create = new Button { Content = "Create content" };
-        var hasSelection = scope?.Items.Contains("Selected text") == true;
         var connectionField = GuideParts.Vertical(GuideParts.Caption("Connection"), connections);
         var setup = new Button { Content = "Set up connection", Classes = { "accent" } };
         var setupHint = GuideParts.Caption("Choose Set up connection to add a local or remote writing model.");
@@ -87,7 +85,6 @@ public sealed class AIPromptPanel : Border, IDisposable
             "Extract action items" => "Extract only explicit action items from the supplied text. Return a Markdown checklist with one item per task. Include owners and due dates only when stated. If there are no tasks, return 'No action items found.'",
             "Proofread" => "Correct spelling, grammar, and punctuation in the supplied text. Preserve tone, meaning, formatting, links, and code. Return only the corrected Markdown.",
             "Improve headings" => "Improve only the headings. Preserve their levels and all other Markdown.",
-            "Create content" => "Create Markdown from my instructions. Return only the new content to insert.\n\n",
             _ => ""
         };
         question.Text = initialInstruction ?? Starter(initialAction);
@@ -149,8 +146,6 @@ public sealed class AIPromptPanel : Border, IDisposable
             question.PlaceholderText = selected ? "e.g. Make this shorter and keep the warning" : "e.g. Draft a short introduction for this note";
             question.IsEnabled = !isTool;
             shortcuts.IsVisible = selected && !isTool;
-            create.IsVisible = !hasSelection && !isTool && (scope is null || Equals(scope.SelectedItem, "Entire note"));
-            create.IsEnabled = !_busy;
             shortcuts.IsEnabled = !_busy;
             if (scope is not null) scope.IsEnabled = !_busy && !isTool;
             connectionField.IsVisible = !needsSetup;
@@ -227,11 +222,10 @@ public sealed class AIPromptPanel : Border, IDisposable
         var options = new WrapPanel { ItemSpacing = 12, LineSpacing = 8 };
         if (scope is not null) options.Children.Add(GuideParts.Vertical(GuideParts.Caption("Text to share"), scope));
         options.Children.Add(connectionField);
-        create.Click += (_, _) => { changeAction?.Invoke("Create content"); if (scope is not null) scope.SelectedItem = "Instruction only"; question.Text = Starter("Create content"); question.Focus(); };
         var contentScroll = new ScrollViewer
         {
             Content = GuideParts.Vertical(
-                promptTitle, promptHelp, create, shortcuts, question, options, scopeHelp, setupHint, destination, validation, status),
+                promptTitle, promptHelp, shortcuts, question, options, scopeHelp, setupHint, destination, validation, status),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
         var actions = GuideParts.Actions(settings, cancel, setup, tools, send);

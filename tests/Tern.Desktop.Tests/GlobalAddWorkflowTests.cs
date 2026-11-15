@@ -89,7 +89,7 @@ public sealed class GlobalAddWorkflowTests
         if (workspaceCount > 0) await ChooseAsync(fixture, "Outside all workspaces");
         var create = await CreateDialogAsync(fixture);
         Assert.False(Input(create, "Parent folder").IsReadOnly);
-        Assert.DoesNotContain(roots, root => Input(create, "Parent folder").Text is { } initial
+        Assert.DoesNotContain(roots, root => Input(create, "Parent folder").Text is { Length: > 0 } initial
             && (WorkspacePaths.PathsEqual(root.Root, initial) || root.IsInside(initial)));
         Input(create, "Parent folder").Text = parent;
         Input(create, "Folder name").Text = "External"; Pump(fixture);

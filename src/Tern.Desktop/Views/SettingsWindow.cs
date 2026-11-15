@@ -52,7 +52,7 @@ public sealed class SettingsWindow : Window
         MinHeight = 520;
         var search = new TextBox { PlaceholderText = "Find a setting, such as wrap, font or restore…" };
         AutomationProperties.SetName(search, "Find a setting");
-        var navigation = new ListBox { ItemsSource = FeatureCatalog.SettingsFeatures.Select(f => f.Category).Append("AI connections").Distinct(StringComparer.Ordinal).ToArray(), SelectedIndex = 0 };
+        var navigation = new ListBox { ItemsSource = FeatureCatalog.SettingsFeatures.Select(f => f.Category).Append("AI connections").Append("Windows integration").Distinct(StringComparer.Ordinal).ToArray(), SelectedIndex = 0 };
         // This short list scrolls as part of the sidebar; realize every category so
         // the outer viewport can measure and reach the final row at large text sizes.
         navigation.ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel());
@@ -62,6 +62,7 @@ public sealed class SettingsWindow : Window
         var reloadEditors = new Dictionary<string, Action>();
         var groups = new Dictionary<string, (Control Heading, StackPanel Cards)>();
         var aiSection = new StackPanel { Spacing = 10 };
+        var windowsSection = new StackPanel { Spacing = 10 };
         var results = GuideParts.Caption("All settings");
         AutomationProperties.SetName(results, "Settings result count");
         sections.Children.Add(results);
@@ -134,6 +135,18 @@ public sealed class SettingsWindow : Window
         aiSection.Children.Add(aiHeading);
         aiSection.Children.Add(aiCards);
         sections.Children.Add(aiSection);
+        var integrationStatus = GuideParts.Body(WindowsFileAssociations.CurrentRegistration());
+        var register = new Button { Content = "Register this copy with Windows", Classes = { "accent" } };
+        register.Click += (_, _) =>
+        {
+            try { WindowsFileAssociations.RegisterCurrentCopy(); integrationStatus.Text = "Registered this copy. Your default app was kept.\n" + WindowsFileAssociations.CurrentRegistration(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { integrationStatus.Text = "Could not register Tern: " + ex.Message; }
+        };
+        windowsSection.Children.Add(GuideParts.Vertical(GuideParts.Title("Windows integration"), GuideParts.Card(GuideParts.Vertical(
+            GuideParts.Body("Open Markdown files from any Explorer folder"),
+            GuideParts.Caption("Adds Open with Tern for .md files and makes this copy available in Open with. Your current default app stays unchanged. Moving this EXE or portable folder requires re-registration."),
+            integrationStatus, GuideParts.Actions(register)))));
+        sections.Children.Add(windowsSection);
         RefreshAI();
         Activated += (_, _) => RefreshAI();
         void Filter()
@@ -142,6 +155,8 @@ public sealed class SettingsWindow : Window
             foreach (var (feature, card) in cards)
                 card.IsVisible = (words.Length > 0 || feature.Category == navigation.SelectedItem as string)
                     && words.All(w => $"{feature.Name} {feature.Category} {feature.Description}".Contains(w, StringComparison.OrdinalIgnoreCase));
+            windowsSection.IsVisible = words.Length == 0 ? navigation.SelectedItem as string == "Windows integration"
+                : words.All(w => "Windows integration Explorer Markdown registration default app Open with Tern".Contains(w, StringComparison.OrdinalIgnoreCase));
             aiSection.IsVisible = words.Length == 0 ? navigation.SelectedItem as string == "AI connections"
                 : words.All(w => "AI connections providers models keys Ollama Claude writing".Contains(w, StringComparison.OrdinalIgnoreCase));
             foreach (var (category, group) in groups)
@@ -153,7 +168,7 @@ public sealed class SettingsWindow : Window
                 if (group.Heading.Parent is Control section) section.IsVisible = visible;
             }
             var count = cards.Count(c => c.Card.IsVisible);
-            results.Text = aiSection.IsVisible ? "AI connections · Set up once, use throughout Tern"
+            results.Text = windowsSection.IsVisible ? "Windows integration · Changes take effect immediately" : aiSection.IsVisible ? "AI connections · Set up once, use throughout Tern"
                 : count == 0 ? "No settings match. Try another word." : $"{count} {(count == 1 ? "setting" : "settings")} · Apply or Done commits changes; Cancel discards pending changes";
         }
         search.TextChanged += (_, _) => Filter();

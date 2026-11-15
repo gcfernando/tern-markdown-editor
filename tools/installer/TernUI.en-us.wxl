@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="en-us" Codepage="1252" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+  <String Id="WelcomeDlgTitle">{\WixUI_Font_Bigger}Install Tern</String>
+  <String Id="WelcomeDlgDescription">Write, preview and organize Markdown notes. This setup installs Tern for your Windows account.</String>
+  <String Id="LicenseAgreementDlgTitle">{\WixUI_Font_Title}License agreement</String>
+  <String Id="LicenseAgreementDlgDescription">Review the MIT license for Tern.</String>
+  <String Id="InstallDirDlgTitle">{\WixUI_Font_Title}Installation folder</String>
+  <String Id="InstallDirDlgDescription">Choose a folder your Windows account can write to.</String>
+  <String Id="ExitDialogTitle">{\WixUI_Font_Bigger}Tern is ready</String>
+  <String Id="ExitDialogDescription">Choose Finish to close setup. Leave Launch Tern selected to start writing.</String>
+</WixLocalization>

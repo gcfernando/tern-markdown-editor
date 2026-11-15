@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "scope": "Locked Tern desktop dependency graph; includes build-only and non-Windows graph entries, not a claim that every listed native binary is distributed.",
-  "applicationVersion": "1.0.4",
-  "framework": "net10.0",
+  "applicationVersion": "1.0.5",
+  "framework": "net10.0-windows10.0.19041.0",
   "runtimeIdentifier": "win-x64",
   "runtime": {
     "id": "Microsoft.NETCore.App.Runtime.win-x64",
@@ -24,7 +24,7 @@
       "version": "2.1.27548.20260419",
       "license": "LICENSE",
       "licenseType": "file",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/",
       "repository": {
         "type": "git",
@@ -43,7 +43,7 @@
       "version": "12.0.0",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2017-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2017-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "",
       "repository": {
         "type": "git",
@@ -57,7 +57,7 @@
       "version": "11.3.2",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2023-2025 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2023-2025 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/",
       "repository": {
         "type": "git",
@@ -71,7 +71,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -86,7 +86,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -101,7 +101,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -116,7 +116,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -131,7 +131,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -146,7 +146,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -161,7 +161,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -176,7 +176,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -191,7 +191,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -206,7 +206,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -221,7 +221,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -236,7 +236,7 @@
       "version": "12.1.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2013-2026 \u00a9 The AvaloniaUI Project",
+      "copyright": "Copyright 2013-2026 \u00c2\u00a9 The AvaloniaUI Project",
       "projectUrl": "https://avaloniaui.net/?utm_source=nuget&utm_medium=referral&utm_content=project_homepage_link",
       "repository": {
         "type": "git",
@@ -275,7 +275,7 @@
       "version": "8.3.1.3",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -295,35 +295,11 @@
       ]
     },
     {
-      "id": "HarfBuzzSharp.NativeAssets.macOS",
-      "version": "8.3.1.3",
-      "license": "MIT",
-      "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
-      "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
-      "repository": {
-        "type": "git",
-        "url": "https://go.microsoft.com/fwlink/?linkid=868515",
-        "branch": "release/3.119.2",
-        "commit": "2888c737ad016d584c74525e2d35db5097ea8576"
-      },
-      "notices": [
-        {
-          "path": "licenses/packages/HarfBuzzSharp.NativeAssets.macOS/8.3.1.3/LICENSE.txt",
-          "sha256": "89101e35a8c66fd4d6dffc1763259161d35cb564c169714ec227a768c89f2938"
-        },
-        {
-          "path": "licenses/packages/HarfBuzzSharp.NativeAssets.macOS/8.3.1.3/THIRD-PARTY-NOTICES.txt",
-          "sha256": "21504c46c4c58aa64c1055bd2dcbc5f9a136b4b8c412ed3cc6740e22c5b127f5"
-        }
-      ]
-    },
-    {
       "id": "HarfBuzzSharp.NativeAssets.WebAssembly",
       "version": "8.3.1.3",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -347,7 +323,7 @@
       "version": "8.3.1.3",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -371,7 +347,7 @@
       "version": "8.3.1.3",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -405,7 +381,7 @@
       "version": "0.11.6",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "Copyright 2021 \u00a9 Nikita Tsukanov",
+      "copyright": "Copyright 2021 \u00c2\u00a9 Nikita Tsukanov",
       "projectUrl": "",
       "repository": {
         "type": "git",
@@ -419,7 +395,7 @@
       "version": "10.0.14",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://docs.microsoft.com/dotnet/standard/data/sqlite/",
       "repository": {
         "type": "git",
@@ -433,7 +409,7 @@
       "version": "10.0.14",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://docs.microsoft.com/dotnet/standard/data/sqlite/",
       "repository": {
         "type": "git",
@@ -447,7 +423,7 @@
       "version": "8.0.2",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://dot.net/",
       "repository": {
         "type": "git",
@@ -470,7 +446,7 @@
       "version": "8.0.3",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://dot.net/",
       "repository": {
         "type": "git",
@@ -493,7 +469,7 @@
       "version": "6.2.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 2026 empira",
+      "copyright": "\u00c2\u00a9 2026 empira",
       "projectUrl": "https://docs.pdfsharp.net/",
       "repository": {
         "type": "git",
@@ -507,7 +483,7 @@
       "version": "3.119.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -527,35 +503,11 @@
       ]
     },
     {
-      "id": "SkiaSharp.NativeAssets.macOS",
-      "version": "3.119.4",
-      "license": "MIT",
-      "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
-      "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
-      "repository": {
-        "type": "git",
-        "url": "https://go.microsoft.com/fwlink/?linkid=868515",
-        "branch": "release/3.119.4",
-        "commit": "f568ac94dd768ef9a2f593537cfde2dd0d348ef5"
-      },
-      "notices": [
-        {
-          "path": "licenses/packages/SkiaSharp.NativeAssets.macOS/3.119.4/LICENSE.txt",
-          "sha256": "89101e35a8c66fd4d6dffc1763259161d35cb564c169714ec227a768c89f2938"
-        },
-        {
-          "path": "licenses/packages/SkiaSharp.NativeAssets.macOS/3.119.4/THIRD-PARTY-NOTICES.txt",
-          "sha256": "21504c46c4c58aa64c1055bd2dcbc5f9a136b4b8c412ed3cc6740e22c5b127f5"
-        }
-      ]
-    },
-    {
       "id": "SkiaSharp.NativeAssets.WebAssembly",
       "version": "3.119.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -579,7 +531,7 @@
       "version": "3.119.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -603,7 +555,7 @@
       "version": "3.119.4",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://go.microsoft.com/fwlink/?linkid=868515",
       "repository": {
         "type": "git",
@@ -675,7 +627,7 @@
       "version": "10.0.14",
       "license": "MIT",
       "licenseType": "expression",
-      "copyright": "\u00a9 Microsoft Corporation. All rights reserved.",
+      "copyright": "\u00c2\u00a9 Microsoft Corporation. All rights reserved.",
       "projectUrl": "https://dot.net/",
       "repository": {
         "type": "git",
@@ -703,6 +655,32 @@
         "commit": "b4a7fed0b878f74cb54f7cca84d2889af4e596ba"
       },
       "notices": []
+    }
+  ],
+  "platformComponents": [
+    {
+      "id": "Microsoft.Windows.SDK.NET.Ref",
+      "version": "10.0.19041.57",
+      "files": [
+        "Microsoft.Windows.SDK.NET.dll",
+        "WinRT.Runtime.dll"
+      ],
+      "licenses": [
+        "Windows SDK license terms",
+        "MIT (C#/WinRT runtime)"
+      ],
+      "notices": [
+        {
+          "path": "licenses/windows-sdk/10.0.19041.57/LICENSE.html",
+          "sha256": "32b15c0b65d5ba1fdc240bec8bcbdc4fc3ebc47be31df59198e4884e73939c8f",
+          "source": "https://learn.microsoft.com/en-us/legal/windows-sdk/license"
+        },
+        {
+          "path": "licenses/windows-sdk/10.0.19041.57/CsWinRT-LICENSE.txt",
+          "sha256": "9906940f61b1f0b533fa7d99baf55178b2808fbe113ea51dfbfad8572ccd5f2b",
+          "source": "https://raw.githubusercontent.com/microsoft/CsWinRT/master/LICENSE"
+        }
+      ]
     }
   ]
 }

@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$env:AVALONIA_TELEMETRY_OPTOUT = '1'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repositoryRoot 'src/Tern.Desktop/Tern.Desktop.csproj'
 $publishDirectory = Join-Path $repositoryRoot 'artifacts/publish/win-x64'

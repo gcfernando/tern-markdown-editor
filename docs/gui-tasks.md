@@ -89,3 +89,7 @@ Settings edits remain pending until **Apply**. **Done** applies and closes. **Ca
 The Activity entry shows separate operation identities, phases, measured counts, outcomes and inspectable errors. Cancellation appears only for operations with a real cancellation callback. History retains up to 50 completed/canceled entries and 100 failures, with the presenter paging 50 entries at a time. Save and recovery failures also remain on the affected note until resolved, independently of session history. Reduced motion retains immediate text feedback.
 
 For installation, use the actual application ZIP from a release, extract it and run `Tern.exe`. GitHub source archives are for building the source, not installation. Packaging, unsigned-publisher warnings, checksums and update/removal limits remain as described in the [release guide](releases.md); this source work makes no new signing or release claim.
+
+## Tern 1.0.5 authoring and release workflows
+
+See the [illustrated 1.0.5 workflows](workflows-1.0.5.md) for the shared Welcome and Help replay, ten templates, compact tags dialog, three link destination types, save-before-image and replacement prompts, separate line endings and encoding, actual PDF page selection and Windows distribution/Explorer steps. The main toolbar AI connection entry remains; the separate editor formatting-toolbar AI button/flyout and the Write with AI Create content starter were removed.

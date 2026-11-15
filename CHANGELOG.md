@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+See [Tern 1.0.5 release notes](docs/release-notes-1.0.5.md) for onboarding, templates, authoring dialogs, rendering, page selection and Windows distributions.
+
 ## 1.0.4 — November 15 2026
 
 - Pin the bundled Windows runtime to .NET 10.0.15 and include its matching upstream license notices, preventing SDK patch updates from causing runtime inventory mismatches during packaging.

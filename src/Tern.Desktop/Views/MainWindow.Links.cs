@@ -14,7 +14,11 @@ public partial class MainWindow
         var revision = tab.Session.Revision;
         var start = Editor.SelectionStart; var length = Editor.SelectionLength;
         var input = LinkInputPicker is { } picker ? await picker(Editor.SelectedText)
-            : await new InsertLinkWindow(Editor.SelectedText, tab.FilePath, tab.Analysis?.Headings ?? []).ShowDialog<LinkInput?>(this);
+            : await new InsertLinkWindow(Editor.SelectedText, tab.FilePath, tab.Analysis?.Headings ?? [], async () =>
+            {
+                if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision)) return null;
+                return await _shell.SaveTabAsync(tab) && ReferenceEquals(tab, _shown) ? tab.FilePath : null;
+            }).ShowDialog<LinkInput?>(this);
         if (input is null) return;
         if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || !CanRunCommand(CommandIds.InsertLink))
         { _shell.StatusMessage = "The document changed while choosing the link. Insert the link again."; return; }

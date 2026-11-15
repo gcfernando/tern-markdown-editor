@@ -33,8 +33,11 @@ public sealed class Oct30ReviewTests
         f.Window.ImageAttachmentPicker = _ => throw new InvalidOperationException("An existing image next to the saved note needs no copy picker.");
         if (paste) await f.Window.Clipboard!.SetFilesAsync([file]);
         else await f.Window.Clipboard!.SetTextAsync("");
-        if (paste) await f.Window.PasteEditorAsync();
-        else await f.Window.RunCommandAsync(CommandIds.InsertImage);
+        var insertion = paste ? f.Window.PasteEditorAsync() : f.Window.RunCommandAsync(CommandIds.InsertImage);
+        Dispatcher.UIThread.RunJobs(); f.Window.UpdateLayout();
+        var prompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
+        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save note")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        await insertion;
         Assert.Equal(f.Dialogs.SavePath, draft.FilePath);
         Assert.Equal(string.Empty, await File.ReadAllTextAsync(f.Dialogs.SavePath));
         Assert.Contains("(picture.png)", draft.CurrentText);
@@ -49,7 +52,11 @@ public sealed class Oct30ReviewTests
         using var f = new DesktopFixture();
         var draft = f.Shell.NewDocument();
         f.Window.ImageFilePicker = _ => throw new InvalidOperationException("Do not pick an image after save cancellation.");
-        await f.Window.RunCommandAsync(CommandIds.InsertImage);
+        var insertion = f.Window.RunCommandAsync(CommandIds.InsertImage);
+        Dispatcher.UIThread.RunJobs(); f.Window.UpdateLayout();
+        var prompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
+        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save note")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        await insertion;
         Assert.Null(draft.FilePath);
         Assert.Equal(string.Empty, draft.CurrentText);
         Assert.Contains(draft, f.Shell.Tabs);

@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <OutputType>WinExe</OutputType>
     <!-- Keep the bundled runtime aligned with the checked-in runtime license inventory. -->
-    <RuntimeFrameworkVersion>10.0.15</RuntimeFrameworkVersion>
+
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\tern.ico</ApplicationIcon>
@@ -15,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="10.0.15" />
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
@@ -44,5 +46,8 @@
     <InternalsVisibleTo Include="Tern.Desktop.Tests" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TernBundledContent)' != ''">
+    <EmbeddedResource Include="$(TernBundledContent)" LogicalName="Tern.DistributionContent.zip" />
+  </ItemGroup>
 </Project>
 

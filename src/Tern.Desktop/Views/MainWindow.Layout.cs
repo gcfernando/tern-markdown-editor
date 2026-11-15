@@ -88,6 +88,9 @@ public partial class MainWindow
     {
         var compact = Width < 1180 * Math.Max(1, _shell.Settings.UiScale);
         StatusPath.IsVisible = StatusWords.IsVisible = StatusProfile.IsVisible = _shown is not null && !compact;
+        // Long recovery descriptions remain in the tooltip/details action. Keep
+        // the explicit Encoding and Line endings controls on a compact row.
+        StatusSaved.MaxWidth = compact ? 100 : double.PositiveInfinity;
     }
 
     private void SetInspectorVisibility(bool visible)

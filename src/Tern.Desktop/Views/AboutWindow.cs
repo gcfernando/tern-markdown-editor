@@ -26,7 +26,7 @@ public sealed class AboutWindow : Window
     {
         DialogParts.Setup(this, "About Tern", 560, 560);
         MinHeight = 360;
-        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "1.0.4";
+        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "1.0.5";
         var close = new Button { Content = "Close", IsDefault = true, IsCancel = true };
         close.Classes.Add("accent");
         AutomationProperties.SetName(close, "Close about");
@@ -46,10 +46,24 @@ public sealed class AboutWindow : Window
         };
         AutomationProperties.SetName(details, "Third-party details");
         var header = new TextBlock { Text = "Tern", FontSize = GuideParts.Scaled(24), FontWeight = FontWeight.SemiBold };
+        var local = new Button { Content = "Guides and licenses" };
+        var localStatus = GuideParts.Caption("");
+        local.Click += async (_, _) =>
+        {
+            local.IsEnabled = false;
+            try
+            {
+                var path = await Services.DistributionContent.LocationAsync();
+                localStatus.Text = new Services.SystemLauncher().TryOpenFile(path) ?? "Opened " + path;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.ComponentModel.Win32Exception)
+            { localStatus.Text = "Could not open local documentation: " + ex.Message; }
+            finally { local.IsEnabled = true; }
+        };
         var body = GuideParts.Vertical(
             GuideParts.Caption("Version " + version), GuideParts.Body("Developed by Gehan Fernando"),
             GuideParts.Body("Write and read Markdown files on your computer. Use Split to see your writing beside its formatted preview, or Reading to focus on the finished document."),
-            details);
+            details, local, localStatus);
         Content = GuideParts.Frame(header, new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }, GuideParts.Actions(close));
     }
 }

@@ -84,6 +84,26 @@ public sealed class PcbDiagramLayoutTests
         }
     }
 
+    [Theory]
+    [InlineData(0, "P", "PM")]
+    [InlineData(2, "J", "PROT")]
+    [InlineData(3, "MCU", "LOG")]
+    [InlineData(5, "XTAL", "MCU")]
+    [InlineData(8, "POLICY", "LOSS")]
+    public void Nearby_single_ports_make_supplied_connections_straight(int diagramIndex, string from, string to)
+    {
+        var markdown = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "MarkdownSamples", "complex_pcb_circuit_network_design.md"));
+        var diagrams = Regex.Matches(markdown, @"```mermaid\s*\r?\n(.*?)```", RegexOptions.Singleline);
+        Assert.True(MermaidDiagram.TryParse(diagrams[diagramIndex].Groups[1].Value, out var parsed), parsed.ErrorMessage);
+        var layout = parsed.Flowchart!.Layout();
+        var edge = Assert.Single(layout.Edges, edge => edge.Edge.From == from && edge.Edge.To == to);
+        Assert.All(edge.Points, point => Assert.Equal(edge.Points[0].X, point.X, 6));
+        Assert.All(DiagramEdgePath.Build(edge.Points), segment => Assert.Null(segment.Control));
+        // Branches and feedback still use the accepted rounded-corner routing.
+        if (diagramIndex is 0 or 2 or 5 or 8)
+            Assert.Contains(layout.Edges.SelectMany(edge => DiagramEdgePath.Build(edge.Points)), segment => segment.Control is not null);
+    }
+
     private static double Cross(DiagramPoint a, DiagramPoint b, DiagramPoint c, DiagramPoint d) =>
         (b.X - a.X) * (d.Y - c.Y) - (b.Y - a.Y) * (d.X - c.X);
 

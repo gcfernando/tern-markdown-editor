@@ -210,10 +210,12 @@ public class DialogTests
 
         f.Window.StatusLineEnding.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Settle();
-        var rows = f.Window.Picker!.Results.Items.OfType<PickerItem>().ToList();
-        Assert.Equal(new[] { LineEnding.CrLf, LineEnding.Lf, LineEnding.Cr }, rows.Select(r => Assert.IsType<LineEnding>(r.Payload)));
-        f.Window.Picker.Results.SelectedIndex = rows.FindIndex(r => (LineEnding)r.Payload! == ending);
-        f.Window.Picker.Input.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Avalonia.Input.Key.Enter });
+        var menu = Assert.IsType<ContextMenu>(f.Window.StatusLineEnding.ContextMenu);
+        var rows = menu.Items.OfType<MenuItem>().ToArray();
+        Assert.Equal(new[] { "CRLF (Windows)", "LF (Unix / macOS)", "CR (classic Mac)" }, rows.Select(r => r.Header));
+        var index = ending == LineEnding.CrLf ? 0 : ending == LineEnding.Lf ? 1 : 2;
+        rows[index].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        menu.Close();
         await Settle();
 
         var expected = $"one{terminator}two{terminator}";

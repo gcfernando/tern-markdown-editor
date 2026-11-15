@@ -363,6 +363,8 @@ public partial class MainWindow
     internal void HideOverlay()
     {
         if (!IsOverlayOpen) return;
+        _replayingWelcome = false;
+        UpdateFirstNoteChecklist();
         var target = _overlayReturnFocus;
         _overlayReturnFocus = null;
         OverlayLayer.IsVisible = false;

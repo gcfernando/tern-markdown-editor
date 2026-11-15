@@ -8,7 +8,13 @@ The [license directory](https://github.com/gcfernando/tern-markdown-editor/tree/
 
 The graph declares MIT, BSD-2-Clause and Apache-2.0 package licenses. Inter's font data separately uses the SIL Open Font License 1.1. SQLite's underlying database engine is public domain; the Microsoft and SQLitePCLRaw bindings have their own MIT and Apache-2.0 terms. Native Skia, HarfBuzz and ANGLE components include additional upstream notices supplied in their package files.
 
+## Windows installer helpers
+
+The MSI wizard embeds unmodified WiX 3.14.1 WixUI and WixUtil helpers for native setup dialogs, folder validation and the optional launch action. WiX is copyright .NET Foundation and contributors and uses the Microsoft Reciprocal License (MS-RL). Its full notice/license and exact source references are included in [licenses/wix/3.14.1](licenses/wix/3.14.1/SOURCE.txt). The compiler and linker are build tools and are not installed with Tern.
+
 ## Locked desktop packages
+
+The Windows PDF preview additionally uses the Windows SDK .NET projection pack **10.0.19041.57**. `Microsoft.Windows.SDK.NET.dll` is supplied under the [Windows SDK license terms](licenses/windows-sdk/10.0.19041.57/LICENSE.html); `WinRT.Runtime.dll` uses the [C#/WinRT MIT license](licenses/windows-sdk/10.0.19041.57/CsWinRT-LICENSE.txt). These platform files and notice hashes are listed separately in the dependency inventory. The Windows PDF engine itself is provided by the operating system.
 
 | Package | Locked version | Package license | Copyright / attribution from package metadata |
 | --- | --- | --- | --- |

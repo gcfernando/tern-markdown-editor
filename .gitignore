@@ -8,6 +8,7 @@ TestResults/
 
 # Local development and agent scratch files
 /.runtime/
+/inputs/
 /tmp/
 /.idea/
 **/__pycache__/

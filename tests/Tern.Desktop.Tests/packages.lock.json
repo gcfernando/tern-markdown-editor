@@ -1,7 +1,7 @@
 {
   "version": 2,
   "dependencies": {
-    "net10.0": {
+    "net10.0-windows10.0.19041": {
       "Avalonia.Fonts.Inter": {
         "type": "Direct",
         "requested": "[12.1.4, )",
@@ -156,19 +156,13 @@
         "resolved": "8.3.1.3",
         "contentHash": "NGZ2+ZVNPM+NdHB/asW0/ykWngyHWwcqjrbN2nDeH1B/aptPGlCUl8wkQ2cSJxw5fdWgdmIPmNuTPWpLwNVXWg==",
         "dependencies": {
-          "HarfBuzzSharp.NativeAssets.Win32": "8.3.1.3",
-          "HarfBuzzSharp.NativeAssets.macOS": "8.3.1.3"
+          "HarfBuzzSharp.NativeAssets.Win32": "8.3.1.3"
         }
       },
       "HarfBuzzSharp.NativeAssets.Linux": {
         "type": "Transitive",
         "resolved": "8.3.1.3",
         "contentHash": "RI6A1LgmooU30+4QIyFt5rmBCzP0VzTR+587IJSGvYIsHHWlahFufihYxtraLfsIhW7I8dn6+xX+DZGygOPKWQ=="
-      },
-      "HarfBuzzSharp.NativeAssets.macOS": {
-        "type": "Transitive",
-        "resolved": "8.3.1.3",
-        "contentHash": "KPTq0xnslkI6nAo0jh3ptcQPJvZZr7MWYXa2jUe4SnHc9q+JlHElmNXp0sfFoiTgoCX7WOYpYsurypuH9Gehxw=="
       },
       "HarfBuzzSharp.NativeAssets.WebAssembly": {
         "type": "Transitive",
@@ -280,19 +274,13 @@
         "resolved": "3.119.4",
         "contentHash": "53NOSUZ1Us+91Sm0uCkIivh/k7jOowRErZT2sIWwPFN9mLUvdxnE6rS4sWo4255+Rd2MWUSF+j0NMZHD6Cke+Q==",
         "dependencies": {
-          "SkiaSharp.NativeAssets.Win32": "3.119.4",
-          "SkiaSharp.NativeAssets.macOS": "3.119.4"
+          "SkiaSharp.NativeAssets.Win32": "3.119.4"
         }
       },
       "SkiaSharp.NativeAssets.Linux": {
         "type": "Transitive",
         "resolved": "3.119.4",
         "contentHash": "UAyVzbqNfZsZbKbzj68zXLyUyF/SbTKmzTfOO6qDu++dtIUMMTzPBe8oOuzU/DiewpfKoUUlOSsJmqWc6blxBw=="
-      },
-      "SkiaSharp.NativeAssets.macOS": {
-        "type": "Transitive",
-        "resolved": "3.119.4",
-        "contentHash": "fgBOWEqbY012x7gMfJU4ezgz6dfhJb30Z6YdW35h85Zoe39+a8YNbAAwL29ihPfWoppg5AjvyKNzD1oCvlqWwA=="
       },
       "SkiaSharp.NativeAssets.WebAssembly": {
         "type": "Transitive",
@@ -412,30 +400,30 @@
           "Avalonia.Fonts.Inter": "[12.1.4, )",
           "Avalonia.Themes.Fluent": "[12.1.4, )",
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "Tern.App": "[1.0.0-rc.2, )",
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Export": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )",
-          "Tern.PreviewView": "[1.0.0-rc.2, )",
-          "Tern.Recovery": "[1.0.0-rc.2, )",
-          "Tern.Rendering": "[1.0.0-rc.2, )",
-          "Tern.Search": "[1.0.0-rc.2, )",
-          "Tern.Workspaces": "[1.0.0-rc.2, )"
+          "Tern.App": "[1.0.5, )",
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Export": "[1.0.5, )",
+          "Tern.Filesystem": "[1.0.5, )",
+          "Tern.Markdown": "[1.0.5, )",
+          "Tern.PreviewView": "[1.0.5, )",
+          "Tern.Recovery": "[1.0.5, )",
+          "Tern.Rendering": "[1.0.5, )",
+          "Tern.Search": "[1.0.5, )",
+          "Tern.Workspaces": "[1.0.5, )"
         }
       },
       "tern.app": {
         "type": "Project",
         "dependencies": {
           "CommunityToolkit.Mvvm": "[8.4.2, )",
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Export": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )",
-          "Tern.Recovery": "[1.0.0-rc.2, )",
-          "Tern.Rendering": "[1.0.0-rc.2, )",
-          "Tern.Search": "[1.0.0-rc.2, )",
-          "Tern.Workspaces": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Export": "[1.0.5, )",
+          "Tern.Filesystem": "[1.0.5, )",
+          "Tern.Markdown": "[1.0.5, )",
+          "Tern.Recovery": "[1.0.5, )",
+          "Tern.Rendering": "[1.0.5, )",
+          "Tern.Search": "[1.0.5, )",
+          "Tern.Workspaces": "[1.0.5, )"
         }
       },
       "tern.domain": {
@@ -446,61 +434,61 @@
         "dependencies": {
           "PDFsharp": "[6.2.4, )",
           "System.Security.Cryptography.Pkcs": "[10.0.14, )",
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )",
-          "Tern.Rendering": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Filesystem": "[1.0.5, )",
+          "Tern.Markdown": "[1.0.5, )",
+          "Tern.Rendering": "[1.0.5, )"
         }
       },
       "tern.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )"
         }
       },
       "tern.markdown": {
         "type": "Project",
         "dependencies": {
           "Markdig": "[1.5.0, )",
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )"
         }
       },
       "tern.previewview": {
         "type": "Project",
         "dependencies": {
           "Avalonia": "[12.1.4, )",
-          "Tern.Rendering": "[1.0.0-rc.2, )"
+          "Tern.Rendering": "[1.0.5, )"
         }
       },
       "tern.recovery": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Filesystem": "[1.0.5, )"
         }
       },
       "tern.rendering": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Markdown": "[1.0.5, )"
         }
       },
       "tern.search": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.14, )",
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )",
-          "Tern.Workspaces": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Markdown": "[1.0.5, )",
+          "Tern.Workspaces": "[1.0.5, )"
         }
       },
       "tern.workspaces": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.5, )",
+          "Tern.Filesystem": "[1.0.5, )",
+          "Tern.Markdown": "[1.0.5, )"
         }
       },
       "Avalonia": {
@@ -577,7 +565,7 @@
         "contentHash": "Wz+IgL2xpg8KJ4i2VWj6uz1PmZNu4Q0Ljlwd73P9Vze5NcOBtctLii3itV0PB2MpOqwqDEGfB6RCdv94A4E5yQ=="
       }
     },
-    "net10.0/win-x64": {
+    "net10.0-windows10.0.19041/win-x64": {
       "Avalonia.Angle.Windows.Natives": {
         "type": "Transitive",
         "resolved": "2.1.27548.20260419",
@@ -596,11 +584,6 @@
         "resolved": "8.3.1.3",
         "contentHash": "RI6A1LgmooU30+4QIyFt5rmBCzP0VzTR+587IJSGvYIsHHWlahFufihYxtraLfsIhW7I8dn6+xX+DZGygOPKWQ=="
       },
-      "HarfBuzzSharp.NativeAssets.macOS": {
-        "type": "Transitive",
-        "resolved": "8.3.1.3",
-        "contentHash": "KPTq0xnslkI6nAo0jh3ptcQPJvZZr7MWYXa2jUe4SnHc9q+JlHElmNXp0sfFoiTgoCX7WOYpYsurypuH9Gehxw=="
-      },
       "HarfBuzzSharp.NativeAssets.Win32": {
         "type": "Transitive",
         "resolved": "8.3.1.3",
@@ -615,11 +598,6 @@
         "type": "Transitive",
         "resolved": "3.119.4",
         "contentHash": "UAyVzbqNfZsZbKbzj68zXLyUyF/SbTKmzTfOO6qDu++dtIUMMTzPBe8oOuzU/DiewpfKoUUlOSsJmqWc6blxBw=="
-      },
-      "SkiaSharp.NativeAssets.macOS": {
-        "type": "Transitive",
-        "resolved": "3.119.4",
-        "contentHash": "fgBOWEqbY012x7gMfJU4ezgz6dfhJb30Z6YdW35h85Zoe39+a8YNbAAwL29ihPfWoppg5AjvyKNzD1oCvlqWwA=="
       },
       "SkiaSharp.NativeAssets.Win32": {
         "type": "Transitive",

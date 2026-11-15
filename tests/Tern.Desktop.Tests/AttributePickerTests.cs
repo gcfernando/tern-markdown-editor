@@ -21,7 +21,7 @@ public sealed class AttributePickerTests
         var path = await fixture.WriteAsync("attributes.md", text);
         var tab = (await fixture.Shell.OpenFileAsync(path))!;
         await Settle();
-        Assert.Equal("LF", fixture.Window.StatusLineEnding.Content);
+        Assert.Equal("Line endings: LF", fixture.Window.StatusLineEnding.Content);
         fixture.Window.StatusEncoding.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Settle();
         fixture.Window.Picker!.Input.Text = "CP 1200 ·";

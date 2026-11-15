@@ -105,6 +105,27 @@ class PublicationTests(unittest.TestCase):
         )
         self.assertIn(ENV["GITHUB_SHA"], self.api.release["tag_name"])
 
+    def test_105_requires_and_uploads_every_distribution(self):
+        exe = self.package.parent / "Tern.exe"
+        msi = self.package.parent / "Tern-1.0.5.msi"
+        exe.write_bytes(b"MZ" + bytes(64))
+        msi.write_bytes(bytes.fromhex("D0CF11E0A1B11AE1") + bytes(64))
+        with self.assertRaises(release.ReleaseError):
+            release.publish(self.api, ENV, "Tern", "1.0.5", [self.package])
+        self.assertEqual([], self.api.calls)
+        release.publish(self.api, ENV, "Tern", "1.0.5", [self.package, exe, msi])
+        self.assertEqual({self.package.name, exe.name, msi.name, "SHA256SUMS.txt"},
+                         {a["name"] for a in self.api.release["assets"]})
+
+    def test_105_rejects_a_non_executable_before_publication(self):
+        exe = self.package.parent / "Tern.exe"
+        msi = self.package.parent / "Tern-1.0.5.msi"
+        exe.write_bytes(b"not an executable")
+        msi.write_bytes(bytes.fromhex("D0CF11E0A1B11AE1"))
+        with self.assertRaises(release.ReleaseError):
+            release.publish(self.api, ENV, "Tern", "1.0.5", [self.package, exe, msi])
+        self.assertEqual([], self.api.calls)
+
     def test_failure_never_publishes_draft(self):
         self.api.fail_upload = True
         with self.assertRaises(release.ReleaseError):
