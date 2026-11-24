@@ -15,7 +15,7 @@ public sealed class AddDestinationWindow : Window
 {
     public AddDestinationWindow(string selectedName, string selectedPath, bool isWorkspace, string actionLabel = "Add")
     {
-        DialogParts.Setup(this, "Choose where to add", 500, 480);
+        DialogParts.Setup(this, "Choose where to add", 500, 480, DialogGuidance.Create, guidance: false);
         var selected = DestinationButton(
             (isWorkspace ? "Workspace · " : "Folder · ") + selectedName,
             selectedPath, "Use selected location");
