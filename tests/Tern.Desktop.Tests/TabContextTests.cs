@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
+using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Tern.App.Shell;
@@ -11,6 +12,37 @@ namespace Tern.Desktop.Tests;
 
 public sealed class TabContextTests
 {
+    [AvaloniaFact]
+    public async Task Saved_tab_context_copies_and_reveals_its_path_and_reopens_a_closed_file()
+    {
+        using var fixture = new DesktopFixture();
+        var path = await fixture.WriteAsync("target.md", "# Target");
+        var target = await fixture.Shell.OpenFileAsync(path);
+        fixture.Shell.NewDocument("Other unsaved work");
+        Settle(fixture);
+        var owner = Assert.Single(fixture.Window.TabStrip.GetVisualDescendants().OfType<StackPanel>(),
+            panel => ReferenceEquals(panel.DataContext, target) && panel.ContextMenu is not null);
+        var menu = owner.ContextMenu!;
+        menu.Open(owner); Settle(fixture);
+        MenuItem Action(string tag) => Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Tag, tag));
+        Assert.EndsWith("…", Action("tab.rename").Header!.ToString());
+        Action("tab.copyPath").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Equal(path, await fixture.Window.Clipboard!.TryGetTextAsync());
+        Action("tab.reveal").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Assert.Equal([path], fixture.Launcher.Revealed);
+        Action("tab.close").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        Settle(fixture);
+        Assert.DoesNotContain(target, fixture.Shell.Tabs);
+        Assert.Equal("Other unsaved work", fixture.Shell.ActiveTab!.CurrentText);
+        Action("tab.reopen").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        for (var attempt = 0; attempt < 100 && fixture.Shell.ActiveTab?.FilePath != path; attempt++)
+        { await Task.Delay(10, TestContext.Current.CancellationToken); Settle(fixture); }
+        Assert.Equal(path, fixture.Shell.ActiveTab!.FilePath);
+        Assert.Equal("# Target", fixture.Shell.ActiveTab.CurrentText);
+        Assert.Contains(fixture.Shell.Tabs, tab => tab.CurrentText == "Other unsaved work" && tab.IsDirty);
+        menu.Close();
+    }
+
     [AvaloniaTheory]
     [InlineData("tab.close", 2)]
     [InlineData("tab.closeAll", 0)]
@@ -29,7 +61,9 @@ public sealed class TabContextTests
         var menu = owner.ContextMenu!;
         menu.Open(owner);
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal(5, menu.Items.Count);
+        Assert.Equal(["tab.rename", "tab.copyPath", "tab.reveal", "tab.reopen", "tab.close", "tab.closeAll", "tab.closeRight", "tab.closeOthers"],
+            menu.Items.OfType<MenuItem>().Select(item => item.Tag));
+        Assert.IsType<Separator>(menu.Items[4]);
         var action = Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Tag, tag));
         action.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Settle(fixture);

@@ -30,7 +30,7 @@ public sealed class ReadmeIssueTests
             var output = Path.Combine(f.Docs, "note.html");
             Assert.True(await window.ExportAsync(output)); Assert.All(actions, b => Assert.True(b.IsVisible));
             window.Format = ExportFormat.Pdf; Pump(window); Hidden();
-            Assert.Null(Find<TextBox>(window, "Output file").Text);
+            Assert.Equal(Path.Combine(f.Docs, "note.pdf"), Find<TextBox>(window, "Output file").Text);
             Assert.Empty(window.Warnings); Assert.False(window.Truncated);
             Assert.False(await window.ExportAsync(null)); Hidden();
             var pdf = Path.Combine(f.Docs, "note.pdf"); Assert.True(await window.ExportAsync(pdf));
@@ -108,7 +108,7 @@ public sealed class ReadmeIssueTests
     {
         using var f = new DesktopFixture();
         Assert.NotEmpty(f.Window.GetVisualDescendants().OfType<GuidanceStrip>());
-        var window = new Window(); DialogParts.Setup(window, "Insert image", 500, 400); window.Content = new TextBox(); window.Show(f.Window); Pump(window);
+        var window = new Window(); DialogParts.Setup(window, "Insert image", 500, 400, DialogGuidance.Image); window.Content = new TextBox(); window.Show(f.Window); Pump(window);
         try { Assert.Contains("image", Assert.Single(window.GetVisualDescendants().OfType<GuidanceStrip>()).Message); }
         finally { window.Close(); }
     }
@@ -142,7 +142,7 @@ public sealed class ReadmeIssueTests
             notes.IsExpanded = true; Pump(export); Capture(export, "export-notes-expanded");
             export.Format = ExportFormat.Pdf; Pump(export);
             Assert.Empty(export.Warnings); Assert.False(notes.IsVisible);
-            Assert.Null(Find<TextBox>(export, "Output file").Text);
+            Assert.Equal(Path.Combine(f.Docs, "warnings.pdf"), Find<TextBox>(export, "Output file").Text);
             Assert.All(export.GetVisualDescendants().OfType<Button>().Where(b => b.Content is "Open file" or "Show in folder"), b => Assert.False(b.IsVisible));
             Capture(export, "export-format-reset");
         }

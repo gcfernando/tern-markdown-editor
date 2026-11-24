@@ -23,6 +23,9 @@ public sealed record MarkdownUrlDocument(Uri SourceUrl, string SuggestedFileName
 /// <summary>One explicit public or loopback-server Markdown fetch. Never writes files or supplies credentials.</summary>
 public sealed partial class MarkdownUrlLoader : IDisposable
 {
+    public Func<bool>? NetworkAllowed { get; set; }
+    private void EnsureNetworkAllowed()
+    { if (NetworkAllowed?.Invoke() == false) throw new InvalidOperationException("Offline mode blocks URL import. Turn Offline off to connect."); }
     public const int MaximumBytes = 10_000_000;
     private readonly HttpClient _http;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _resolve;
@@ -44,6 +47,7 @@ public sealed partial class MarkdownUrlLoader : IDisposable
     public async Task<MarkdownUrlDocument> LoadAsync(string url, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        EnsureNetworkAllowed();
         var current = GetFetchAddress(url);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(_timeout);
@@ -51,7 +55,9 @@ public sealed partial class MarkdownUrlLoader : IDisposable
         {
             for (var redirects = 0; redirects <= 3; redirects++)
             {
+                EnsureNetworkAllowed();
                 await ResolveAllowedAsync(current.IdnHost, deadline.Token).ConfigureAwait(false);
+                EnsureNetworkAllowed();
                 using var request = new HttpRequestMessage(HttpMethod.Get, current);
                 request.Headers.Accept.ParseAdd("text/markdown, text/plain;q=0.9, application/octet-stream;q=0.5");
                 request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };

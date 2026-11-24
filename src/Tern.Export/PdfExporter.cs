@@ -13,28 +13,29 @@ public static class PdfExporter
 {
     /// <summary>Parses <paramref name="markdown"/> with the preview pipeline and lays it out as PDF.</summary>
     /// <exception cref="ExportException">No usable system font was found.</exception>
-    public static PdfExportResult Export(string markdown, PdfExportOptions? options = null)
+    public static PdfExportResult Export(string markdown, PdfExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         options ??= new PdfExportOptions();
         var resolver = PreviewBuilder.CreateResolver(options.Preview);
-        var document = PreviewBuilder.Build(markdown, options.Preview, resolver);
-        return Export(document, options, resolver);
+        var document = PreviewBuilder.Build(markdown, options.Preview, resolver, cancellationToken);
+        return Export(document, options, resolver, cancellationToken);
     }
 
     /// <summary>Lays out an already built preview document. <paramref name="resolver"/> must be the one the document was built with.</summary>
     /// <exception cref="ExportException">No usable system font was found.</exception>
-    public static PdfExportResult Export(PreviewDocument document, PdfExportOptions options, SafeResourceResolver resolver)
+    public static PdfExportResult Export(PreviewDocument document, PdfExportOptions options, SafeResourceResolver resolver, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(resolver);
+        cancellationToken.ThrowIfCancellationRequested();
         Validate(options);
         SystemFontResolver.Install();
 
         var warnings = new List<string>();
         if (document.Truncated) warnings.Add("The export is incomplete: the document exceeded the rendering budget. Only the first part was exported.");
-        var images = new ImageEmbedder(options.MaxImageBytes, options.MaxTotalImageBytes, warnings, options.RemoteImageBytes);
+        var images = new ImageEmbedder(options.MaxImageBytes, options.MaxTotalImageBytes, warnings, options.RemoteImageBytes, cancellationToken);
         var created = (options.CreationDate ?? DateTimeOffset.UtcNow).UtcDateTime;
         using var pdf = new PdfDocument();
         pdf.Info.Title = ExportText.Clean(options.Title ?? FirstHeading(document) ?? "Document");
@@ -43,7 +44,7 @@ public static class PdfExporter
         pdf.Info.CreationDate = created;
         pdf.Options.CompressContentStreams = true;
 
-        using var renderer = new PdfRenderer(pdf, options, resolver, images, warnings);
+        using var renderer = new PdfRenderer(pdf, options, resolver, images, warnings, cancellationToken);
         var complete = renderer.Render(document);
         if (options.PageNumbers)
         {
@@ -52,17 +53,18 @@ public static class PdfExporter
 
         renderer.AddLinkAnnotations();
         var pageCount = renderer.PageCount;
-        using var stream = new MemoryStream();
+        using var stream = new CancellableMemoryStream(cancellationToken);
         pdf.Save(stream, closeStream: false);
-        return new PdfExportResult(PdfUnicodeMap.Correct(stream.ToArray()), pageCount, warnings.Distinct(StringComparer.Ordinal).ToList(), document.Truncated || !complete);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new PdfExportResult(PdfUnicodeMap.Correct(stream.ToArray(), cancellationToken), pageCount, warnings.Distinct(StringComparer.Ordinal).ToList(), document.Truncated || !complete);
     }
 
     /// <summary>Exports to a file (written atomically) and returns the result.</summary>
-    public static PdfExportResult ExportToFile(string markdown, string outputPath, PdfExportOptions? options = null)
+    public static PdfExportResult ExportToFile(string markdown, string outputPath, PdfExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        var result = Export(markdown, options);
-        AtomicFile.Write(outputPath, result.Data, options?.Preview.DocumentPath);
+        var result = Export(markdown, options, cancellationToken);
+        AtomicFile.Write(outputPath, result.Data, options?.Preview.DocumentPath, cancellationToken);
         return result;
     }
 

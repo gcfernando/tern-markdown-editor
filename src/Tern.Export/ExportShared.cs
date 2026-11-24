@@ -88,7 +88,8 @@ internal static class ImageSniffer
 }
 
 /// <summary>Reads images that the resolver allowed, enforcing per-image and total size budgets.</summary>
-internal sealed class ImageEmbedder(long maxImageBytes, long maxTotalBytes, List<string> warnings, Func<string, byte[]?>? remoteImageBytes = null)
+internal sealed class ImageEmbedder(long maxImageBytes, long maxTotalBytes, List<string> warnings, Func<string, byte[]?>? remoteImageBytes = null,
+    CancellationToken cancellationToken = default)
 {
     private readonly Dictionary<string, EmbeddedImage?> _cache = new(StringComparer.Ordinal);
     private long _total;
@@ -98,6 +99,7 @@ internal sealed class ImageEmbedder(long maxImageBytes, long maxTotalBytes, List
     /// <summary>Resolves a decision to image bytes. Returns null and records a warning when the image cannot be embedded.</summary>
     public EmbeddedImage? TryEmbed(ResourceDecision decision, string label)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         switch (decision)
         {
             case LocalFile { IsActiveContentRisk: true } active when !Path.GetExtension(active.CanonicalPath).Equals(".svg", StringComparison.OrdinalIgnoreCase):
@@ -135,7 +137,7 @@ internal sealed class ImageEmbedder(long maxImageBytes, long maxTotalBytes, List
                     if (remoteImageBytes?.Invoke(remote.Original) is { } data)
                         remoteImage = Accept(data, label, allowSvg: true);
                 }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
+                catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
                 {
                     warnings.Add($"Remote image '{label}' could not be read.");
                 }
@@ -163,7 +165,11 @@ internal sealed class ImageEmbedder(long maxImageBytes, long maxTotalBytes, List
             }
 
             var buffer = new byte[stream.Length];
-            stream.ReadExactly(buffer);
+            for (var offset = 0; offset < buffer.Length; offset += 65536)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                stream.ReadExactly(buffer.AsSpan(offset, Math.Min(65536, buffer.Length - offset)));
+            }
             return Accept(buffer, label, allowSvg);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -175,6 +181,7 @@ internal sealed class ImageEmbedder(long maxImageBytes, long maxTotalBytes, List
 
     private EmbeddedImage? Accept(byte[] data, string label, bool allowSvg = false)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (data.Length > maxImageBytes || data.Length > maxTotalBytes - _total)
         {
             warnings.Add($"Image '{label}' exceeds the embedding budget and was not embedded.");
@@ -249,8 +256,9 @@ internal static class ExportText
 /// <summary>Writes output files without leaving a half-written file behind.</summary>
 internal static class AtomicFile
 {
-    public static void Write(string path, byte[] data, string? sourcePath = null)
+    public static void Write(string path, byte[] data, string? sourcePath = null, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var full = Path.GetFullPath(path);
         EnsureSeparate(full, sourcePath);
         var directory = Path.GetDirectoryName(full);
@@ -262,7 +270,16 @@ internal static class AtomicFile
         var temp = full + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllBytes(temp, data);
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.WriteThrough))
+            {
+                for (var offset = 0; offset < data.Length; offset += 65536)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    stream.Write(data.AsSpan(offset, Math.Min(65536, data.Length - offset)));
+                }
+                stream.Flush(flushToDisk: true);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             EnsureSeparate(full, sourcePath);
             File.Move(temp, full, overwrite: true);
         }
@@ -273,6 +290,7 @@ internal static class AtomicFile
                 File.Delete(temp);
             }
         }
+
     }
 
     private static void EnsureSeparate(string outputPath, string? sourcePath)
@@ -281,5 +299,26 @@ internal static class AtomicFile
         {
             throw new ExportException("Choose an export destination separate from the Markdown source.");
         }
+    }
+}
+
+internal sealed class CancellableMemoryStream(CancellationToken cancellationToken) : MemoryStream
+{
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        base.Write(buffer, offset, count);
+    }
+
+    public override void Write(ReadOnlySpan<byte> buffer)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        base.Write(buffer);
+    }
+
+    public override void WriteByte(byte value)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        base.WriteByte(value);
     }
 }

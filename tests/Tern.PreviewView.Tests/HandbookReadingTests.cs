@@ -56,7 +56,7 @@ public sealed class HandbookReadingTests(ITestOutputHelper output)
             view.ScrollByPage(-1); Harness.Pump(window, 8);
             Assert.True(view.Scroller.Offset.Y < 100);
             view.ScrollToSourceLine(92); Harness.Pump(window, 8);
-            var outputDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../artifacts/screenshots/reading-mode"));
+            var outputDirectory = Tern.Tests.Shared.TestOutput.Folder("screenshots", "reading-mode");
             Directory.CreateDirectory(outputDirectory);
             using var frame = Harness.Capture(window);
             Assert.NotNull(frame);

@@ -11,18 +11,18 @@ using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Views;
 
-/// <summary>A window-owned, bounded tutor conversation. Only explicitly submitted text is shared.</summary>
+/// <summary>Window-owned answer display. Each submitted question is an independent AI request.</summary>
 internal sealed class HelpTutorView : UserControl, IDisposable
 {
     internal ComboBox Connections { get; } = new() { PlaceholderText = "Offline guides (no AI connection)", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
-    internal TextBox Question { get; } = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 160, MaxHeight = 240, MaxLength = 8000, PlaceholderText = "Ask about a Tern feature or describe the screen you need help with…" };
+    internal TextBox Question { get; } = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 160, MaxHeight = 240, MaxLength = AIConnectionRules.MaximumSendCharacters, PlaceholderText = "Ask about a Tern feature or describe the screen you need help with…" };
     internal Button SendButton { get; } = new() { Content = "Send question", Classes = { "accent" } };
     internal HelpAnswerView Transcript { get; } = new();
     private readonly GuidanceStrip _guidance = new("Choose a connection, or ask using the installed offline guides.", "help");
     private readonly TextBlock _destination = GuideParts.Caption("");
     private readonly TextBlock _offlineNotice = GuideParts.Body("");
-    private readonly TextBlock _status = GuideParts.Body("Type a Tern question, such as ‘How do I export a PDF?’, to get started.");
-    private readonly StackPanel _references = new() { Spacing = 8 };
+    private readonly TextBlock _status = MessageTones.Follow(GuideParts.Body("Type a Tern question, such as ‘How do I export a PDF?’, to get started."));
+    private readonly StackPanel _references = new() { [!StackPanel.SpacingProperty] = GuideParts.Space(8).ToBinding() };
     private readonly AIWorkspaceService _workspace;
     private readonly CommandRegistry _registry;
     private readonly List<(string Question, string Answer)> _turns = [];
@@ -32,6 +32,7 @@ internal sealed class HelpTutorView : UserControl, IDisposable
     private bool _disposed;
     private int _generation;
     private string? _conversationProfile;
+    private string? _sizeProblem;
 
     public HelpTutorView(AIWorkspaceService workspace, CommandRegistry registry, Func<Task> configure,
         Func<string, Task>? open, Func<string, bool>? canOpen, Action<FeatureHelp> lesson, Action<string>? practice, Func<string?>? selectedText = null)
@@ -56,20 +57,20 @@ internal sealed class HelpTutorView : UserControl, IDisposable
         copy.Click += async (_, _) =>
         {
             try { if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(Transcript.Text ?? ""); }
-            catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.ExternalException) { _status.Text = "Could not copy: " + ex.Message; }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.ExternalException) { _status.Text = "Could not copy: " + Tern.App.Shell.UserProblem.Plain(ex); }
         };
         Connections.SelectionChanged += (_, _) =>
         {
             if (_refreshing) return;
             var selected = Connections.SelectedItem as WorkspaceConnection;
             try { workspace.SelectHelp(selected?.Id); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _status.Text = "The Help selection could not be saved. " + ex.Message; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _status.Text = "The Help selection could not be saved. " + Tern.App.Shell.UserProblem.Plain(ex); }
             if (_conversationProfile != selected?.Id)
             {
                 _generation++; _request?.Cancel(); _turns.Clear(); Transcript.Text = ""; Transcript.IsVisible = false; _references.Children.Clear();
                 _conversationProfile = selected?.Id;
 
-                _status.Text = "New conversation. Earlier provider history will not be shared.";
+                _status.Text = "Each request starts fresh. Earlier questions and answers are not sent.";
             }
             UpdateDestination();
         };
@@ -87,16 +88,7 @@ internal sealed class HelpTutorView : UserControl, IDisposable
             _guidance.Message = "Preparing your answer. Cancel answer stops waiting and keeps your question.";
             try
             {
-                var history = _turns.TakeLast(4).ToList();
-                while (history.Sum(t => t.Question.Length + t.Answer.Length) > 6000) history.RemoveAt(0);
-                string Build() => GuideQuestionPrompt.Build(registry, exactQuestion, selected.Kind == "copilot",
-                    string.Join("\n\n", history.Select(t => "USER: " + t.Question + "\nASSISTANT: " + t.Answer)));
-                string message;
-                while (true)
-                {
-                    try { message = Build(); break; }
-                    catch (InvalidOperationException) when (history.Count > 0) { history.RemoveAt(0); }
-                }
+                var message = BuildQuestion(exactQuestion, selected);
                 var answer = await workspace.SendWritingAsync(selected.Id, message,
                     () => !_disposed && generation == _generation && workspace.Connections.Contains(selected), request.Token);
                 request.Token.ThrowIfCancellationRequested();
@@ -108,21 +100,21 @@ internal sealed class HelpTutorView : UserControl, IDisposable
                 _turns.Clear(); _turns.AddRange(turns);
 
                 _status.Text = "Answer received. Check it against the installed guides below. No note was changed.";
-                _guidance.Message = "Read the formatted answer below. Ask a follow-up, copy the conversation, or open a related guide.";
+                _guidance.Message = "Read the answer below. Enter another complete question, copy these answers, or open a related guide.";
                 _references.Children.Clear();
                 // References/actions come from the installed catalog, never model strings or links.
                 foreach (var feature in GuideQuestionPrompt.Relevant(registry, exactQuestion).Take(3))
                 {
                     var show = new Button { Content = "Show lesson · " + feature.Name };
                     show.Click += (_, _) => lesson(feature);
-                    var actions = GuideParts.Actions(show);
+                    var actions = GuideParts.ButtonRow(show);
                     if (FeatureCatalog.CanLaunchFromGuide(feature.LaunchCommandId) && open is not null)
                     {
                         var tool = new Button { Content = "Open this tool" };
                         tool.Click += async (_, _) => { if (canOpen?.Invoke(feature.LaunchCommandId!) != false) await open(feature.LaunchCommandId!); else _status.Text = "This tool is unavailable in the current document or workspace."; };
                         actions.Children.Add(tool);
                     }
-                    var tryIt = new Button { Content = "Try in practice note", IsVisible = practice is not null };
+                    var tryIt = new Button { Content = "Try in practice document", IsVisible = practice is not null };
                     tryIt.Click += (_, _) => practice?.Invoke("# Practice · " + feature.Name + "\n\n"); actions.Children.Add(tryIt);
                     _references.Children.Add(GuideParts.Card(GuideParts.Vertical(GuideParts.Caption(feature.Name + " · installed guide"), GuideParts.Body(feature.Description), actions)));
                 }
@@ -136,25 +128,25 @@ internal sealed class HelpTutorView : UserControl, IDisposable
                 }
             }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or PlatformNotSupportedException or System.ComponentModel.Win32Exception)
-            { if (!_disposed && generation == _generation) await ShowOfflineAnswer(exactQuestion, ex.Message); }
+            { if (!_disposed && generation == _generation) await ShowOfflineAnswer(exactQuestion, Tern.App.Shell.UserProblem.Plain(ex)); }
             finally { if (ReferenceEquals(_request, request)) _request = null; if (!_disposed) { Connections.IsEnabled = true; cancel.IsEnabled = false; UpdateDestination(); } }
         };
         var privacyButton = new Button { Content = "What is shared?", Classes = { "flat" } };
-        var privacyPopup = DialogParts.PanelFlyout(GuideParts.Caption("Only your question, installed Tern guide facts and bounded recent conversation are shared with the chosen connection. Notes, selections and paths are never attached."));
+        var privacyPopup = DialogParts.PanelFlyout(GuideParts.Caption("Tern sends its instructions, your current question and installed guide facts. Earlier questions and answers are not sent. Notes, selections and paths are not attached automatically."));
         privacyPopup.Content = new Border { MaxWidth = 400, Child = (Control)privacyPopup.Content! };
         privacyButton.Flyout = privacyPopup;
         cancel.IsVisible = false;
         cancel.PropertyChanged += (_, e) => { if (e.Property == Button.IsEnabledProperty) cancel.IsVisible = cancel.IsEnabled; };
         AutomationProperties.SetName(_status, "Tern help status");
-        var connectionRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, Children = { Connections, setup } };
+        var connectionRow = new Grid { ColumnDefinitions = new("*,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding(), Children = { Connections, setup } };
         Grid.SetColumn(setup, 1);
-        var conversation = GuideParts.Actions(clear, copy, privacyButton); conversation.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        var conversation = GuideParts.ButtonRow(clear, copy, privacyButton); conversation.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
         AutomationProperties.SetName(conversation, "Conversation options");
         var browse = new Button { Content = "Browse installed guides" };
         browse.Click += (_, _) => { if (this.FindAncestorOfType<Window>() is { } window && window.Content is TabControl tabs) tabs.SelectedIndex = 0; };
         var notice = GuideParts.Card(GuideParts.Vertical(_offlineNotice, GuideParts.Caption("Offline help finds matching guide steps. It does not generate answers or interpret conversation history."), browse));
-        var header = GuideParts.Vertical(GuideParts.Title("Ask about Tern"), notice, GuideParts.Caption("Help connection · optional"), connectionRow, _destination, conversation);
-        var questionBody = GuideParts.Vertical(GuideParts.Caption("Your Tern question"), Question, GuideParts.Actions(cancel, SendButton));
+        var header = GuideParts.Vertical(GuideParts.Title("Ask about Tern"), notice, GuideParts.Caption("AI connection · shared across Tern"), connectionRow, _destination, conversation);
+        var questionBody = GuideParts.Vertical(GuideParts.Caption("Your Tern question"), Question, GuideParts.ButtonRow(cancel, SendButton));
         var questionPane = new ScrollViewer { Content = questionBody, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         void FitQuestion()
         {
@@ -176,9 +168,9 @@ internal sealed class HelpTutorView : UserControl, IDisposable
         AutomationProperties.SetName(empty, "Answer area guidance");
         var answers = new Grid { Children = { empty, Transcript } };
         Transcript.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty) empty.IsVisible = !Transcript.IsVisible; };
-        var answerPanel = new Grid { RowDefinitions = new("Auto,*,Auto"), RowSpacing = 8, Children = { _status, answers, related } };
+        var answerPanel = new Grid { RowDefinitions = new("Auto,*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(8).ToBinding(), Children = { _status, answers, related } };
         Grid.SetRow(answers, 1); Grid.SetRow(related, 2);
-        var content = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = 12, Children = { questionPane, GuideParts.Card(answerPanel) } };
+        var content = new Grid { RowDefinitions = new("Auto,*"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding(), Children = { questionPane, GuideParts.Card(answerPanel) } };
         Grid.SetRow(content.Children[1], 1);
         Content = GuideParts.Frame(header, content, _guidance);
         workspace.Reloaded += OnReloaded; RefreshConnections();
@@ -206,8 +198,22 @@ internal sealed class HelpTutorView : UserControl, IDisposable
             : offline ? "Offline guides are selected. AI-generated answers require a text-generation connection."
             : "An AI connection is selected. Your question is sent only when you choose Send question.";
         SendButton.Content = offline ? "Find guide steps" : "Send question";
-        SendButton.IsEnabled = _request is null && !string.IsNullOrWhiteSpace(Question.Text);
+        var previousProblem = _sizeProblem;
+        _sizeProblem = null;
+        if (Connections.SelectedItem is WorkspaceConnection selected && !string.IsNullOrWhiteSpace(Question.Text)
+            && GuideQuestionPrompt.CanAnswer(_registry, Question.Text))
+        {
+            try { _ = BuildQuestion(Question.Text, selected); }
+            catch (InvalidOperationException ex) { _sizeProblem = ex.Message; }
+        }
+        SendButton.IsEnabled = _request is null && !string.IsNullOrWhiteSpace(Question.Text) && _sizeProblem is null;
+        ToolTip.SetTip(SendButton, _sizeProblem ?? "Send your question using the selected connection.");
+        ToolTip.SetShowOnDisabled(SendButton, true);
+        if (_sizeProblem is not null) _status.Text = _sizeProblem;
+        else if (previousProblem is not null) _status.Text = "Your question fits. Press Send question when ready.";
     }
+    private Tern.App.AIRequest BuildQuestion(string question, WorkspaceConnection selected) =>
+        GuideQuestionPrompt.BuildRequest(_registry, question, selected.Kind == "copilot", _workspace.SendCharactersFor(selected.Id));
     private async Task ShowOfflineAnswer(string question, string? failure = null)
     {
         var generation = _generation;

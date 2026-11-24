@@ -16,26 +16,27 @@ public static partial class HtmlExporter
     private static partial Regex LanguageTag();
 
     /// <summary>Parses <paramref name="markdown"/> with the preview pipeline and renders it as HTML.</summary>
-    public static HtmlExportResult Export(string markdown, HtmlExportOptions? options = null)
+    public static HtmlExportResult Export(string markdown, HtmlExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         options ??= new HtmlExportOptions();
         var resolver = PreviewBuilder.CreateResolver(options.Preview);
-        var document = PreviewBuilder.Build(markdown, options.Preview, resolver);
-        return Export(document, options, resolver);
+        var document = PreviewBuilder.Build(markdown, options.Preview, resolver, cancellationToken);
+        return Export(document, options, resolver, cancellationToken);
     }
 
     /// <summary>Renders an already built preview document. <paramref name="resolver"/> must be the one the document was built with.</summary>
-    public static HtmlExportResult Export(PreviewDocument document, HtmlExportOptions options, SafeResourceResolver resolver)
+    public static HtmlExportResult Export(PreviewDocument document, HtmlExportOptions options, SafeResourceResolver resolver, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(resolver);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var warnings = new List<string>();
         if (document.Truncated) warnings.Add("The export is incomplete: the document exceeded the rendering budget. Only the first part was exported.");
-        var images = new ImageEmbedder(options.MaxInlineImageBytes, options.MaxTotalImageBytes, warnings, options.RemoteImageBytes);
-        var body = new HtmlRenderer(resolver, images, options.IncludeFrontMatter, warnings).Render(document);
+        var images = new ImageEmbedder(options.MaxInlineImageBytes, options.MaxTotalImageBytes, warnings, options.RemoteImageBytes, cancellationToken);
+        var body = new HtmlRenderer(resolver, images, options.IncludeFrontMatter, warnings, cancellationToken).Render(document);
         var title = ResolveTitle(document, options);
         // HTML parsers normalize CRLF/CR to LF before applying CSP hashes. Hash and emit
         // that same canonical text, regardless of this source file's checkout line endings.
@@ -53,15 +54,16 @@ public static partial class HtmlExporter
         html.Append("</title>\n<style>").Append(css).Append("</style>\n</head>\n<body>\n<main class=\"markdown-body\">\n")
             .Append(body).Append("</main>\n</body>\n</html>\n");
 
+        cancellationToken.ThrowIfCancellationRequested();
         return new HtmlExportResult(html.ToString(), title, warnings.Distinct(StringComparer.Ordinal).ToList(), document.Truncated, images.Count);
     }
 
     /// <summary>Exports to a file (written atomically, UTF-8 without BOM) and returns the result.</summary>
-    public static HtmlExportResult ExportToFile(string markdown, string outputPath, HtmlExportOptions? options = null)
+    public static HtmlExportResult ExportToFile(string markdown, string outputPath, HtmlExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        var result = Export(markdown, options);
-        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(result.Html), options?.Preview.DocumentPath);
+        var result = Export(markdown, options, cancellationToken);
+        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(result.Html), options?.Preview.DocumentPath, cancellationToken);
         return result;
     }
 

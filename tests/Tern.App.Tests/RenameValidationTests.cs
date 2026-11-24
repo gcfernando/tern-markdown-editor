@@ -3,11 +3,66 @@ using Tern.Filesystem;
 using Tern.Workspaces;
 using Tern.App.Shell;
 using Tern.Recovery;
+using Tern.App.Commands;
 
 namespace Tern.App.Tests;
 
 public sealed class RenameValidationTests
 {
+    [Fact]
+    public async Task Planning_a_ten_thousand_file_workspace_leaves_other_document_saving_available()
+    {
+        using var fixture = new ShellFixture();
+        await Parallel.ForEachAsync(Enumerable.Range(0, 10000),
+            new ParallelOptions { MaxDegreeOfParallelism = 4 },
+            async (index, token) => await File.WriteAllTextAsync(Path.Combine(fixture.Docs, $"note-{index:D5}.md"), "# Note\n", token));
+        Assert.True(await fixture.Shell.OpenWorkspaceAsync(fixture.Docs));
+        Assert.Equal(10000, fixture.Shell.Workspace!.Graph.DocumentCount);
+        var target = (await fixture.Shell.OpenFileAsync(Path.Combine(fixture.Docs, "note-00000.md")))!;
+        var otherPath = fixture.Root.File("other.md");
+        await File.WriteAllTextAsync(otherPath, "outside");
+        var other = (await fixture.Shell.OpenFileAsync(otherPath))!;
+        other.ApplyEdits([TextEdit.Insert(0, "saved while planning ")]);
+        var planning = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Shell.BeforeRenamePlanning = () => { planning.TrySetResult(); return release.Task; };
+        var rename = fixture.Shell.RenameDocumentAsync(target, "renamed.md");
+        try
+        {
+            await planning.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(fixture.Shell.IsBusy);
+            Assert.True(DocumentCommandPolicy.CanExecute(CommandIds.Save, fixture.Shell.GetCommandContext()));
+            Assert.True(await fixture.Shell.SaveTabAsync(other).WaitAsync(TimeSpan.FromSeconds(1)));
+            Assert.False(other.IsDirty);
+            Assert.Equal("saved while planning outside", await File.ReadAllTextAsync(otherPath));
+        }
+        finally { release.TrySetResult(); }
+        Assert.True(await rename);
+        Assert.Equal("renamed.md", Path.GetFileName(target.FilePath));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Changed_target_or_new_destination_during_planning_aborts_without_moving(bool destinationCollision)
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("original.md", "saved\n");
+        await fixture.Shell.OpenWorkspaceAsync(fixture.Docs);
+        var tab = (await fixture.Shell.OpenFileAsync(path))!;
+        fixture.Shell.BeforeRenamePlanning = async () =>
+        {
+            if (destinationCollision) await File.WriteAllTextAsync(Path.Combine(fixture.Docs, "renamed.md"), "other file");
+            else tab.ApplyEdits([TextEdit.Insert(0, "new edit ")]);
+        };
+        Assert.False(await fixture.Shell.RenameDocumentAsync(tab, "renamed.md"));
+        Assert.Equal(path, tab.FilePath);
+        Assert.Equal("saved\n", await File.ReadAllTextAsync(path));
+        if (destinationCollision)
+            Assert.Equal("other file", await File.ReadAllTextAsync(Path.Combine(fixture.Docs, "renamed.md")));
+        else Assert.Equal("new edit saved\n", tab.CurrentText);
+    }
+
     [Theory]
     [InlineData("CON.md")]
     [InlineData("COM¹.md")]

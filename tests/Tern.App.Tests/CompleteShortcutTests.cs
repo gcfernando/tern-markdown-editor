@@ -11,12 +11,12 @@ public sealed class CompleteShortcutTests
         Assert.True(registry.SetBinding(CommandIds.AskAI, "Ctrl+Alt+F10").Succeeded);
         var workflow = Tern.App.Help.FeatureCatalog.Search(registry, null).Single(f => f.Id == "ai.workflow");
         Assert.Contains(workflow.Steps, step => step.Contains("Ctrl+Alt+F10", StringComparison.Ordinal));
-        Assert.DoesNotContain(workflow.Steps, step => step.Contains("Alt+Space", StringComparison.Ordinal));
+        Assert.DoesNotContain(workflow.Steps, step => step.Contains("Ctrl+Shift+Space", StringComparison.Ordinal));
         var lesson = Tern.App.Help.BeginnerLessons.For(registry).Single(l => l.Id == "ai");
         Assert.Contains(lesson.Steps, step => step.Action.Contains("Ctrl+Alt+F10", StringComparison.Ordinal));
         registry.ClearBinding(CommandIds.AskAI);
         Assert.DoesNotContain(Tern.App.Help.FeatureCatalog.Search(registry, null).Single(f => f.Id == "ai.workflow").Steps,
-            step => step.Contains("Alt+Space", StringComparison.Ordinal));
+            step => step.Contains("Ctrl+Shift+Space", StringComparison.Ordinal));
     }
 
     [Fact]

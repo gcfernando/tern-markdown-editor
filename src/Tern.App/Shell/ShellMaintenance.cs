@@ -1,6 +1,7 @@
 using Tern.App.Commands;
 using Tern.App.Settings;
 using Tern.App.Documents;
+using Tern.Domain.Text;
 using Tern.Workspaces;
 
 namespace Tern.App.Shell;
@@ -25,7 +26,8 @@ public sealed partial class ShellViewModel
             ? _documentOperation : DocumentOperation.None,
         ActiveTab?.Conflict?.Kind == Tern.Filesystem.ConflictKind.DeletedOnDisk
             || ActiveTab?.Session is { HasFile: true, Baseline: null },
-        ActiveTab?.IsInaccessible == true);
+        ActiveTab?.IsInaccessible == true,
+        ActiveTab?.IsChangedOnDisk == true);
 
     partial void OnActiveTabChanged(DocumentTab? value)
     {
@@ -36,10 +38,12 @@ public sealed partial class ShellViewModel
         }
         if (value is not null) OnTabStateChanged(value.Session, EventArgs.Empty);
         OnPropertyChanged(nameof(ActiveDocumentState));
+        QueueSessionSave();
     }
 
     private void OnDocumentMetadataChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(DocumentTab.FilePath)) QueueSessionSave();
         if (sender is DocumentTab { FilePath: { } path, LinkedImageFiles.Count: > 0 } tab
             && e.PropertyName is nameof(DocumentTab.FilePath) or nameof(DocumentTab.LinkedImageFiles))
         {
@@ -51,16 +55,20 @@ public sealed partial class ShellViewModel
 
     public DocumentCommandContext GetCommandContext(bool canUndo = false, bool canRedo = false) =>
         new(ActiveTab?.Session, HasWorkspace, Tabs.Count, canUndo, canRedo, IsBusy,
-            Tabs.Any(t => DocumentCommandPolicy.CanExecute(CommandIds.Save, new(t.Session))), Workspace is not null);
+            Tabs.Any(t => DocumentCommandPolicy.CanExecute(CommandIds.Save, new(t.Session))), Workspace is not null, Workspace is { IsNamedWorkspace: false },
+            ActiveTab is { IsRecovered: true, IsExternalDraft: false, RecoveredFromPath: not null });
 
     public bool RemoveRecent(RecentKind kind, string path) => Recent.Remove(kind, path);
 
-    public void ClearRecentHistory()
+    public void ClearRecentHistory(bool includePinned = false)
     {
-        Recent.ClearAll();
+        Recent.ClearAll(includePinned);
         _closedTabs.Clear();
-        StatusMessage = Recent.LastSaveError is null ? "Recent history cleared. Your documents and workspace are unchanged."
-            : "History cleared in memory but could not be persisted: " + Recent.LastSaveError.Message;
+        if (Recent.LastSaveError is { } error)
+            SetStatus("Recent history is cleared for now, but Tern could not save that change. Try again, or check that your user folder is not full: " + PlainProblem(error), StatusSeverity.Warning);
+        else SetStatus(includePinned
+            ? "Recent history cleared, including pinned references. Documents and workspaces are unchanged."
+            : "Unpinned recent history and the Reopen Closed Tab list cleared. Pinned references, documents and workspaces are unchanged.", StatusSeverity.Info);
     }
 
     /// <summary>Resets only selected application metadata. Open buffers and recovery copies are never removed.</summary>
@@ -151,29 +159,27 @@ public sealed partial class ShellViewModel
             foreach (var property in properties)
                 property.SetValue(Settings, property.GetValue(defaults));
             Registry.ResetAll();
-            try { SaveSettings(); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            if (!SaveSettings())
             {
                 foreach (var (property, value) in previousValues) property.SetValue(Settings, value);
                 Registry.LoadOverrides(previousBindings);
-                return Fail("Could not persist default preferences. Previous preferences remain active: " + ex.Message);
+                return Fail("Could not persist default preferences. Previous preferences remain active.");
             }
             completed.Add("preferences and keyboard shortcuts");
         }
         if (options.RecentHistory)
         {
-            ClearRecentHistory();
+            ClearRecentHistory(includePinned: true);
             if (Recent.LastSaveError is not null) return Fail(StatusMessage ?? "Recent history could not be persisted.");
             completed.Add("recent history");
         }
         if (options.SessionState)
         {
-            if (!_sessionStore.Save(SessionSnapshot.Empty))
+            if (!ResetPersistedSession())
             { return Fail("Could not reset session state: " + _sessionStore.LastSaveError?.Message); }
             _viewStates.Clear();
             _tabViewStates.Clear();
             _closedTabs.Clear();
-            _sessionReset = true;
             completed.Add("session restoration");
         }
         StatusMessage = "Reset complete: " + string.Join(", ", completed) + ". Open documents and unsaved work are preserved.";
@@ -192,19 +198,32 @@ public sealed partial class ShellViewModel
         return false;
     }
 
-    public Task<bool> RenameDocumentAsync(DocumentTab tab, string name) => SerializeIdentityAsync(async () =>
+    internal Func<Task>? BeforeRenamePlanning { get; set; }
+
+    public Task<bool> RenameDocumentAsync(DocumentTab tab, string name) =>
+        TrackActivityAsync("Renaming document", tab.DisplayName, activity => RenameDocumentWithProgressAsync(tab, name, activity));
+
+    private async Task<bool> RenameDocumentWithProgressAsync(DocumentTab tab, string name, ActivityScope activity)
     {
+        activity.Report("Validating the document and requested name");
         LastRenameRepairPlan = null;
+        if (_disposed) { SetStatus("The application is closing; no file was renamed.", StatusSeverity.Warning); return false; }
         if (!tab.CanRename)
         { StatusMessage = "Online files cannot be renamed. Download a local copy first."; return false; }
         if (!Tabs.Contains(tab) || !IsValidDocumentName(name))
         { StatusMessage = "Use a filename without reserved characters, trailing spaces, or a Windows device name."; return false; }
         if (tab.FilePath is not { } oldPath)
         {
-            if (tab.IsRecovered) tab.RecoveryName = name;
-            tab.Session.SetDraftName(name);
-            StatusMessage = "Draft named. Use Save As to choose where it will be stored.";
-            return true;
+            return await SerializeIdentityAsync(() =>
+            {
+                if (_disposed || !Tabs.Contains(tab) || tab.FilePath is not null)
+                { SetStatus("The document changed while naming it. Review it and try again.", StatusSeverity.Warning); return Task.FromResult(false); }
+                if (tab.IsRecovered) tab.RecoveryName = name;
+                activity.Report("Naming the unsaved draft; no disk file changed");
+                tab.Session.SetDraftName(name);
+                StatusMessage = "Draft named. Use Save As to choose where it will be stored.";
+                return Task.FromResult(true);
+            }, parentActivity: activity).ConfigureAwait(true);
         }
         var destination = Path.Combine(Path.GetDirectoryName(oldPath)!, name);
         if (string.Equals(oldPath, destination, StringComparison.Ordinal)) return true;
@@ -212,71 +231,156 @@ public sealed partial class ShellViewModel
         if (Tabs.Any(t => t != tab && t.FilePath is { } p && SamePath(p, destination) && !SamePath(p, oldPath))
             || (!caseOnly && File.Exists(destination)) || Directory.Exists(destination))
         { StatusMessage = "That name already exists. Choose another name."; return false; }
+        var renamed = false;
         try
         {
-            RepairPlan? repairs = null;
-            var planningWorkspaces = OpenWorkspaces.Where(w => w.IsInside(oldPath)).OrderBy(w => w.Root.Length).ToList();
-            if (planningWorkspaces.Count > 0)
+            activity.Report("Reading the disk baseline and planning affected links");
+            var revision = tab.Session.Revision;
+            var baseline = tab.Session.Baseline;
+            var disk = await _files.ReadBaselineAsync(oldPath).ConfigureAwait(true);
+            var physical = Tern.Filesystem.FileIdentity.ResolvePhysicalPath(oldPath);
+            var workspaces = OpenWorkspaces.Where(workspace => workspace.IsInside(oldPath))
+                .Select(workspace => (Workspace: workspace, workspace.Graph.Revision, workspace.Profile)).ToArray();
+            var repairs = await PlanRepairsAsync(oldPath, destination).ConfigureAwait(true);
+            return await SerializeIdentityAsync(async () =>
             {
-                var provider = new OverlayTextProvider(new DiskDocumentTextProvider());
-                foreach (var open in Tabs.Where(t => t.FilePath is not null)) provider.Set(open.FilePath!, open.CurrentText);
-                var plans = new List<RepairPlan>();
-                foreach (var planningWorkspace in planningWorkspaces)
-                    plans.Add(await new LinkRepairPlanner(planningWorkspace.Graph, provider, planningWorkspace.Profile)
-                        .PlanRenameAsync(oldPath, destination).ConfigureAwait(true));
-                // The broadest graph sees parent backlinks and ambiguous wiki names. Narrower graphs add files
-                // excluded by the parent scan; choose one coherent reviewed edit set per document.
-                repairs = new RepairPlan(plans.SelectMany(p => p.Files).GroupBy(f => f.Path, WorkspacePaths.Comparer)
-                    .Select(g => g.First()).ToList(), plans.SelectMany(p => p.Warnings).Distinct(StringComparer.Ordinal).ToList());
-            }
-            // MoveFileEx supports a case-only rename on Windows; no overwrite or temporary name is needed.
-            File.Move(oldPath, destination, overwrite: false);
-            foreach (var workspace in OpenWorkspaces) workspace.ClearUnsavedText(oldPath);
-            foreach (var sameSource in Tabs.Where(t => t.FilePath is { } p && SamePath(p, oldPath)).ToList())
-                sameSource.Session.UpdateFilePath(destination);
-            Recent.Rename(RecentKind.File, oldPath, destination);
-            if (_viewStates.Remove(oldPath, out var view)) _viewStates[destination] = view;
-            foreach (var workspace in OpenWorkspaces.Where(w => w.IsInside(oldPath))) workspace.Graph.Rename(oldPath, destination);
-            OnTabStateChanged(tab.Session, EventArgs.Empty);
-            LastRenameRepairPlan = repairs;
-            try { await HistoryStore.RenameAsync(oldPath, destination).ConfigureAwait(true); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-            {
-                StatusMessage = "Renamed " + name + "; saved-text history could not migrate and remains available under its previous path: " + ex.Message;
+                var currentDisk = await _files.ReadBaselineAsync(oldPath).ConfigureAwait(true);
+                var currentWorkspaces = OpenWorkspaces.Where(workspace => workspace.IsInside(oldPath)).ToArray();
+                if (_disposed || !Tabs.Contains(tab) || tab.FilePath != oldPath || !tab.Session.IsCurrent(revision)
+                    || tab.Session.Baseline != baseline || disk is null || currentDisk != disk
+                    || !SamePath(physical, Tern.Filesystem.FileIdentity.ResolvePhysicalPath(oldPath))
+                    || currentWorkspaces.Length != workspaces.Length
+                    || workspaces.Any(state => !currentWorkspaces.Contains(state.Workspace)
+                        || state.Workspace.Graph.Revision != state.Revision || state.Workspace.Profile != state.Profile))
+                { SetStatus("The file changed while Tern was preparing the rename. Nothing was renamed. Check it and try again.", StatusSeverity.Warning); return false; }
+                if (Tabs.Any(other => other != tab && other.FilePath is { } path && SamePath(path, destination) && !SamePath(path, oldPath))
+                    || (!caseOnly && File.Exists(destination)) || Directory.Exists(destination))
+                { SetStatus("That name now exists. Nothing was renamed; choose another name.", StatusSeverity.Warning); return false; }
+                // MoveFileEx supports a case-only rename on Windows without an intermediate name.
+                activity.Report("Renaming the disk file");
+                File.Move(oldPath, destination, overwrite: false);
+                renamed = true;
+                activity.Report("File renamed; updating path references, history and index");
+                var warnings = await ApplyIdentityChangeAsync(new IdentityChange(oldPath, destination, IdentityChangeKind.Rename)).ConfigureAwait(true);
+                OnTabStateChanged(tab.Session, EventArgs.Empty);
+                LastRenameRepairPlan = repairs;
+                SetStatus("Renamed " + name + (repairs is { TotalEdits: > 0 } ? ". Review the proposed link updates before applying them." : ".")
+                    + (warnings.Count > 0 ? " " + string.Join(" ", warnings) : string.Empty),
+                    repairs is { TotalEdits: > 0 } || warnings.Count > 0 ? StatusSeverity.Warning : StatusSeverity.Success);
+                activity.Complete(warnings.Count > 0 ? string.Join(" ", warnings) : null, warnings.Count > 0,
+                    warnings.Count > 0 ? "Renamed with warning" : repairs is { TotalEdits: > 0 } ? "Renamed; link changes await review" : "Renamed");
                 return true;
-            }
-            StatusMessage = "Renamed " + name + (repairs is { TotalEdits: > 0 } ? ". Review the proposed link updates before applying them." : ".");
-            return true;
+            }, parentActivity: activity).ConfigureAwait(true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        { StatusMessage = "Could not rename: " + ex.Message; return false; }
-    });
+        { activity.Fail((renamed ? "The file was renamed, but follow-up work failed: " : "") + ex.Message); StatusMessage = "Could not rename: " + Tern.App.Shell.UserProblem.Plain(ex); return false; }
+    }
+
+    /// <summary>Plans the link edits a rename or move would need, using unsaved text from open documents.</summary>
+    private async Task<RepairPlan?> PlanRepairsAsync(string oldPath, string newPath)
+    {
+        var planningWorkspaces = OpenWorkspaces.Where(w => w.IsInside(oldPath)).OrderBy(w => w.Root.Length)
+            .Select(workspace => (workspace.Graph, workspace.Profile)).ToArray();
+        if (planningWorkspaces.Length == 0) return null;
+        var provider = new OverlayTextProvider(new DiskDocumentTextProvider());
+        foreach (var open in Tabs.Where(t => t.FilePath is not null)) provider.Set(open.FilePath!, open.CurrentText);
+        var beforePlanning = BeforeRenamePlanning;
+        return await Task.Run(async () =>
+        {
+            if (beforePlanning is not null) await beforePlanning().ConfigureAwait(false);
+            var plans = new List<RepairPlan>();
+            foreach (var planningWorkspace in planningWorkspaces)
+                plans.Add(await new LinkRepairPlanner(planningWorkspace.Graph, provider, planningWorkspace.Profile)
+                    .PlanRenameAsync(oldPath, newPath).ConfigureAwait(false));
+            // Broad and nested graphs can overlap; retain one coherent edit set per file.
+            return new RepairPlan(plans.SelectMany(p => p.Files).GroupBy(f => f.Path, WorkspacePaths.Comparer)
+                .Select(g => g.First()).ToList(), plans.SelectMany(p => p.Warnings).Distinct(StringComparer.Ordinal).ToList());
+        }).ConfigureAwait(true);
+    }
 
     /// <summary>Applies a reviewed rename plan. Open documents receive undoable edits and require an explicit save.</summary>
-    public async Task<RepairResult> ApplyRenameRepairsAsync(RepairPlan plan)
+    public async Task<RepairResult> ApplyRenameRepairsAsync(RepairPlan plan, string changeDescription = "link update")
     {
-        var results = new List<FileRepairResult>();
-        foreach (var repair in plan.Files)
+        using var activity = Activities.Begin("Applying reviewed link repairs");
+        try
         {
-            if (repair.Edits.Count == 0) { results.Add(new(repair, RepairStatus.Skipped, null)); continue; }
-            var open = Tabs.FirstOrDefault(t => t.FilePath is { } path && SamePath(path, repair.Path));
-            if (open is not null)
+            _linkRepairUndo.Clear();
+            _lastRepairDescription = changeDescription;
+            var results = new List<FileRepairResult>();
+            foreach (var repair in plan.Files)
             {
-                if (open.IsReadOnly) { results.Add(new(repair, RepairStatus.Failed, "The open document is read-only.")); continue; }
-                if (open.CurrentText != repair.OriginalText) { results.Add(new(repair, RepairStatus.Conflict, "The open document changed after review; no edits were applied.")); continue; }
-                open.ApplyEdits(repair.Edits);
-                results.Add(new(repair, RepairStatus.Applied, "Updated the open document. Save it explicitly to write these link edits."));
+                activity.Report("Validating reviewed edits and updating files", results.Count, plan.Files.Count, "files");
+                if (repair.Edits.Count == 0) { results.Add(new(repair, RepairStatus.Skipped, null)); continue; }
+                var openCopies = Tabs.Where(t => t.FilePath is { } path && SamePath(path, repair.Path)).ToArray();
+                if (openCopies.Length > 0)
+                {
+                    if (openCopies.Any(open => open.IsReadOnly)) { results.Add(new(repair, RepairStatus.Failed, openCopies.Length == 1 ? "The open document is read-only." : "An open copy of this document is read-only.")); continue; }
+                    if (openCopies.Any(open => open.CurrentText != repair.OriginalText)) { results.Add(new(repair, RepairStatus.Conflict, openCopies.Length == 1 ? "The open document changed after review; no edits were applied." : "An open copy changed or differs from the review; no edits were applied.")); continue; }
+                    foreach (var open in openCopies) open.ApplyEdits(repair.Edits);
+                    results.Add(new(repair, RepairStatus.Applied, "Updated the open document. Save it explicitly to keep these edits."));
+                }
+                else
+                {
+                    var (status, message) = await SafeEditApplier.ApplyAsync(_files, repair.Path, repair.OriginalText, repair.Edits,
+                        beforeWrite: (path, text) => HistoryStore.CaptureAsync(path, text, "Before " + changeDescription)).ConfigureAwait(true);
+                    results.Add(new(repair, status, message));
+                    if (status == RepairStatus.Applied)
+                        _linkRepairUndo.Add(new LinkRepairUndo(repair.Path, repair.OriginalText, TextEdit.ApplyAll(repair.OriginalText, repair.Edits)));
+                }
             }
-            else
-            {
-                var (status, message) = await SafeEditApplier.ApplyAsync(_files, repair.Path, repair.OriginalText, repair.Edits).ConfigureAwait(true);
-                results.Add(new(repair, status, message));
-            }
+            var result = new RepairResult(results);
+            activity.Report("Reviewed file processing finished", results.Count, plan.Files.Count, "files");
+            StatusMessage = result.Succeeded ? $"Reviewed {changeDescription}s applied. Save modified open documents to keep their edits."
+                : $"Some reviewed {changeDescription}s were left unchanged. Review the reported conflicts.";
+            if (_linkRepairUndo.Count > 0)
+                ShowBanner($"Applied {changeDescription}s in {_linkRepairUndo.Count} closed file(s); each earlier version is in its History.", StatusSeverity.Success,
+                    new BannerAction("Undo " + changeDescription + "s", () => _ = UndoLinkRepairsAsync()));
+            if (!result.Succeeded && result.AppliedCount == 0)
+                activity.Fail("No reviewed edits were applied. Review the per-file errors or conflicts; original contents were kept.");
+            else activity.Complete($"{result.AppliedCount} file(s) updated. " + (result.Succeeded
+                ? "Open-document changes remain unsaved; closed files retain History and the existing Undo action."
+                : "Other files failed or conflicted and were left unchanged. Review the reported per-file results."),
+                !result.Succeeded, result.Succeeded ? "Reviewed repairs applied; save modified open documents" : "Repairs partly completed; review conflicts");
+            return result;
         }
-        var result = new RepairResult(results);
-        StatusMessage = result.Succeeded ? "Reviewed link updates applied. Save modified open documents to keep their edits."
-            : "Some reviewed link updates were left unchanged. Review the reported conflicts.";
-        return result;
+        catch (OperationCanceledException) { activity.Cancel("Link repair stopped; some files may already have changed. Review files and their History."); throw; }
+        catch (Exception ex) { activity.Fail("Link repair stopped; some files may already have changed. Review files and their History. " + ex.Message); throw; }
+    }
+
+    private readonly List<LinkRepairUndo> _linkRepairUndo = [];
+    private string _lastRepairDescription = "link update";
+
+    private sealed record LinkRepairUndo(string Path, string OriginalText, string RepairedText);
+
+    /// <summary>Closed files rewritten by the last link repair that can still be reverted.</summary>
+    public int LinkRepairUndoCount => _linkRepairUndo.Count;
+
+    /// <summary>Reverts closed files changed by the last link repair, but only those whose disk text still equals the repaired text.</summary>
+    public async Task<(int Restored, int Skipped)> UndoLinkRepairsAsync()
+    {
+        using var activity = Activities.Begin("Undoing reviewed link repairs");
+        try
+        {
+            var entries = _linkRepairUndo.ToList();
+            _linkRepairUndo.Clear();
+            int restored = 0, skipped = 0;
+            foreach (var entry in entries)
+            {
+                activity.Report("Checking disk text and restoring unchanged repair results", restored + skipped, entries.Count, "files");
+                var (status, _) = await SafeEditApplier.ApplyAsync(_files, entry.Path, entry.RepairedText, [new TextEdit(0, entry.RepairedText.Length, entry.OriginalText)],
+                    beforeWrite: (path, text) => HistoryStore.CaptureAsync(path, text, "Before undoing " + _lastRepairDescription)).ConfigureAwait(true);
+                if (status == RepairStatus.Applied) restored++; else skipped++;
+            }
+            SetStatus(skipped == 0 ? $"Reverted {_lastRepairDescription}s in {restored} file(s)."
+                : $"Reverted {_lastRepairDescription}s in {restored} file(s); {skipped} changed since the repair and were left as they are.",
+                skipped == 0 ? StatusSeverity.Success : StatusSeverity.Warning);
+            activity.Report("Restore processing finished", restored + skipped, entries.Count, "files");
+            activity.Complete($"{restored} restored; {skipped} skipped.", skipped > 0,
+                skipped > 0 ? "Repair undo partly completed; changed files kept" : "Repair undo completed");
+            return (restored, skipped);
+        }
+        catch (OperationCanceledException) { activity.Cancel("Repair undo stopped; some files may already have been restored. Review their History."); throw; }
+        catch (Exception ex) { activity.Fail("Repair undo stopped; some files may already have been restored. " + ex.Message); throw; }
     }
 
     private static bool IsValidDocumentName(string name)

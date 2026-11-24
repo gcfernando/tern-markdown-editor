@@ -141,7 +141,7 @@ internal sealed class CodeBlockView : Border
         Grid.SetColumn(_copyButton, 1);
         header.Children.Add(_copyButton);
 
-        var displayed = Displayed(code);
+        var displayed = CodeDisplay.ExpandTabs(Displayed(code));
         var codeSize = Math.Max(12, fontSize * 0.85);
         var text = new RichTextBlock
         {
@@ -324,8 +324,6 @@ internal sealed class TablePanel : Panel, IWidthAware
     public void AddCell(Control cell) => Children.Add(cell);
 
     internal IReadOnlyList<double> ColumnWidths => _columnWidths;
-
-    internal IReadOnlyList<double> RowHeights => _rowHeights;
 
     public int ColumnCount { get; }
 

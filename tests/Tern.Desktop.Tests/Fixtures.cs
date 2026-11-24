@@ -13,20 +13,30 @@ internal sealed class ScriptedDialogs : IShellDialogs
     public int DuplicatePrompts { get; private set; }
     public string? SavePath { get; set; }
     public bool Overwrite { get; set; }
+    public bool ConfirmReload { get; set; }
+    public int ReloadPrompts { get; private set; }
+    public Task<bool> ConfirmReloadDiscardingEditsAsync(DocumentTab tab)
+    { ReloadPrompts++; return Task.FromResult(ConfirmReload); }
     public bool ConfirmDelete { get; set; }
+    public Func<string, int, Task<bool>>? DeleteResponse { get; set; }
     public int DeletePrompts { get; private set; }
     public Task<bool> ConfirmDeleteAsync(string path, int unsavedCount)
-    { DeletePrompts++; return Task.FromResult(ConfirmDelete); }
+    { DeletePrompts++; return DeleteResponse?.Invoke(path, unsavedCount) ?? Task.FromResult(ConfirmDelete); }
+    public bool ConfirmPromote { get; set; } = true;
+    public List<string> PromotePrompts { get; } = [];
+    public Task<bool> ConfirmPromoteFolderAsync(string folderPath)
+    { PromotePrompts.Add(folderPath); return Task.FromResult(ConfirmPromote); }
     public Task<DuplicateOpenChoice> AskDuplicateOpenAsync(string documentName)
     { DuplicatePrompts++; return Task.FromResult(DuplicateChoice); }
     public SaveChoice SaveChoice { get; set; } = SaveChoice.Cancel;
+    public Func<Task<SaveChoice>>? SaveResponse { get; set; }
 
     public int SavePrompts { get; private set; }
 
     public Task<SaveChoice> AskSaveChangesAsync(string documentName)
     {
         SavePrompts++;
-        return Task.FromResult(SaveChoice);
+        return SaveResponse?.Invoke() ?? Task.FromResult(SaveChoice);
     }
 
     public Task<ConflictChoice> AskConflictAsync(DocumentTab tab) => Task.FromResult(ConflictChoice.Cancel);
@@ -83,7 +93,10 @@ internal sealed class DesktopFixture : IDisposable
         Dialogs = new ScriptedDialogs();
         Launcher = new NullLauncher();
         Shell = new ShellViewModel(AppPaths.Under(Path.Combine(_root, "appdata")), Dialogs, Launcher);
-        Window = new MainWindow(Shell, aiWorkspace: createAI?.Invoke(Shell.Paths.SettingsDirectory))
+        // Most workflow fixtures must not depend on host dictionaries or asynchronous native spelling.
+        // Spelling-specific cases enable it explicitly and the native provider has its own check.
+        Shell.Settings.SpellCheckEnabled = false;
+        Window = new MainWindow(Shell, aiWorkspace: createAI?.Invoke(Shell.Paths.SettingsDirectory), launcher: Launcher)
         {
             TableDimensionsPicker = () => Task.FromResult<TableDimensions?>(new(3, 3)),
             LinkInputPicker = label => Task.FromResult<LinkInput?>(new(label.Length == 0 ? "link text" : label, "https://example.com")),

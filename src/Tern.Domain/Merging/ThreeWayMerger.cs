@@ -8,9 +8,15 @@ public abstract record MergeRegion;
 public sealed record ResolvedRegion(string Text) : MergeRegion;
 
 /// <summary>Both sides changed the same lines differently; a human must decide.</summary>
-public sealed record ConflictRegion(string Base, string Mine, string Disk) : MergeRegion;
+public sealed record ConflictRegion(string Base, string Mine, string Disk) : MergeRegion
+{
+    /// <summary>Keeps both sides as separate lines; a newline is inserted when Mine ends without one (B-23).</summary>
+    public string Both(string newLine) =>
+        Mine.Length == 0 || Mine[^1] is '\n' or '\r' || Disk.Length == 0 ? Mine + Disk : Mine + newLine + Disk;
+}
 
-public sealed record MergeResult(IReadOnlyList<MergeRegion> Regions)
+/// <param name="NewLine">The line ending of the open document, used wherever the merge has to add a line break.</param>
+public sealed record MergeResult(IReadOnlyList<MergeRegion> Regions, string NewLine = "\n")
 {
     public bool HasConflicts => Regions.Any(r => r is ConflictRegion);
 
@@ -39,9 +45,9 @@ public sealed record MergeResult(IReadOnlyList<MergeRegion> Regions)
         return builder.ToString();
     }
 
-    private static string WithMarkers(ConflictRegion c)
+    private string WithMarkers(ConflictRegion c)
     {
-        static string EnsureNewline(string s) => s.Length == 0 || s[^1] is '\n' or '\r' ? s : s + "\n";
+        string EnsureNewline(string s) => s.Length == 0 || s[^1] is '\n' or '\r' ? s : s + NewLine;
         return $"<<<<<<< Mine\n{EnsureNewline(c.Mine)}||||||| Base\n{EnsureNewline(c.Base)}=======\n{EnsureNewline(c.Disk)}>>>>>>> Disk\n";
     }
 }
@@ -54,26 +60,31 @@ public static class ThreeWayMerger
 {
     public static MergeResult Merge(string baseText, string mine, string disk)
     {
+        var newLine = LineEndings.Dominant(mine) ?? LineEndings.Dominant(disk) ?? LineEndings.Dominant(baseText) ?? "\n";
         if (mine == disk)
         {
-            return new MergeResult([new ResolvedRegion(mine)]);
+            return new MergeResult([new ResolvedRegion(mine)], newLine);
         }
 
         if (mine == baseText)
         {
-            return new MergeResult([new ResolvedRegion(disk)]);
+            return new MergeResult([new ResolvedRegion(disk)], newLine);
         }
 
         if (disk == baseText)
         {
-            return new MergeResult([new ResolvedRegion(mine)]);
+            return new MergeResult([new ResolvedRegion(mine)], newLine);
         }
 
         var o = LineSplitter.Split(baseText);
         var a = LineSplitter.Split(mine);
         var b = LineSplitter.Split(disk);
-        var matchA = LineDiff.MatchLines(o, a);
-        var matchB = LineDiff.MatchLines(o, b);
+        // Lines match by content, so a tool that only converted CRLF to LF does not turn every line into a conflict (B-34).
+        var oKeys = LineSplitter.Keys(o);
+        var aKeys = LineSplitter.Keys(a);
+        var bKeys = LineSplitter.Keys(b);
+        var matchA = LineDiff.MatchLines(oKeys, aKeys);
+        var matchB = LineDiff.MatchLines(oKeys, bKeys);
 
         var regions = new List<MergeRegion>();
         int oPrev = -1, aPrev = -1, bPrev = -1;
@@ -89,14 +100,13 @@ public static class ThreeWayMerger
             var aNext = i == o.Length ? a.Length : matchA[i];
             var bNext = i == o.Length ? b.Length : matchB[i];
 
-            var oChunk = Slice(o, oPrev + 1, i);
-            var aChunk = Slice(a, aPrev + 1, aNext);
-            var bChunk = Slice(b, bPrev + 1, bNext);
-            AddChunk(regions, oChunk, aChunk, bChunk);
+            AddChunk(regions, Slice(o, oPrev + 1, i), Slice(a, aPrev + 1, aNext), Slice(b, bPrev + 1, bNext),
+                Slice(oKeys, oPrev + 1, i), Slice(aKeys, aPrev + 1, aNext), Slice(bKeys, bPrev + 1, bNext));
 
             if (i < o.Length)
             {
-                AddResolved(regions, o[i]);
+                // The anchor line is emitted from the open document so its own terminator survives.
+                AddResolved(regions, a[matchA[i]]);
             }
 
             oPrev = i;
@@ -104,21 +114,31 @@ public static class ThreeWayMerger
             bPrev = bNext;
         }
 
-        return new MergeResult(regions);
+        if (LineEndings.Dominant(disk) is { } diskEnding && diskEnding != newLine)
+        {
+            regions = [.. regions.Select(r => r switch
+            {
+                ResolvedRegion resolved => (MergeRegion)new ResolvedRegion(LineEndings.Normalize(resolved.Text, newLine)),
+                ConflictRegion c => new ConflictRegion(LineEndings.Normalize(c.Base, newLine), LineEndings.Normalize(c.Mine, newLine), LineEndings.Normalize(c.Disk, newLine)),
+                _ => r,
+            })];
+        }
+
+        return new MergeResult(regions, newLine);
     }
 
-    private static void AddChunk(List<MergeRegion> regions, string[] o, string[] a, string[] b)
+    private static void AddChunk(List<MergeRegion> regions, string[] o, string[] a, string[] b, string[] oKeys, string[] aKeys, string[] bKeys)
     {
         if (o.Length == 0 && a.Length == 0 && b.Length == 0)
         {
             return;
         }
 
-        if (a.AsSpan().SequenceEqual(o))
+        if (aKeys.AsSpan().SequenceEqual(oKeys))
         {
             AddResolved(regions, string.Concat(b));
         }
-        else if (b.AsSpan().SequenceEqual(o) || a.AsSpan().SequenceEqual(b))
+        else if (bKeys.AsSpan().SequenceEqual(oKeys) || aKeys.AsSpan().SequenceEqual(bKeys))
         {
             AddResolved(regions, string.Concat(a));
         }

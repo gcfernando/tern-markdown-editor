@@ -18,7 +18,7 @@ dotnet run --project src/Tern.Desktop -c Release --no-build
 Use isolated synthetic data during development:
 
 ```powershell
-$env:TERN_DATA_ROOT = Join-Path $PWD 'artifacts/local-profile'
+$env:TERN_DATA_ROOT = Join-Path $env:TEMP 'tern-local-profile'
 dotnet run --project src/Tern.Desktop -c Release --no-build
 Remove-Item Env:TERN_DATA_ROOT
 ```
@@ -35,7 +35,7 @@ dotnet test Tern.slnx -c Release --no-build --no-restore -m:1
 
 Eight test projects cover unit, application, rendering, export, workspace, preview-view, desktop and security behavior. `tests/Tern.Benchmarks` is a separate console, not a ninth test suite. UI checks use Avalonia's headless platform; protocol checks use local fixtures, not live provider credentials.
 
-Some tests depend on supplied files outside the tracked checkout or interactive Windows Shell behavior. CI's reproducible gate uses `tools/automated-test-filter.txt` to exclude **eight** such cases; run the unfiltered command only with the required inputs/environment when expecting those cases to execute. The [validation guide](BEGINNER_REVIEW_VALIDATION.md#automated-gate-and-external-cases) identifies them. The original tests and assertions remain present. Do not call the filtered result a full-suite pass or native accessibility/printing certification.
+The user approved removal of eight tests that required unavailable original corpus/sample files and the one skipped external-payload remote-image acceptance test on 2026-11-21. These nine removals reduce verification scope; they do not certify those inputs. Generalized rendering, image and synthetic scrollbar tests remain. CI's reproducible gate uses one clause in `tools/automated-test-filter.txt` to exclude only the interactive Windows Shell recycle/restore case, which has passed on Windows. The [validation guide](BEGINNER_REVIEW_VALIDATION.md#automated-gate-and-external-cases) records these boundaries. Do not call the filtered result a full-suite pass or native accessibility/printing certification.
 
 For a change, run the relevant regression tests and inspect results. Save, overwrite, recovery, resource, path and export changes need evidence protecting unrelated files and unsaved text. AI/MCP changes should use loopback fixtures with synthetic payloads. Record actual commit, environment, counts, skipped/excluded cases and report location; do not reuse historical changelog totals as a new result.
 
@@ -64,7 +64,7 @@ Network-capable paths are narrowly scoped to remote images, URL import and expli
 ./tools/BuildRelease.ps1
 ```
 
-The wrapper publishes to `artifacts/release-build/publish`, invokes `tools/package_release.py` with explicit publish/output arguments, and runs the extracted-package smoke helper. Final `Tern-win-x64.zip` and `SHA256SUMS.txt` go to `artifacts/release/`. It refuses existing build/output directories to preserve prior evidence; choose fresh `-BuildRoot` and `-OutputDirectory` values for another candidate. The existing `./scripts/publish.ps1` instead produces `artifacts/publish/win-x64`. Read the [release guide](releases.md) for automation, signing and acceptance gates.
+The wrapper publishes to `../tern-build-output/release-build/publish`, invokes `tools/package_release.py` with explicit publish/output arguments, and runs the extracted-package smoke helper. Final `Tern-win-x64.zip` and `SHA256SUMS.txt` go to `artifacts/release/`. It refuses existing build/output directories to preserve prior evidence; choose fresh `-BuildRoot` and `-OutputDirectory` values for another candidate. The existing `./scripts/publish.ps1` instead produces `artifacts/publish/win-x64`. Read the [release guide](releases.md) for automation, signing and acceptance gates.
 
 ## Benchmarks
 
@@ -73,7 +73,7 @@ dotnet run --project tests/Tern.Benchmarks -c Release -- --quick
 dotnet run --project tests/Tern.Benchmarks -c Release
 ```
 
-Results are written to `artifacts/benchmarks/`. Record the input, hardware, build and warm/cold conditions. No timing or responsiveness result is established by these instructions; see [performance scope](PERFORMANCE.md).
+Results are written to `%TEMP%/tern-benchmarks/`. Record the input, hardware, build and warm/cold conditions. No timing or responsiveness result is established by these instructions; see [performance scope](PERFORMANCE.md).
 
 ## Offline package-cache checks
 

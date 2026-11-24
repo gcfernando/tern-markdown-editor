@@ -27,7 +27,6 @@ public sealed class AddDestinationDialogTests
         string? parentProblem = null;
         Window[] dialogs =
         [
-            new AddDestinationWindow("Company", @"C:\Gehan\My\Company", true, "Create document"),
             new PromptWindow("Remove reference", "Remove this reference from Recent? The saved file stays on disk.", ["Remove reference", "Cancel"], 1, 1),
             new InsertTableWindow(),
             new CreateItemWindow(CreateItemKind.Workspace, fixture.Docs, outside: true, validateParent: _ => parentProblem),
@@ -49,27 +48,6 @@ public sealed class AddDestinationDialogTests
                 Assert.True(dialog.ClientSize.Height <= naturalHeight + 2,
                     $"{dialog.Title} has blank space beyond its content at text scale {scale}.");
                 Capture(dialog, $"{dialog.GetType().Name}-{(int)(scale * 100)}.png");
-                if (dialog is AddDestinationWindow)
-                {
-                    Assert.DoesNotContain(dialog.GetVisualDescendants().OfType<TextBlock>(),
-                        label => label.Text == "REVIEW YOUR CHOICE" || label.Text == "Choose where to add");
-                    Assert.Contains(dialog.GetVisualDescendants().OfType<TextBlock>(), label => label.Text == @"C:\Gehan\My\Company");
-                    dialog.Width = 360;
-                    dialog.Height = dialog.MinHeight;
-                    Pump(dialog);
-                    var scroller = Assert.Single(dialog.GetVisualDescendants().OfType<ScrollViewer>(), viewer => viewer.Content is StackPanel);
-                    foreach (var name in new[] { "Use selected location", "Outside all workspaces" })
-                    {
-                        var button = FindButton(dialog, name);
-                        button.BringIntoView();
-                        Pump(dialog);
-                        var point = button.TranslatePoint(default, scroller)!.Value;
-                        Assert.True(point.Y >= -1 && point.Y + button.Bounds.Height <= scroller.Bounds.Height + 1,
-                            $"Destination {name} cannot be fully shown at the minimum dialog size.");
-                    }
-                    AssertButtonsInside(dialog, skipDestinations: true);
-                    Capture(dialog, $"destination-narrow-{(int)(scale * 100)}.png");
-                }
                 if (dialog is InsertTableWindow table)
                 {
                     table.RowsInput.Text = "0";
@@ -144,32 +122,6 @@ public sealed class AddDestinationDialogTests
         }
     }
 
-    [AvaloniaTheory]
-    [InlineData("Use selected location", AddDestinationChoice.Selected)]
-    [InlineData("Outside all workspaces", AddDestinationChoice.Outside)]
-    [InlineData("Cancel destination choice", AddDestinationChoice.Cancel)]
-    public async Task Only_an_explicit_destination_button_returns_its_choice(string buttonName, AddDestinationChoice expected)
-    {
-        using var fixture = new DesktopFixture();
-        var pending = AddDestinationWindow.AskAsync(fixture.Window, "Company", fixture.Docs, true, "Create file");
-        var dialog = Assert.Single(fixture.Window.OwnedWindows.OfType<AddDestinationWindow>());
-        Pump(dialog);
-        FindButton(dialog, buttonName).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Assert.Equal(expected, await pending);
-    }
-
-    [AvaloniaFact]
-    public async Task Native_close_cancels_destination_without_creating_files_or_tabs()
-    {
-        using var fixture = new DesktopFixture();
-        var pending = AddDestinationWindow.AskAsync(fixture.Window, "Company", fixture.Docs, true);
-        var dialog = Assert.Single(fixture.Window.OwnedWindows.OfType<AddDestinationWindow>());
-        dialog.Close();
-        Assert.Equal(AddDestinationChoice.Cancel, await pending);
-        Assert.Empty(fixture.Shell.Tabs);
-        Assert.Empty(Directory.GetFileSystemEntries(fixture.Docs));
-    }
-
     private static Button FindButton(Window dialog, string name) =>
         Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == name);
 
@@ -181,11 +133,10 @@ public sealed class AddDestinationDialogTests
             "Validation must keep the focused name field available for correction.");
     }
 
-    private static void AssertButtonsInside(Window dialog, bool skipDestinations = false)
+    private static void AssertButtonsInside(Window dialog)
     {
         foreach (var button in dialog.GetVisualDescendants().OfType<Button>().Where(button => button.Content is string || button.Content is StackPanel))
         {
-            if (skipDestinations && AutomationProperties.GetName(button) is "Use selected location" or "Outside all workspaces") continue;
             var point = button.TranslatePoint(default, dialog)!.Value;
             Assert.InRange(point.X, 0, dialog.ClientSize.Width - button.Bounds.Width + 1);
             Assert.InRange(point.Y, 0, dialog.ClientSize.Height - button.Bounds.Height + 1);

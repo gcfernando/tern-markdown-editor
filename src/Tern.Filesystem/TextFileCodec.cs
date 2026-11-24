@@ -8,9 +8,10 @@ public enum DecodeFailure
     None,
     InvalidSequence,
     NotRoundTrippable,
+    AmbiguousEncoding,
 }
 
-/// <summary>Outcome of decoding file bytes. When <see cref="Failure"/> is set the text is a lossy preview and must not be saved over the file.</summary>
+/// <summary>Outcome of decoding file bytes. A failure means a lossy or ambiguous preview that must not be saved over the file.</summary>
 public sealed record DecodedText(string Text, TextFileFormat Format, DecodeFailure Failure)
 {
     public bool IsLossless => Failure == DecodeFailure.None;
@@ -85,6 +86,9 @@ public static class TextFileCodec
         {
             return new DecodedText(text, format, DecodeFailure.NotRoundTrippable);
         }
+
+        if (forcedEncoding is null && text.Contains('\0'))
+            return new DecodedText(text, format, DecodeFailure.AmbiguousEncoding);
 
         return new DecodedText(text, format, DecodeFailure.None);
     }

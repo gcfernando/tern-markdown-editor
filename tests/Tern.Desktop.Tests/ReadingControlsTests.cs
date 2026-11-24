@@ -35,13 +35,13 @@ public sealed class ReadingControlsTests
         Assert.True(f.Shell.Registry.SetBinding(CommandIds.ViewReading, "Ctrl+Alt+F9").Succeeded);
         f.Window.ApplySettings(); Pump(f);
         Assert.Contains("Ctrl+Alt+F9", ToolTip.GetTip(f.Window.FindControl<Control>("ReadingButton")!)!.ToString());
-        Button Find(string name) => Assert.Single(f.Window.GetVisualDescendants().OfType<Button>(), b => AutomationProperties.GetName(b) == name);
-        Find("Next reading page").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f);
+        Button Find(string name) => Assert.Single(f.Window.ReadingNavActions.Children.OfType<Button>(), b => AutomationProperties.GetName(b) == name);
+        Find("Page down").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f);
         Assert.True(f.Window.PreviewControl.TopSourceLine > 1);
-        Find("Go to document beginning").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f);
+        Find("Go to top").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f);
         Assert.Equal(1, f.Window.PreviewControl.TopSourceLine);
         f.Window.PreviewControl.ScrollToSourceLine(92); Pump(f);
-        var output = Path.Combine(root.FullName, "artifacts", "screenshots", "reading-mode"); Directory.CreateDirectory(output);
+        var output = Tern.Tests.Shared.TestOutput.Folder("screenshots", "reading-mode"); Directory.CreateDirectory(output);
         using var frame = f.Window.CaptureRenderedFrame(); Assert.NotNull(frame);
         using (var file = File.Create(Path.Combine(output, "handbook-reading-window.png"))) frame.Save(file, new PngBitmapEncoderOptions());
         Assert.Equal(text, tab.CurrentText); Assert.False(tab.IsDirty);

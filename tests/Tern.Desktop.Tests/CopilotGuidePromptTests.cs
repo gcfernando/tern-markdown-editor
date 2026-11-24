@@ -14,8 +14,8 @@ public sealed class CopilotGuidePromptTests
     public void Copilot_guide_requests_fit_the_limit_and_preserve_the_exact_question(string question)
     {
         var registry = CommandRegistry.CreateDefault();
-        var message = GuideQuestionPrompt.Build(registry, question, forCopilot: true);
-        Assert.InRange(message.Length, 1, CopilotTextClient.MaximumPromptCharacters);
+        var message = GuideQuestionPrompt.Build(registry, question, forCopilot: true, AIConnectionRules.MinimumSendCharacters);
+        Assert.InRange(message.Length, 1, AIConnectionRules.MinimumSendCharacters);
         Assert.DoesNotContain("@", message, StringComparison.Ordinal);
         Assert.EndsWith("\n\nUSER QUESTION\n" + question, message, StringComparison.Ordinal);
         var features = GuideQuestionPrompt.Relevant(registry, question);
@@ -26,7 +26,7 @@ public sealed class CopilotGuidePromptTests
     public void API_guide_requests_retain_the_complete_existing_command_reference_and_steps()
     {
         var registry = CommandRegistry.CreateDefault(); const string question = "How to use AI for MD files";
-        var message = GuideQuestionPrompt.Build(registry, question, forCopilot: false);
+        var message = GuideQuestionPrompt.Build(registry, question, forCopilot: false, AIConnectionRules.DefaultSendCharacters);
         var reference = string.Join('\n', registry.Commands.Select(c => c.Title + " | " + c.Category + " | " + Gesture.Describe(registry.GetGesture(c.Id))));
         var relevant = string.Join('\n', GuideQuestionPrompt.Relevant(registry, question)
             .Select(f => f.Name + ": " + f.Description + " " + string.Join(" ", f.Steps)));
@@ -37,6 +37,17 @@ public sealed class CopilotGuidePromptTests
     public void Oversized_questions_fail_locally_without_truncation()
     {
         Assert.Throws<InvalidOperationException>(() => GuideQuestionPrompt.Build(CommandRegistry.CreateDefault(),
-            new string('q', CopilotTextClient.MaximumPromptCharacters), forCopilot: true));
+            new string('q', AIConnectionRules.MinimumSendCharacters), forCopilot: true, AIConnectionRules.MinimumSendCharacters));
+    }
+
+    [Fact]
+    public void Legacy_history_argument_never_enters_a_fresh_help_request()
+    {
+        var message = GuideQuestionPrompt.Build(CommandRegistry.CreateDefault(), "How do I export a PDF?", false,
+            AIConnectionRules.MinimumSendCharacters, "OLD_QUESTION_CANARY\nOLD_REPLY_CANARY");
+        Assert.DoesNotContain("OLD_QUESTION_CANARY", message);
+        Assert.DoesNotContain("OLD_REPLY_CANARY", message);
+        Assert.DoesNotContain("EARLIER CONVERSATION", message);
+        Assert.EndsWith("How do I export a PDF?", message);
     }
 }

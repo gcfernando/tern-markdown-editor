@@ -15,8 +15,8 @@ public sealed class MCPConnectionsWindow : Window
         : this(new MCPConnectionClient(), settingsDirectory, credentialStore, selectedProfileId, useTools) { }
     internal MCPConnectionsWindow(MCPConnectionClient client, string? settingsDirectory = null, IAICredentialStore? credentialStore = null, string? selectedProfileId = null, bool useTools = false)
     {
-        DialogParts.SetupWizard(this, "MCP Servers");
-        FontSize = GuideParts.Scaled(14); MinWidth = 640; MinHeight = 500;
+        DialogParts.SetupWizard(this, "MCP servers", DialogGuidance.Connections);
+        this[!FontSizeProperty] = GuideParts.Font("Body").ToBinding(); MinWidth = 640; MinHeight = 500;
         var endpoint = Field("MCP server endpoint", "http://localhost:3000/mcp");
         var key = Field("Bearer token (optional)", ""); key.PasswordChar = '●'; key.MaxLength = 4096;
         var connect = new Button { Content = "Connect and discover tools" };
@@ -33,11 +33,12 @@ public sealed class MCPConnectionsWindow : Window
         AutomationProperties.SetName(consent, consentText);
         var call = new Button { Content = "Run reviewed tool", IsEnabled = false };
         var result = Field("MCP result (untrusted JSON; never executed)", ""); result.IsReadOnly = true; result.AcceptsReturn = true; result.TextWrapping = TextWrapping.Wrap; result.MinHeight = 120; result.MaxHeight = 240;
-        var status = Body("Opening this dialog makes no network request. Tool calls may change external files or accounts.");
+        var status = MessageTones.Follow(Body("Opening this dialog makes no network request. Tool calls may change external files or accounts."));
         var profiles = new IntegrationProfileEditor("mcp", endpoint, new TextBox { Text = "auto" }, key, status, settingsDirectory, credentialStore);
         var next = new Button { Content = "Continue", Classes = { "accent" } };
         var back = new Button { Content = "Back" };
         var reviewTools = new Button { Content = "Review tools", IsEnabled = false };
+        var actions = GuideParts.Actions(next, close, back, connect, reviewTools, call, cancel);
         int page = 0;
         CancellationTokenSource? operation = null;
         string? connectedEndpoint = null, connectedKey = null;
@@ -62,9 +63,9 @@ public sealed class MCPConnectionsWindow : Window
             using var request = new CancellationTokenSource(); operation = request;
             connect.IsEnabled = next.IsEnabled = back.IsEnabled = false; call.IsEnabled = false; cancel.IsEnabled = true; cancel.IsVisible = true;
             try { await action(request.Token); }
-            catch (OperationCanceledException) { status.Text = "Canceled or timed out. The server may already have received the request or performed its effects. No tool call is automatically retried."; }
+            catch (OperationCanceledException) { status.Text = "Canceled. The server may already have received the request or performed its effects. No tool call is automatically retried."; }
             catch (System.Text.Json.JsonException) { status.Text = "Invalid JSON. Check the argument object or server response."; }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { status.Text = ex.Message; }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { status.Text = Tern.App.Shell.UserProblem.Plain(ex); }
             finally { operation = null; connect.IsEnabled = next.IsEnabled = back.IsEnabled = true; cancel.IsEnabled = false; cancel.IsVisible = false; Invalidate(); }
         }
         connect.Click += (_, _) => _ = RunAsync(async token =>
@@ -94,7 +95,7 @@ public sealed class MCPConnectionsWindow : Window
             {
                 status.Text = "Running the individually reviewed tool…";
                 result.Text = await client.CallToolAsync(tool, approved.Arguments, token);
-                status.Text = "Result received. It is displayed as untrusted JSON and is not applied to any document.";
+                status.Text = "Result received. Check it before you use it. Tern did not change your notes.";
             });
         };
         cancel.Click += (_, _) => operation?.Cancel(); close.Click += (_, _) => Close();
@@ -130,6 +131,7 @@ public sealed class MCPConnectionsWindow : Window
             page = selected; for (var i = 0; i < pages.Length; i++) pages[i].IsVisible = i == page;
             steps.Content = GuideParts.ConnectionSteps(page, "Configure", "Validate and save", "Review tools");
             next.IsVisible = page < 2; next.Content = page == 0 ? "Continue" : "Save connection";
+            actions.SetPrimary(page < 2 ? next : call);
             back.IsVisible = page > 0; connect.IsVisible = page >= 1; reviewTools.IsVisible = page == 1; call.IsVisible = page == 2; cancel.IsVisible = operation is not null; scroll.Offset = default;
             if (IsActive) DialogParts.FocusPage(pages[page], connect);
         }
@@ -148,13 +150,13 @@ public sealed class MCPConnectionsWindow : Window
         };
         back.Click += (_, _) => { if (operation is null) Page(Math.Max(0, page - 1)); };
         Content = GuideParts.Frame(GuideParts.Vertical(GuideParts.Title("MCP Servers"), steps), scroll,
-            GuideParts.Vertical(status, GuideParts.Actions(back, connect, reviewTools, next, call, cancel, close)));
+            GuideParts.Vertical(status, actions));
         var selected = selectedProfileId is not null && profiles.Select(selectedProfileId);
         Page(selected && useTools ? 1 : 0);
-        if (selected && useTools) status.Text = "Saved MCP server loaded. Connect and discover tools, then choose Review tools. No request has been made.";
+        if (selected && useTools) status.Text = "MCP server loaded. Choose Connect and discover tools, then Review tools. Tern has not contacted it yet.";
     }
     private static TextBox Field(string name, string text)
-    { var field = new TextBox { Text = text, PlaceholderText = name, FontSize = GuideParts.Scaled(14) }; AutomationProperties.SetName(field, name); return field; }
+    { var field = new TextBox { Text = text, PlaceholderText = name, [!TextBox.FontSizeProperty] = GuideParts.Font("Body").ToBinding() }; AutomationProperties.SetName(field, name); return field; }
     private static Control Label(string name, Control control) => GuideParts.Vertical(new TextBlock { Text = name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap }, control);
-    private static TextBlock Body(string text) => new() { Text = text, FontSize = GuideParts.Scaled(14), LineHeight = GuideParts.Scaled(21), TextWrapping = TextWrapping.Wrap };
+    private static TextBlock Body(string text) => GuideParts.Body(text);
 }

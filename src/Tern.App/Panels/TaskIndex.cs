@@ -3,7 +3,10 @@ using Tern.Workspaces;
 
 namespace Tern.App.Panels;
 
-public sealed record TaskEntry(string Path, string RelativePath, int Line, bool Checked, string Text);
+public sealed record TaskEntry(string Path, string RelativePath, int Line, bool Checked, string Text)
+{
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
 
 /// <summary>Collects task-list items across a workspace for the Tasks panel and its badge.</summary>
 public static class TaskIndex
@@ -28,9 +31,11 @@ public static class TaskIndex
                 continue;
             }
 
-            foreach (var task in MarkdownAnalyzer.Analyze(text, profile).Tasks)
+            var analysis = MarkdownAnalyzer.Analyze(text, profile);
+            var tags = FrontMatterReader.Read(analysis.FrontMatter?.Yaml).Tags;
+            foreach (var task in analysis.Tasks)
             {
-                entries.Add(new TaskEntry(file.FullPath, file.RelativePath, task.Line, task.Checked, task.Text));
+                entries.Add(new TaskEntry(file.FullPath, file.RelativePath, task.Line, task.Checked, task.Text) { Tags = tags });
             }
         }
 

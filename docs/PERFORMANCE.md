@@ -11,7 +11,7 @@ dotnet run --project tests/Tern.Benchmarks -c Release -- --quick
 dotnet run --project tests/Tern.Benchmarks -c Release
 ```
 
-The benchmark console writes results under `artifacts/benchmarks/`. Record commit, SDK/runtime, CPU, RAM, storage, Windows version, input composition and size, repetitions and cold/warm conditions. Do not compare unlike input sizes or a source build with a different packaged configuration without qualification.
+The benchmark console writes results under `%TEMP%/tern-benchmarks/`. Record commit, SDK/runtime, CPU, RAM, storage, Windows version, input composition and size, repetitions and cold/warm conditions. Do not compare unlike input sizes or a source build with a different packaged configuration without qualification.
 
 ## Interpret results
 

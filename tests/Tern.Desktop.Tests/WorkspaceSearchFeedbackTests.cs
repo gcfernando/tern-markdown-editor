@@ -76,6 +76,33 @@ public sealed class WorkspaceSearchFeedbackTests
     }
 
     [AvaloniaFact]
+    public void Preparation_status_stays_visible_with_partial_results_and_resets_when_picker_is_reused()
+    {
+        var picker = new QuickPicker();
+        var window = new Window { Width = 800, Height = 600, Content = picker };
+        try
+        {
+            window.Show();
+            string? preparation = "Indexing 200/420";
+            picker.Open("Search workspace", "word", _ => [new PickerItem("Partial match", "", "", null)], _ => { }, () => { },
+                scopeStatusProvider: () => preparation);
+            var scope = Assert.Single(picker.GetVisualDescendants().OfType<TextBlock>(), block => AutomationProperties.GetName(block) == "Search scope");
+            Assert.Single(picker.Results.Items);
+            Assert.Contains(preparation, scope.Text);
+            preparation = "Search and links may be incomplete";
+            picker.RefreshResults();
+            Assert.Contains(preparation, scope.Text);
+            preparation = null;
+            picker.RefreshResults();
+            Assert.Equal("Search workspace", scope.Text);
+            preparation = "stale";
+            picker.Open("Go to file", "", _ => [], _ => { }, () => { });
+            Assert.Equal("Go to file", scope.Text);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public void Reusing_picker_resets_custom_empty_feedback_for_the_next_feature()
     {
         var picker = new QuickPicker();

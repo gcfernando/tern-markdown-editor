@@ -14,14 +14,15 @@ public sealed class PromptWindow : Window
 {
     private readonly List<Button> _buttons = [];
 
-    public PromptWindow(string title, string message, IReadOnlyList<string> buttons, int defaultIndex = 0, int cancelIndex = -1)
+    public PromptWindow(string title, string message, IReadOnlyList<string> buttons, int defaultIndex = 0, int cancelIndex = -1, int destructiveIndex = -1)
     {
-        DialogParts.Setup(this, title, 520, 360);
+        // A destructive action is never the default button.
+        if (defaultIndex == destructiveIndex) defaultIndex = -1;
+        DialogParts.Setup(this, title, 520, 360, DialogGuidance.Confirmation);
         MaxHeight = 720;
         MinWidth = 360;
         MinHeight = 120;
 
-        var row = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, ItemSpacing = 8, LineSpacing = 8 };
         for (var i = 0; i < buttons.Count; i++)
         {
             var index = i;
@@ -34,9 +35,25 @@ public sealed class PromptWindow : Window
                 button.IsDefault = true;
             }
             if (i == cancelIndex) button.IsCancel = true;
+            if (i == destructiveIndex) button.Classes.Add("danger");
 
             _buttons.Add(button);
-            row.Children.Add(button);
+        }
+        Control row;
+        if (_buttons.Count == 0) row = GuideParts.ButtonRow();
+        else
+        {
+            var primary = defaultIndex >= 0 && defaultIndex < _buttons.Count ? defaultIndex
+                : cancelIndex >= 0 && cancelIndex < _buttons.Count ? cancelIndex : 0;
+            var cancel = cancelIndex >= 0 && cancelIndex < _buttons.Count ? cancelIndex : primary;
+            row = GuideParts.Actions(_buttons[primary], _buttons[cancel],
+                [.. _buttons.Where((_, index) => index != primary && index != cancel)]);
+            for (var i = 0; i < _buttons.Count; i++)
+            {
+                _buttons[i].IsDefault = i == defaultIndex;
+                _buttons[i].IsCancel = i == cancelIndex;
+                _buttons[i].Classes.Set("accent", i == defaultIndex);
+            }
         }
 
         var messageScroller = new ScrollViewer
@@ -49,7 +66,7 @@ public sealed class PromptWindow : Window
         // actions together without duplicate headings or generic instruction text.
         var frame = new Grid
         {
-            Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 16,
+            Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(16).ToBinding(),
             Children = { messageScroller, row },
         };
         Grid.SetRow(row, 1);
@@ -69,12 +86,15 @@ public sealed class PromptWindow : Window
                 e.Handled = true;
             }
         };
-        Opened += (_, _) => (_buttons.Count > defaultIndex && defaultIndex >= 0 ? _buttons[defaultIndex] : _buttons.FirstOrDefault())?.Focus();
+        // With no default button, focus the safe choice so Enter or Space can never confirm a destructive action.
+        Opened += (_, _) => (defaultIndex >= 0 && defaultIndex < _buttons.Count ? _buttons[defaultIndex]
+            : cancelIndex >= 0 && cancelIndex < _buttons.Count ? _buttons[cancelIndex]
+            : _buttons.FirstOrDefault(button => !button.Classes.Contains("danger")))?.Focus();
     }
 
-    public static async Task<int> AskAsync(Window owner, string title, string message, IReadOnlyList<string> buttons, int defaultIndex = 0, int cancelIndex = -1)
+    public static async Task<int> AskAsync(Window owner, string title, string message, IReadOnlyList<string> buttons, int defaultIndex = 0, int cancelIndex = -1, int destructiveIndex = -1)
     {
-        var prompt = new PromptWindow(title, message, buttons, defaultIndex, cancelIndex);
+        var prompt = new PromptWindow(title, message, buttons, defaultIndex, cancelIndex, destructiveIndex);
         if (owner.Screens.ScreenFromWindow(owner) is { } screen)
         {
             prompt.MaxWidth = Math.Max(1, screen.WorkingArea.Width / screen.Scaling - 32);

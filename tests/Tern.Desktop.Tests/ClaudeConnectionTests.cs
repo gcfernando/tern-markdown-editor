@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using Tern.App;
 using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Tests;
@@ -17,10 +18,9 @@ public sealed class ClaudeConnectionTests
             Assert.Equal("2023-06-01", Assert.Single(request.Headers.GetValues("anthropic-version")));
             Assert.Null(request.Headers.Authorization);
             using var json = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
-            Assert.Equal(1024, json.RootElement.GetProperty("max_tokens").GetInt32());
+            Assert.Equal(16_000, json.RootElement.GetProperty("max_tokens").GetInt32());
             Assert.False(json.RootElement.TryGetProperty("tools", out _));
-            var message = Assert.Single(json.RootElement.GetProperty("messages").EnumerateArray());
-            Assert.Equal("Reviewed café", message.GetProperty("content").GetString());
+            AIWire.AssertIndependent(json.RootElement, AIRequest.ConnectionTest("Reviewed café"));
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"content\":[{\"type\":\"text\",\"text\":\"First\"},{\"type\":\"text\",\"text\":\"Second\"}]}", Encoding.UTF8, "application/json") };
         }));
         Assert.Equal("First\nSecond", await client.SendAsync(new Uri("https://api.anthropic.com/v1/messages"), "claude-model", "test-key", "Reviewed café", AIProviders.Get("anthropic-messages"), TestContext.Current.CancellationToken));

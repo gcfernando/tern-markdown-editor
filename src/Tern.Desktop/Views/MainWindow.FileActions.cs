@@ -42,7 +42,8 @@ public partial class MainWindow
         var name = requestedName;
         if (string.IsNullOrWhiteSpace(name)) return;
         if (!folder && Path.GetExtension(name).Length == 0) name += ".md";
-        var result = await Task.Run(() => folder ? workspace.FileOperations.CreateFolder(parent, name) : workspace.FileOperations.CreateFile(parent, name));
+        var format = _shell.Settings.NewFileFormat;
+        var result = await Task.Run(() => folder ? workspace.FileOperations.CreateFolder(parent, name) : workspace.FileOperations.CreateFile(parent, name, format: format));
         if (!result.Succeeded)
         {
             _shell.StatusMessage = result.Message ?? "Could not create the item.";
@@ -55,9 +56,9 @@ public partial class MainWindow
         {
             RefreshWorkspace();
             await ShowNavAsync("Files");
-            if (!folder && result.Path is { } path) await _shell.OpenFileAsync(path);
+            if (!folder && result.Path is { } path) await _shell.OpenFileAsync(path, createdFile: result.CreatedFile);
         }
-        _shell.StatusMessage = "Created " + name;
+        _shell.SetStatus("Created " + name, Tern.App.Shell.StatusSeverity.Success);
     }
 
     private async Task PrintDocumentAsync()
@@ -67,7 +68,7 @@ public partial class MainWindow
         var options = ExportDefaults.PreviewOptions with { Profile = tab.Profile, DocumentPath = tab.FilePath ?? tab.ResourceDocumentPath, WorkspaceRoot = WorkspaceRootFor(tab),
             Resolver = new Tern.Rendering.Resources.ResourceResolverOptions { AdditionalImageFiles = tab.LinkedImageFiles } };
         await new PrintPreviewWindow(tab.DisplayName, snapshot.Text, options,
-            _remoteImages is null ? null : _remoteImages.FetchForExport).ShowDialog(this);
+            ExportImageLoader(tab), message => _shell.SetStatus(message, Tern.App.Shell.StatusSeverity.Warning), _shell.Activities).ShowDialog(this);
     }
 }
 
@@ -75,7 +76,7 @@ public sealed class FileNameWindow : Window
 {
     public FileNameWindow(bool folder, string parent, bool rename = false, string? initialName = null, string? dialogTitle = null, Func<string, string?>? validateName = null)
     {
-        DialogParts.Setup(this, dialogTitle ?? (rename ? "Rename document" : folder ? "New folder" : "New Markdown file"), 480, 360);
+        DialogParts.Setup(this, dialogTitle ?? (rename ? "Rename document" : folder ? "New folder" : "New Markdown file"), 480, 360, DialogGuidance.ItemName);
         var input = new TextBox { Text = initialName ?? (folder ? "New folder" : "New document.md") };
         Avalonia.Automation.AutomationProperties.SetName(input, folder ? "Folder name" : "File name");
         var status = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap, IsVisible = false };
@@ -121,9 +122,9 @@ public sealed class FileNameWindow : Window
             Content = fields,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
-        var actions = GuideParts.Actions(cancel, create);
+        var actions = GuideParts.Actions(create, cancel);
         var footer = GuideParts.Vertical(status, actions);
-        var frame = new Grid { Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 16, Children = { scroll, footer } };
+        var frame = new Grid { Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(16).ToBinding(), Children = { scroll, footer } };
         Grid.SetRow(footer, 1);
         frame.SizeChanged += (_, _) => MinHeight = Math.Min(MaxHeight, footer.DesiredSize.Height + 100);
         Content = frame;

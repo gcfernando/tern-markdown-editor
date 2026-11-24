@@ -45,6 +45,7 @@ public sealed class WorkspaceContextMenuTests
             && control.FindAncestorOfType<TreeViewItem>() == container);
         var tab = fixture.Shell.ActiveTab;
         var tabs = fixture.Shell.Tabs.Count;
+        Assert.Empty(grid.ContextMenu!.Items);
         var point = (padding ? (Control)container : grid).TranslatePoint(new Point(padding ? 2 : 35, 15), fixture.Window)!.Value;
         fixture.Window.MouseDown(point, MouseButton.Right);
         fixture.Window.MouseUp(point, MouseButton.Right);
@@ -52,10 +53,14 @@ public sealed class WorkspaceContextMenuTests
         Assert.True(grid.ContextMenu!.IsOpen);
         var labels = grid.ContextMenu.Items.OfType<MenuItem>().Where(item => item.IsVisible).Select(item => item.Header?.ToString()).ToArray();
         Assert.Equal(directory
-            ? ["Create File…", "Create Folder…", "Create Workspace…", "Close Folder Documents", "Collapse Folder"]
+            ? ["Create File…", "Create Folder…", "Create Workspace…", "Rename Folder…", "Move Folder to…", "Duplicate Folder", "Reveal in File Explorer", "Close Folder Documents", "Collapse Folder", "Move Folder to Recycle Bin…"]
             : open
-                ? ["Open", "Rename…", "Move file to Recycle Bin…", "Close all", "Close tabs to the right", "Close other tabs", "Close Document"]
-                : ["Open", "Rename…", "Move file to Recycle Bin…", "Close all", "Close tabs to the right", "Close other tabs"], labels);
+                ? ["Open", "Rename…", "Move to…", "Duplicate", "Reveal in File Explorer", "Close Document", "Move to Recycle Bin…"]
+                : ["Open", "Rename…", "Move to…", "Duplicate", "Reveal in File Explorer", "Move to Recycle Bin…"], labels);
+        var visible = grid.ContextMenu.Items.OfType<Control>().Where(control => control.IsVisible).ToArray();
+        Assert.IsType<Separator>(visible[^2]);
+        Assert.EndsWith("Recycle Bin…", Assert.IsType<MenuItem>(visible[^1]).Header?.ToString());
+        Assert.DoesNotContain(grid.ContextMenu.Items.OfType<MenuItem>(), item => item.Tag is "tab.closeAll" or "tab.closeRight" or "tab.closeOthers");
         Assert.Same(tab, fixture.Shell.ActiveTab);
         Assert.Equal(tabs, fixture.Shell.Tabs.Count);
         Assert.Same(company, fixture.Shell.Workspace);
@@ -91,7 +96,6 @@ public sealed class WorkspaceContextMenuTests
         menu.Close();
         await UntilAsync(fixture, () => fixture.Window.OwnedWindows.Any());
         var dialog = Assert.IsType<CreateItemWindow>(Assert.Single(fixture.Window.OwnedWindows));
-        Assert.DoesNotContain(fixture.Window.OwnedWindows, window => window is AddDestinationWindow);
         Assert.Contains(dialog.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == company.Root
             || text.Text is { } detail && detail.EndsWith(company.Root, StringComparison.Ordinal));
         var input = Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), text => AutomationProperties.GetName(text) == (action == "workspace" ? "Workspace name" : fieldName));

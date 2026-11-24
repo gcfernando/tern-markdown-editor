@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Tern.App;
 using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Views;
@@ -10,6 +11,7 @@ namespace Tern.Desktop.Views;
 /// <summary>Guided service setup, live validation, secure saving, and optional exact-message review.</summary>
 public sealed class AIConnectionsWindow : Window, IDisposable
 {
+    internal const string TestConsentText = "Send the shown test instructions and my message to the endpoint above";
     private readonly AIProfileStore _store;
     private readonly IAICredentialStore _vault;
     private readonly AIConnectionManager _manager;
@@ -28,19 +30,22 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private readonly ComboBox _models = new() { PlaceholderText = "Choose a discovered model, or enter its ID above", HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBox _name = Field("Connection name", 100);
     private readonly TextBox _model = Field("Model name", 256);
+    private readonly SendLimitField _sendLimit = new();
     private readonly TextBox _key = Field("API key (saved only when you choose Save connection)", 4096);
     private readonly TextBox _endpoint = Field("Full AI endpoint", 2048);
     private readonly TextBox _discovery = Field("Model discovery URL", 2048);
+    private readonly TextBox _timeout = Field("Request timeout in seconds (blank uses service default)", 4);
     private readonly TextBox _workspace = Field("Anthropic workspace ID", 256);
-    private readonly TextBox _message = Field("Exact message to send", AIConnectionClient.MaximumMessageCharacters);
+    private readonly TextBox _message = Field("Exact message to send", AIConnectionRules.MaximumSendCharacters);
     private readonly TextBox _response = Field("AI response", 1_048_576);
     private readonly CheckBox _custom = new() { Content = "Use custom endpoint" };
     private readonly CheckBox _reuseCredential = new();
-    private readonly CheckBox _consent = new() { Content = "Send exactly the message above to the endpoint above" };
+    private readonly CheckBox _consent = new() { Content = TestConsentText };
+    private readonly TextBlock _messageSize = GuideParts.Caption("");
     private readonly TextBlock _step = GuideParts.Caption("");
-    private readonly TextBlock _status = GuideParts.Body("No request has been made.");
+    private readonly TextBlock _status = MessageTones.Follow(GuideParts.Body("No request has been made."));
     private readonly TextBlock _prerequisites = GuideParts.Body("");
-    private readonly TextBlock _credentialStatus = GuideParts.Caption("");
+    private readonly TextBlock _credentialStatus = MessageTones.Follow(GuideParts.Caption(""));
     private readonly TextBlock _empty = GuideParts.Caption("No saved connections yet.");
     private readonly TextBlock _summary = GuideParts.Body("");
     private readonly TextBlock _checks = GuideParts.Caption("");
@@ -93,14 +98,17 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private bool _forceClose;
     private bool _disposed;
     private readonly string _writingShortcut;
+    private readonly DialogActions _actions;
 
     public AIConnectionsWindow(string? settingsDirectory = null, IAICredentialStore? credentialStore = null,
         Func<Window, Task>? openCopilot = null, AIConnectionClient? connectionClient = null, string? initialQuestion = null,
         Func<string, Task<bool>>? confirmDiscard = null, Func<string, Task<bool>>? confirmDelete = null, string? writingShortcut = null)
     {
-        DialogParts.SetupWizard(this, "AI Connections");
+        DialogParts.SetupWizard(this, "AI connections", DialogGuidance.Connections);
         _confirmDiscard = confirmDiscard; _confirmDelete = confirmDelete;
-        _writingShortcut = writingShortcut ?? "Alt+Space";
+        _delete.Classes.Add("danger");
+        _removeKey.Classes.Add("danger");
+        _writingShortcut = writingShortcut ?? "Ctrl+Shift+Space";
         _settingsDirectory = settingsDirectory ?? Tern.App.Shell.AppPaths.Default().SettingsDirectory;
         _openCopilot = openCopilot;
         _store = new AIProfileStore(_settingsDirectory);
@@ -120,21 +128,21 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         AccessibleName(_saved, "Saved AI connections"); AccessibleName(_service, "AI service preset"); AccessibleName(_protocol, "AI provider protocol");
         AccessibleName(_models, "Discovered AI models"); AccessibleName(_step, "AI setup step"); AccessibleName(_status, "AI connection status");
         AccessibleName(_summary, "Reviewed AI destination"); AccessibleName(_checks, "AI validation status"); AccessibleName(_prerequisites, "AI service prerequisites");
-        AccessibleName(_next, "AI setup next"); AccessibleName(_back, "AI setup back"); AccessibleName(_save, "Save AI connection"); AccessibleName(_delete, "Delete AI connection");
+        AccessibleName(_next, "Next step"); AccessibleName(_back, "Previous step"); AccessibleName(_save, "Save connection"); AccessibleName(_delete, "Delete AI connection");
         AccessibleName(_validate, "Validate AI connection"); AccessibleName(_custom, "Use custom AI endpoint"); AccessibleName(_reuseCredential, "Allow credential at changed destination");
-        AccessibleName(_consent, "Send exactly the message above to the endpoint above");
+        AccessibleName(_consent, TestConsentText);
         var showKey = new Button { Content = "Show", Classes = { "flat" } }; AccessibleName(showKey, "Show API key");
         showKey.Click += (_, _) =>
         {
             var reveal = _key.PasswordChar != '\0'; _key.PasswordChar = reveal ? '\0' : '●';
             showKey.Content = reveal ? "Hide" : "Show"; AccessibleName(showKey, reveal ? "Hide API key" : "Show API key");
         };
-        var keyRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Children = { _key, showKey } };
+        var keyRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding(), Children = { _key, showKey } };
         Grid.SetColumn(showKey, 1);
         var resetEndpoint = new Button { Content = "Reset to provider default", Classes = { "flat" } }; AccessibleName(resetEndpoint, "Reset AI endpoint to default");
         resetEndpoint.Click += (_, _) =>
         {
-            if (Service.Id == "compatible") { Status("Other compatible APIs have no universal default. Enter the service's documented endpoint."); return; }
+            if (Service.Id == "compatible") { Status("A custom AI connection has no universal default. Enter the service's documented endpoint."); return; }
             _customCache = ""; _custom.IsChecked = false; _endpoint.Text = DefaultEndpoint;
         };
         var docs = new Button { Content = "Setup guide ↗", Classes = { "flat" } };
@@ -151,7 +159,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _pages[0] = GuideParts.Vertical(
             GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Manage your connections"),
                 GuideParts.Caption("Create, modify, delete and validate connections. Saved services are available from the main toolbar."),
-                Label("Saved connections", _saved), _empty, GuideParts.Actions(newProfile, _delete))),
+                Label("Saved connections", _saved), _empty, GuideParts.ButtonRow(newProfile, _delete))),
             GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Choose an AI service or tool server"), Label("AI service", _service), _prerequisites, docs)));
         _workspaceSection = Label("Anthropic workspace ID (optional)", _workspace, Error("workspace"));
         _advanced.Content = GuideParts.Vertical(_custom, Label("API endpoint (full URL)", _endpoint, Error("endpoint")), resetEndpoint,
@@ -159,38 +167,40 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             GuideParts.Caption("A custom URL must accept this protocol and authentication. Changing the address does not convert APIs. Redirects are never followed."),
             Label("Model discovery URL (optional, full URL)", _discovery, Error("discovery")),
             GuideParts.Caption("Leave blank for documented provider defaults. Custom endpoints need their own documented model-list URL on the same origin; Tern does not guess paths."),
-            _workspaceSection, _reuseCredential);
+            _workspaceSection, Label("Request timeout (seconds)", _timeout, Error("timeout")),
+            GuideParts.Caption("Leave blank for 300 seconds. Range: 1–3,600 seconds. AI and MCP use the system proxy; URL imports retain their direct SSRF-protected connection."), _reuseCredential);
         _advanced.Classes.Add("ai-advanced");
         _pages[1] = GuideParts.Vertical(
             GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Configure your connection"),
                 Label("Connection name", _name, Error("name")),
-                Label("Model ID", _model, Error("model")), _models,
+                Label("Model ID", _model, Error("model")), _models, _sendLimit.View,
                 Label("API key", keyRow, Error("credential")), _credentialStatus,
                 GuideParts.Caption("Saved credentials stay in Windows Credential Manager. Leave a stored key blank to keep it."),
-                GuideParts.Actions(_replaceKey, _removeKey), _advanced)));
+                GuideParts.ButtonRow(_replaceKey, _removeKey), _advanced)));
         _tryMessage.Content = GuideParts.Vertical(Label("Exact message to send", _message),
-            GuideParts.Caption("Only this message is sent. No document, conversation history or tool permissions are attached."),
-            _consent, Label("Response", _response));
+            GuideParts.Caption("Tern sends the test instructions shown above and this message. No document, earlier conversation or tool permissions are attached."),
+            _messageSize, _consent, Label("Response", _response));
         _tryMessage.IsExpanded = initialQuestion is not null;
         _tryMessage.PropertyChanged += (_, e) => { if (e.Property == Expander.IsExpandedProperty) UpdateControls(); };
         _pages[2] = GuideParts.Vertical(
             GuideParts.Card(GuideParts.Vertical(GuideParts.Title("Validate and save"), _summary,
-                GuideParts.Caption("Validate sends the short test message ‘Reply with exactly: OK.’ to this model. Provider usage charges may apply. Your documents are not sent."),
+                GuideParts.Caption("Validate sends the test instructions below and the short message ‘Reply with exactly: OK.’ to this model. Provider usage charges may apply. Your documents are not sent."),
+                new Expander { Header = "Tern's test instructions", Content = GuideParts.Body(AIRequest.ConnectionTest("").Instructions.Trim()) },
                 _validationDestination, _checks)),
             GuideParts.Card(GuideParts.Vertical(GuideParts.Body("Keep this connection for next time"),
                 GuideParts.Caption("Choose Save connection below to store these settings and your credential securely on this device. Saving does not send a request."))),
             _tryMessage);
         var allPages = GuideParts.Vertical(_pages); allPages.Children.Add(_technicalExpander); _scroll.Content = allPages;
         var close = new Button { Content = "Close", IsCancel = true }; close.Click += (_, _) => Close();
-        _next.Classes.Add("accent"); _send.Classes.Add("accent"); _save.Classes.Add("accent");
+        _actions = GuideParts.Actions(_next, close, _back, _validate, _save, _send, _cancel);
         var header = GuideParts.Vertical(GuideParts.Title("AI connections"), _step);
         _stepper = GuideParts.ConnectionSteps(0, "Choose service", "Configure", "Validate and save");
         header.Children.Add(_stepper);
-        Content = GuideParts.Frame(header, _scroll,
-            GuideParts.Vertical(_status, GuideParts.Actions(_back, _next, _validate, _save, _send, _cancel, close)));
+        Content = GuideParts.FrameWithReachableFooter(this, header, _scroll,
+            GuideParts.Vertical(_status, _actions));
 
         void RefreshReview() { _summary.Text = Summary(); ToolTip.SetTip(docs, SetupGuideUrl); }
-        foreach (var field in new[] { _model, _endpoint, _discovery, _workspace }) field.PropertyChanged += (_, e) =>
+        foreach (var field in new[] { _model, _endpoint, _discovery, _workspace, _timeout }) field.PropertyChanged += (_, e) =>
         {
             if (_loading || e.Property != TextBox.TextProperty) return;
             if (ReferenceEquals(field, _endpoint) && _custom.IsChecked == true) _customCache = _endpoint.Text ?? "";
@@ -202,6 +212,8 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             _enteredKeyEndpoint = _endpoint.Text ?? ""; _enteredKeyProtocol = Protocol; _reuseCredential.IsChecked = false; SettingsChanged(); RefreshReview();
         };
         _name.PropertyChanged += (_, e) => { if (!_loading && e.Property == TextBox.TextProperty) { _dirty = true; UpdateControls(); } };
+        // How much text is sent at once does not change who is contacted, so a passed connection test stays valid.
+        _sendLimit.Changed += () => { if (!_loading) { _dirty = true; UpdateControls(); RefreshReview(); } };
         _protocol.SelectionChanged += (_, _) =>
         {
             if (_loading) return;
@@ -318,11 +330,12 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private string EffectiveKey => OriginChanged && _reuseCredential.IsChecked != true ? "" : CandidateKey;
     private const string NotTested = "Local settings: not checked\nConnectivity: Not tested\nAuthentication: Not tested\nModel: Model not verified\nGeneration: Not tested";
 
-    private AIConnectionInputs Inputs() => new(Service.Id, Protocol, _endpoint.Text ?? "", _model.Text ?? "", EffectiveKey, _discovery.Text ?? "", _workspace.Text ?? "");
+    private AIConnectionInputs Inputs() => new(Service.Id, Protocol, _endpoint.Text ?? "", _model.Text ?? "", EffectiveKey, _discovery.Text ?? "", _workspace.Text ?? "", string.IsNullOrWhiteSpace(_timeout.Text) ? null : int.TryParse(_timeout.Text, out var seconds) ? seconds : 0);
 
     private IReadOnlyDictionary<string, string> LocalErrors()
     {
         var errors = new Dictionary<string, string>(AIConnectionRules.Errors(Inputs()), StringComparer.Ordinal);
+        if (!IsIntegration && _sendLimit.Problem is { } sendProblem) errors["send"] = sendProblem;
         if (OriginChanged && _reuseCredential.IsChecked != true)
             errors["credential"] = "The destination origin or authentication protocol changed. Explicitly allow this credential for the new destination and protocol, enter a replacement there, or remove the stored credential.";
         return errors;
@@ -369,6 +382,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             header.Children.Add(_stepper);
         }
         _next.IsVisible = _page < 2;
+        _actions.SetPrimary(_page < 2 ? _next : _save);
         _validate.IsVisible = _save.IsVisible = _page == 2;
         _back.IsVisible = _page > 0;
         UpdateControls();
@@ -381,15 +395,23 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _delete.IsVisible = _page == 0;
         var coolingDown = _retryAt is not null && DateTimeOffset.UtcNow < _retryAt;
         _next.IsEnabled = _back.IsEnabled = !_busy; _back.IsEnabled &= _page > 0;
-        _save.IsEnabled = _persistenceAvailable && !_busy; _delete.IsEnabled = _persistenceAvailable && (_profileId is not null || _selectedIntegration is not null) && !_busy;
+        _save.IsEnabled = _persistenceAvailable && !_busy && (IsIntegration || _sendLimit.Problem is null); _delete.IsEnabled = _persistenceAvailable && (_profileId is not null || _selectedIntegration is not null) && !_busy;
         _save.Content = _profileId is null ? "Save connection" : "Save changes";
         _validate.IsEnabled = !_busy && !coolingDown;
         _validate.Classes.Set("accent", _check is null);
         _save.Classes.Set("accent", _check is not null);
         _cancel.IsVisible = _cancel.IsEnabled = _busy;
+        var requestCharacters = AIRequest.ConnectionTest(_message.Text ?? "").CharacterCount;
+        _messageSize.Text = $"{AIConnectionRules.FormatSendCharacters(requestCharacters)} characters including Tern's test instructions and text labels.";
+        var sizeProblem = _sendLimit.Value is { } limit && requestCharacters > limit
+            ? AIWorkspaceService.TooMuchText(requestCharacters, string.IsNullOrWhiteSpace(_name.Text) ? "This connection" : _name.Text.Trim(), limit) : null;
         _send.IsEnabled = !_busy && !coolingDown && _blocked is null && !string.IsNullOrWhiteSpace(_message.Text)
-            && _consent.IsChecked == true && _reviewedSettings is not null && LocalErrors().Count == 0;
-        foreach (var input in new Control[] { _service, _saved, _protocol, _custom, _model, _endpoint, _key, _name, _discovery, _workspace, _reuseCredential, _removeKey, _replaceKey, _models })
+            && _consent.IsChecked == true && _reviewedSettings is not null && LocalErrors().Count == 0 && sizeProblem is null;
+        ToolTip.SetTip(_send, sizeProblem ?? "Review the message and tick permission to send it.");
+        ToolTip.SetShowOnDisabled(_send, true);
+        if (_page == 2 && _tryMessage.IsExpanded && sizeProblem is not null) Status(sizeProblem);
+        else if (_status.Text?.StartsWith("This text has ", StringComparison.Ordinal) == true) Status("Review your message and tick permission to send it.");
+        foreach (var input in new Control[] { _service, _saved, _protocol, _custom, _model, _sendLimit.Input, _endpoint, _key, _name, _discovery, _workspace, _timeout, _reuseCredential, _removeKey, _replaceKey, _models })
             input.IsEnabled = !_sending && (!IsIntegration || ReferenceEquals(input, _service) || ReferenceEquals(input, _saved));
         _protocol.IsEnabled &= Service.Id is "compatible" or "ollama";
         if (_workspaceSection is not null) _workspaceSection.IsVisible = Protocol == "anthropic-messages";
@@ -404,14 +426,14 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _validationDestination.Text = "Test destination: " + _endpoint.Text;
     }
 
-    private string Summary() => $"Service: {Service.Name}\nProtocol: {AIProviders.Get(Protocol).Name}\nDestination: {_endpoint.Text}\nModel: {_model.Text}\nCredential: {(EffectiveKey.Length > 0 ? "provided; hidden" : "not provided")}"
+    private string Summary() => $"Service: {Service.Name}\nProtocol: {AIProviders.Get(Protocol).Name}\nDestination: {_endpoint.Text}\nModel: {_model.Text}\n{SendLimitField.LabelText}: {_sendLimit.Input.Text}\nCredential: {(EffectiveKey.Length > 0 ? "provided; hidden" : "not provided")}"
         + (Uri.TryCreate(_endpoint.Text, UriKind.Absolute, out var endpoint) ? (endpoint.IsLoopback ? "\nConnection: Local endpoint" : "\nConnection: Remote endpoint") : "")
         + (Protocol == "anthropic-messages" && !string.IsNullOrWhiteSpace(_workspace.Text) ? "\nWorkspace: " + _workspace.Text : "");
 
     private void SetProtocols(string serviceId, string selected)
     {
         _protocol.ItemsSource = AIProviders.All.Where(p => serviceId == "compatible" || serviceId == "ollama" && p.Id is "ollama-chat" or "chat-completions"
-            || serviceId is "openai" or "anthropic" && p.Id == AIServices.Get(serviceId).Protocol).Select(p => p.Name).ToArray();
+            || serviceId is "openai" or "anthropic" or "deepseek" && p.Id == AIServices.Get(serviceId).Protocol).Select(p => p.Name).ToArray();
         _protocol.SelectedItem = AIProviders.Get(selected).Name;
     }
 
@@ -422,7 +444,8 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         _serviceIndex = index; _service.SelectedIndex = index; _savedIndex = -1; _saved.SelectedIndex = -1; _profileId = null;
         _storedKey = _storedKeyEndpoint = _enteredKeyEndpoint = _customCache = ""; _removeStoredKey = false;
         _storedKeyProtocol = _enteredKeyProtocol = "";
-        _key.Text = _model.Text = _discovery.Text = _workspace.Text = "";
+        _key.Text = _model.Text = _discovery.Text = _workspace.Text = _timeout.Text = "";
+        _sendLimit.Set(AIConnectionRules.DefaultSendCharacters);
         if (IsIntegration)
         {
             _loading = false; _dirty = false; _showErrors = false; ClearErrors(); ResetChecks(); SetPage(0);
@@ -451,7 +474,8 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             if (_serviceIndex < 0) _serviceIndex = AIServices.All.Count - 1;
             _service.SelectedIndex = _serviceIndex; SetProtocols(Service.Id, profile.Provider);
             _name.Text = profile.Name; _model.Text = profile.Model; _endpoint.Text = profile.Endpoint;
-            _discovery.Text = profile.DiscoveryEndpoint ?? ""; _workspace.Text = profile.WorkspaceId ?? "";
+            _sendLimit.Set(AIConnectionRules.NormalizeSendCharacters(profile.SendCharacters));
+            _discovery.Text = profile.DiscoveryEndpoint ?? ""; _workspace.Text = profile.WorkspaceId ?? ""; _timeout.Text = profile.TimeoutSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
             _key.Text = ""; _storedKey = secret; _storedKeyEndpoint = profile.Endpoint; _storedKeyProtocol = profile.Provider; _enteredKeyEndpoint = _enteredKeyProtocol = ""; _removeStoredKey = false;
             _customCache = profile.Endpoint; _custom.IsChecked = profile.UseCustomEndpoint || profile.Endpoint != DefaultEndpoint;
             _endpoint.IsReadOnly = _custom.IsChecked != true; _advanced.IsExpanded = _custom.IsChecked == true;
@@ -462,7 +486,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or PlatformNotSupportedException)
         {
             _loading = true; _saved.SelectedIndex = _savedIndex; _loading = false;
-            Status("The stored credential could not be read. Your saved connection has been kept. " + ex.Message);
+            Status("The stored credential could not be read. Your saved connection has been kept. " + Tern.App.Shell.UserProblem.Plain(ex));
         }
     }
 
@@ -474,7 +498,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             var creating = _profileId is null;
             var profile = new AIConnectionProfile(_profileId ?? Guid.NewGuid().ToString("N"), _name.Text!.Trim(), Protocol, _endpoint.Text!, _model.Text!,
                 Service.Id, _custom.IsChecked == true, string.IsNullOrWhiteSpace(_discovery.Text) ? null : _discovery.Text,
-                string.IsNullOrWhiteSpace(_workspace.Text) ? null : _workspace.Text);
+                string.IsNullOrWhiteSpace(_workspace.Text) ? null : _workspace.Text, Inputs().TimeoutSeconds, _sendLimit.Value);
             var key = !string.IsNullOrEmpty(_key.Text) ? _key.Text : _removeStoredKey || creating ? "" : null;
             var updated = _manager.Save(profile, key, _profiles, allowCredentialReuse: _reuseCredential.IsChecked == true || !string.IsNullOrEmpty(_key.Text));
             _profiles.Clear(); _profiles.AddRange(updated); _profileId = profile.Id;
@@ -483,7 +507,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             _dirty = false; UpdateControls(); Status(_check is null ? "Connection saved. Validate it before using it for the first time." : "Connection saved and ready to use. Use " + _writingShortcut + " in a note to start writing with AI.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-        { _loading = false; Status("Connection could not be saved. Your edits are still here. " + ex.Message); }
+        { _loading = false; Status("Connection could not be saved. Your edits are still here. " + Tern.App.Shell.UserProblem.Plain(ex)); }
     }
 
     private async Task DeleteProfileAsync()
@@ -491,7 +515,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
         if (_profileId is not { } id || _busy) return;
         var name = _profiles.First(p => p.Id == id).Name;
         var approved = _confirmDelete is not null ? await _confirmDelete(name)
-            : await PromptWindow.AskAsync(this, "Delete AI connection?", "Delete “" + name + "” and its stored credential? Other connections and documents will be kept.", ["Delete connection", "Cancel"], 1, 1) == 0;
+            : await PromptWindow.AskAsync(this, "Delete AI connection?", "Delete “" + name + "” and its stored credential? Other connections and documents will be kept.", ["Delete connection", "Cancel"], 1, 1, destructiveIndex: 0) == 0;
         if (!approved) return;
         try
         {
@@ -499,14 +523,14 @@ public sealed class AIConnectionsWindow : Window, IDisposable
             _loading = true; RefreshProfiles(); _loading = false; ApplyService(_serviceIndex); SetPage(0); Status("Connection and its stored credential deleted.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-        { Status("Connection could not be deleted. " + ex.Message); }
+        { Status("Connection could not be deleted. " + Tern.App.Shell.UserProblem.Plain(ex)); }
     }
 
     private async Task<bool> ResolveUnsavedAsync()
     {
         if (!_dirty) return true;
         return _confirmDiscard is not null ? await _confirmDiscard("Discard unsaved connection changes?")
-            : await PromptWindow.AskAsync(this, "Unsaved AI connection", "Keep editing, or discard the unsaved connection changes? Saved connections and credentials are kept.", ["Discard changes", "Keep editing"], 1, 1) == 0;
+            : await PromptWindow.AskAsync(this, "Unsaved AI connection", "Keep editing, or discard the unsaved connection changes? Saved connections and credentials are kept.", ["Discard changes", "Keep editing"], 1, 1, destructiveIndex: 0) == 0;
     }
 
     private async Task ValidateAsync()
@@ -537,12 +561,18 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     private async Task SendAsync()
     {
         if (_busy || !_send.IsEnabled || !ShowLocalErrors() || string.IsNullOrWhiteSpace(_message.Text)) return;
+        var request = AIRequest.ConnectionTest(_message.Text);
+        if (_sendLimit.Value is { } sendLimit && request.CharacterCount > sendLimit)
+        {
+            Status(AIWorkspaceService.TooMuchText(request.CharacterCount, string.IsNullOrWhiteSpace(_name.Text) ? "This connection" : _name.Text.Trim(), sendLimit));
+            return;
+        }
         if (_reviewedSettings is not { } input || input != Inputs() || _reviewedMessage != _message.Text)
         { InvalidateReview(); Status("Settings or message changed. Review the current request and check consent again."); UpdateControls(); return; }
         _request = new CancellationTokenSource(); _busy = _sending = true; UpdateControls(); Status("Waiting for the service…");
         try
         {
-            var answer = await _client.SendAsync(new Uri(input.Endpoint), input.Model, input.Credential, _reviewedMessage!, AIProviders.Get(input.Protocol), _request.Token, input.WorkspaceId);
+            var answer = await _client.SendAsync(new Uri(input.Endpoint), input.Model, input.Credential, request, AIProviders.Get(input.Protocol), _request.Token, input.WorkspaceId, input.TimeoutSeconds);
             if (string.IsNullOrWhiteSpace(answer)) throw new InvalidOperationException("The service returned an empty text answer. Generation compatibility is not verified.");
             _response.Text = answer;
             if (input == Inputs())
@@ -552,7 +582,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
                     "Accepted for this reviewed request", "Text response received; future availability and credits are not guaranteed", _check?.Models ?? []);
                 _checks.Text = _check.Describe();
             }
-            Status($"Response received. This setup test does not edit a document. Use {_writingShortcut} in a note for writing updates.");
+            Status($"Response received. This setup test leaves your documents unchanged. Use {_writingShortcut} in a note for writing updates.");
         }
         catch (OperationCanceledException) { Status("Canceled. The service may already have received the request or incurred usage."); }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or System.Text.Json.JsonException)
@@ -564,7 +594,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     {
         _check = null;
         _checks.Text = "Local settings: valid\nCheck failed. Model and generation are not verified.";
-        Status(error.Message);
+        Status(Tern.App.Shell.UserProblem.Plain(error));
         if (error is AIServiceException service)
         {
             _technical.Text = service.Details; _technicalExpander.IsVisible = true;
@@ -583,7 +613,7 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     {
         try { _integrations.Clear(); _integrations.AddRange(_integrationStore.Load()); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException or ArgumentException)
-        { Status("Saved tool and Copilot connections could not be loaded: " + ex.Message); }
+        { Status("Saved tool and Copilot connections could not be loaded: " + Tern.App.Shell.UserProblem.Plain(ex)); }
         _saved.ItemsSource = _profiles.Select(p => p.Name).Concat(_integrations.Select(p => p.Name + (p.Kind == "mcp" ? " · MCP tools" : " · GitHub Copilot"))).ToArray();
         _saved.IsVisible = _profiles.Count + _integrations.Count > 0; _empty.IsVisible = !_saved.IsVisible;
     }
@@ -605,11 +635,11 @@ public sealed class AIConnectionsWindow : Window, IDisposable
     {
         if (_selectedIntegration is not { } profile || _busy) return;
         var approved = _confirmDelete is not null ? await _confirmDelete(profile.Name)
-            : await PromptWindow.AskAsync(this, "Delete connection?", "Delete “" + profile.Name + "” and its stored credential?", ["Delete connection", "Cancel"], 1, 1) == 0;
+            : await PromptWindow.AskAsync(this, "Delete connection?", "Delete “" + profile.Name + "” and its stored credential?", ["Delete connection", "Cancel"], 1, 1, destructiveIndex: 0) == 0;
         if (!approved) return;
         try { _integrationStore.Remove(profile.Id); _selectedIntegration = null; _loading = true; RefreshProfiles(); _loading = false; ApplyService(_serviceIndex); Status("Connection and its stored credential deleted."); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-        { Status("Connection could not be deleted: " + ex.Message); }
+        { Status("Connection could not be deleted: " + Tern.App.Shell.UserProblem.Plain(ex)); }
     }
     private void ClearErrors() { foreach (var label in _errors.Values) { label.Text = ""; label.IsVisible = false; } }
     private void Status(string text) { _status.Text = text; ToolTip.SetTip(_status, text); }

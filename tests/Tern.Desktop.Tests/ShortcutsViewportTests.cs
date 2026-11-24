@@ -14,6 +14,39 @@ public sealed class ShortcutsViewportTests
     [InlineData(1.0)]
     [InlineData(1.5)]
     [InlineData(2.0)]
+    public void Compact_commands_and_editor_have_real_viewports_and_can_be_reached(double scale)
+    {
+        using var fixture = new DesktopFixture();
+        fixture.Shell.Settings.UiScale = scale;
+        fixture.Window.ApplySettings();
+        var window = new ShortcutsWindow(fixture.Shell.Registry) { Width = 700, Height = 650 };
+        try
+        {
+            window.Show(fixture.Window); Pump(window);
+            var commands = window.Commands;
+            var editor = Assert.Single(window.GetVisualDescendants().OfType<TextBox>(),
+                control => AutomationProperties.GetName(control) == "New shortcut");
+            var body = Assert.IsType<Grid>(commands.Parent);
+            Assert.Single(body.ColumnDefinitions);
+            Assert.Equal(1, Grid.GetRow(commands));
+            Assert.True(commands.Bounds.Height >= 100, $"The commands viewport is {commands.Bounds.Height} at {scale:P0}.");
+            Assert.True(commands.Bounds.Width > 100);
+            commands.ScrollIntoView(commands.Items[^1]); Pump(window);
+            Assert.NotNull(commands.ContainerFromIndex(commands.ItemCount - 1));
+            editor.BringIntoView(); Pump(window);
+            Assert.True(editor.IsEffectivelyVisible);
+            Assert.True(editor.Bounds.Width >= 100);
+            var origin = editor.TranslatePoint(default, window)!.Value;
+            Assert.True(origin.Y >= 0 && origin.Y + editor.Bounds.Height <= window.Bounds.Height,
+                $"The shortcut editor is clipped at {scale:P0}: {origin.Y}, height {editor.Bounds.Height}, window {window.Bounds.Height}.");
+        }
+        finally { window.Close(); fixture.Shell.Settings.UiScale = 1; fixture.Window.ApplySettings(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
     public void Categories_fit_and_remain_reachable_at_minimum_size(double scale)
     {
         using var fixture = new DesktopFixture();

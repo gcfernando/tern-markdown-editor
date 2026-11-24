@@ -27,24 +27,84 @@ public sealed class WorkspaceWorkingContextTests
     }
 
     [Fact]
-    public async Task Existing_custom_metadata_survives_context_update_and_changed_invalid_metadata_blocks_close()
+    public async Task Existing_custom_metadata_is_never_rewritten_on_close_even_when_it_is_unsupported()
     {
         using var fixture = new ShellFixture();
         var root = Path.Combine(fixture.Docs, "Company");
         Directory.CreateDirectory(root);
         var descriptor = Path.Combine(root, WorkspaceDefinition.FileName);
-        await File.WriteAllTextAsync(descriptor, "{\"Version\":1,\"Name\":\"Company\",\"CustomMetadata\":{\"Preserve\":true}}");
+        const string custom = "{\"Version\":1,\"Name\":\"Company\",\"CustomMetadata\":{\"Preserve\":true}}";
+        await File.WriteAllTextAsync(descriptor, custom);
         Assert.True(await fixture.Shell.OpenWorkspaceAsync(root));
         Assert.True(await fixture.Shell.CloseWorkspaceAsync());
-        using (var updated = System.Text.Json.JsonDocument.Parse(await File.ReadAllTextAsync(descriptor)))
-            Assert.True(updated.RootElement.GetProperty("CustomMetadata").GetProperty("Preserve").GetBoolean());
+        Assert.Equal(custom, await File.ReadAllTextAsync(descriptor));
         Assert.True(await fixture.Shell.OpenWorkspaceAsync(root));
         const string unsupported = "{\"Version\":99,\"Name\":\"Do not replace\"}";
         await File.WriteAllTextAsync(descriptor, unsupported);
-        Assert.False(await fixture.Shell.CloseWorkspaceAsync());
-        Assert.Single(fixture.Shell.OpenWorkspaces);
+        Assert.True(await fixture.Shell.CloseWorkspaceAsync());
+        Assert.Empty(fixture.Shell.OpenWorkspaces);
         Assert.Equal(unsupported, await File.ReadAllTextAsync(descriptor));
     }
+
+    [Fact]
+    public async Task Legacy_in_file_context_is_migrated_once_to_local_state_preserving_other_metadata()
+    {
+        using var fixture = new ShellFixture();
+        var root = Path.Combine(fixture.Docs, "Company");
+        Directory.CreateDirectory(root);
+        var path = await fixture.WriteAsync("Company/live.md", "saved");
+        var descriptor = Path.Combine(root, WorkspaceDefinition.FileName);
+        await File.WriteAllTextAsync(descriptor, "{\"Version\":1,\"Name\":\"Company\",\"CustomMetadata\":{\"Preserve\":true},\"WorkingContext\":{\"Tabs\":[{\"Path\":\"live.md\",\"CaretOffset\":2,\"ScrollOffset\":5}],\"ActiveTab\":\"live.md\",\"ViewMode\":\"Reading\"}}");
+        Assert.True(await fixture.Shell.OpenWorkspaceAsync(root));
+        Assert.True(WorkspacePaths.PathsEqual(path, Assert.Single(fixture.Shell.Tabs).FilePath!));
+        Assert.Equal(ViewMode.Reading, fixture.Shell.ViewMode);
+        var store = new WorkspaceContextStore(fixture.Shell.Paths.StateDirectory);
+        Assert.Equal("live.md", Assert.Single(store.Load(root)!.Tabs).Path);
+        var shared = await File.ReadAllTextAsync(descriptor);
+        Assert.DoesNotContain("WorkingContext", shared, StringComparison.Ordinal);
+        Assert.Contains("\"Preserve\":true", shared, StringComparison.Ordinal);
+        Assert.Equal("Company", WorkspaceDefinition.Load(root)!.Name);
+    }
+
+    [Fact]
+    public async Task Legacy_context_is_left_in_a_read_only_workspace_file_and_still_restores()
+    {
+        using var fixture = new ShellFixture();
+        var root = Path.Combine(fixture.Docs, "Company");
+        Directory.CreateDirectory(root);
+        var path = await fixture.WriteAsync("Company/live.md", "saved");
+        WorkspaceDefinition.Create(root, "Company");
+        WorkspaceDefinition.SaveWorkingContext(root, "Company", new WorkspaceWorkingContext([new("live.md", 1, 0)], "live.md", "Source"));
+        var descriptor = Path.Combine(root, WorkspaceDefinition.FileName);
+        var before = await File.ReadAllBytesAsync(descriptor);
+        File.SetAttributes(descriptor, FileAttributes.ReadOnly);
+        try
+        {
+            Assert.True(await fixture.Shell.OpenWorkspaceAsync(root));
+            Assert.True(WorkspacePaths.PathsEqual(path, Assert.Single(fixture.Shell.Tabs).FilePath!));
+            Assert.True(await fixture.Shell.CloseWorkspaceAsync());
+            Assert.Equal(before, await File.ReadAllBytesAsync(descriptor));
+            Assert.NotNull(new WorkspaceContextStore(fixture.Shell.Paths.StateDirectory).Load(root));
+        }
+        finally { File.SetAttributes(descriptor, FileAttributes.Normal); }
+    }
+
+    [Fact]
+    public async Task Closing_and_exiting_never_write_into_the_workspace_folder()
+    {
+        using var fixture = new ShellFixture();
+        var root = Path.Combine(fixture.Docs, "Company");
+        Assert.True(await fixture.Shell.CreateWorkspaceAsync(root));
+        await fixture.Shell.OpenFileAsync(await fixture.WriteAsync("Company/a.md", "a"));
+        var descriptor = Path.Combine(root, WorkspaceDefinition.FileName);
+        var before = await File.ReadAllBytesAsync(descriptor);
+        var files = Directory.GetFileSystemEntries(root, "*", SearchOption.AllDirectories).Order().ToArray();
+        Assert.True(await fixture.Shell.PrepareExitAsync(new WindowLayoutHint(0, 0, 800, 600, false, 260, true)));
+        Assert.Equal(before, await File.ReadAllBytesAsync(descriptor));
+        Assert.Equal(files, Directory.GetFileSystemEntries(root, "*", SearchOption.AllDirectories).Order().ToArray());
+        Assert.NotNull(new WorkspaceContextStore(fixture.Shell.Paths.StateDirectory).Load(root));
+    }
+
 
     [Fact]
     public async Task Explicit_named_workspace_reopens_its_saved_documents_active_view_and_recorded_positions()
@@ -62,7 +122,7 @@ public sealed class WorkspaceWorkingContextTests
         fixture.Shell.ViewMode = ViewMode.Reading;
         Assert.True(await fixture.Shell.CloseWorkspaceAsync());
         Assert.Empty(fixture.Shell.Tabs);
-        var context = Assert.IsType<WorkspaceWorkingContext>(WorkspaceDefinition.Load(root)!.WorkingContext);
+        var context = Assert.IsType<WorkspaceWorkingContext>(new WorkspaceContextStore(fixture.Shell.Paths.StateDirectory).Load(root));
         Assert.Equal(new[] { "first.md", "second.md" }, context.Tabs.Select(tab => tab.Path));
         Assert.Equal("first.md", context.ActiveTab);
         Assert.Equal("Reading", context.ViewMode);
@@ -116,7 +176,7 @@ public sealed class WorkspaceWorkingContextTests
     }
 
     [Fact]
-    public async Task Metadata_write_failure_preserves_workspace_tabs_and_existing_metadata_bytes()
+    public async Task Context_store_failure_offers_retry_close_anyway_or_cancel_and_keeps_tabs_on_cancel()
     {
         using var fixture = new ShellFixture();
         var root = Path.Combine(fixture.Docs, "Company");
@@ -125,14 +185,23 @@ public sealed class WorkspaceWorkingContextTests
         var tab = (await fixture.Shell.OpenFileAsync(path))!;
         var descriptor = Path.Combine(root, WorkspaceDefinition.FileName);
         var original = await File.ReadAllBytesAsync(descriptor);
-        File.Move(descriptor, descriptor + ".retained");
-        Directory.CreateDirectory(descriptor); // Deterministic non-writable metadata target on every platform.
+        var blocker = Path.Combine(fixture.Shell.Paths.StateDirectory, WorkspaceContextStore.DirectoryName);
+        Directory.CreateDirectory(fixture.Shell.Paths.StateDirectory);
+        await File.WriteAllTextAsync(blocker, "not a directory"); // Deterministic unwritable context location on every platform.
+        fixture.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Cancel);
         Assert.False(await fixture.Shell.CloseWorkspaceAsync());
         Assert.Single(fixture.Shell.OpenWorkspaces);
         Assert.Contains(tab, fixture.Shell.Tabs);
         Assert.Equal("saved", tab.CurrentText);
-        Assert.Equal(original, await File.ReadAllBytesAsync(descriptor + ".retained"));
+        Assert.Equal(original, await File.ReadAllBytesAsync(descriptor));
         Assert.Contains("No documents were closed", fixture.Shell.StatusMessage, StringComparison.Ordinal);
+        Assert.Single(fixture.Dialogs.MetadataPrompts);
+
+        fixture.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Continue);
+        Assert.True(await fixture.Shell.CloseWorkspaceAsync());
+        Assert.Empty(fixture.Shell.OpenWorkspaces);
+        Assert.DoesNotContain(tab, fixture.Shell.Tabs);
+        Assert.Equal(original, await File.ReadAllBytesAsync(descriptor));
     }
 
     [Fact]
@@ -152,8 +221,9 @@ public sealed class WorkspaceWorkingContextTests
         fixture.Shell.ActiveTab = companyTab;
         Assert.Equal(ViewMode.Source, fixture.Shell.ViewMode);
         Assert.True(await fixture.Shell.CloseAllWorkspacesAsync());
-        var parentState = WorkspaceDefinition.Load(company)!.WorkingContext!;
-        var childState = WorkspaceDefinition.Load(hr)!.WorkingContext!;
+        var store = new WorkspaceContextStore(fixture.Shell.Paths.StateDirectory);
+        var parentState = store.Load(company)!;
+        var childState = store.Load(hr)!;
         Assert.Equal("company.md", Assert.Single(parentState.Tabs).Path);
         Assert.Equal("people.md", Assert.Single(childState.Tabs).Path);
         Assert.Equal("Source", parentState.ViewMode);
@@ -171,6 +241,8 @@ public sealed class WorkspaceWorkingContextTests
         await fixture.Shell.OpenFileAsync(first);
         await fixture.Shell.OpenFileAsync(second);
         Assert.True(await fixture.Shell.CloseWorkspaceAsync());
+        // A restart must stop the previous shell's delayed session writer first.
+        fixture.Shell.Dispose();
         var store = new SessionStore(fixture.Shell.Paths.StateDirectory);
         Assert.True(store.Save(new SessionSnapshot(root, [new TabState(first, 0, 0)], first, null, new Dictionary<string, FileViewState>())
         { OpenWorkspaceRoots = [root] }));

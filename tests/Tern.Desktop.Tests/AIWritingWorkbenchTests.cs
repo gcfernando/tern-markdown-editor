@@ -25,7 +25,7 @@ public sealed class AIWritingWorkbenchTests
         using var fixture = new DesktopFixture();
         ThemeManager.Apply(Application.Current!, light ? ThemeChoice.Paper : ThemeChoice.Midnight);
         var workspace = new AIWorkspaceService(fixture.AppData, new Vault()); workspace.Reload();
-        var scope = new ComboBox { ItemsSource = new[] { "Entire note" }, SelectedIndex = 0 };
+        var scope = new ComboBox { ItemsSource = new[] { "Entire document" }, SelectedIndex = 0 };
         var panel = new AIPromptPanel("Project plan", workspace, (_, _, _) => throw new InvalidOperationException("Unexpected generation"),
             () => { }, () => Task.CompletedTask, _ => { }, scope: scope, isEmptyDraft: true);
         var window = new Window { Width = width, Height = height, Content = panel };
@@ -49,7 +49,7 @@ public sealed class AIWritingWorkbenchTests
             var root = new DirectoryInfo(AppContext.BaseDirectory);
             while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
             Assert.NotNull(root);
-            var folder = Path.Combine(root.FullName, "artifacts", "screenshots", "writing-workbench"); Directory.CreateDirectory(folder);
+            var folder = Tern.Tests.Shared.TestOutput.Folder("screenshots", "writing-workbench"); Directory.CreateDirectory(folder);
             using var image = window.CaptureRenderedFrame(); Assert.NotNull(image);
             image.Save(Path.Combine(folder, $"writing-{light}-{width}.png"), new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
         }

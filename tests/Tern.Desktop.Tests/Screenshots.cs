@@ -2,19 +2,16 @@ namespace Tern.Desktop.Tests;
 
 internal static class Screenshots
 {
-    /// <summary>artifacts\screenshots beside Tern.slnx, so images land in the repository tree rather than a temp folder.</summary>
-    public static string Folder { get; } = Resolve();
+    /// <summary>Temporary by default; see <see cref="Tern.Tests.Shared.TestOutput"/>.</summary>
+    public static string Folder { get; } = Tern.Tests.Shared.TestOutput.Folder("screenshots");
 
-    private static string Resolve()
+    public static string RepositoryRoot
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Tern.slnx")))
+        get
         {
-            dir = dir.Parent;
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Tern.slnx"))) directory = directory.Parent;
+            return directory?.FullName ?? throw new DirectoryNotFoundException("Tern.slnx was not found above the test output.");
         }
-
-        var folder = Path.Combine(dir?.FullName ?? AppContext.BaseDirectory, "artifacts", "screenshots");
-        Directory.CreateDirectory(folder);
-        return folder;
     }
 }

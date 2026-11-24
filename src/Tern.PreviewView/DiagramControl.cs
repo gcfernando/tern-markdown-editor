@@ -154,10 +154,10 @@ internal sealed class DiagramControl : Control, IWidthAware
                     DrawCentered(context, text.Text, R(text.Bounds), palette.Foreground, text.Bold ? FontWeight.SemiBold : FontWeight.Normal);
                     break;
                 case ChartBox box:
-                    context.DrawRectangle(box.PaletteIndex < 0 ? palette.Fill : new SolidColorBrush(Color.Parse(ChartPalette.Get(box.PaletteIndex))), null, R(box.Bounds));
+                    context.DrawRectangle(box.PaletteIndex < 0 ? palette.Fill : new SolidColorBrush(PreviewTheme.ParseDocumentColor(ChartPalette.Get(box.PaletteIndex))), null, R(box.Bounds));
                     break;
                 case ChartPolygon polygon:
-                    FillPolygon(context, polygon.Points, new SolidColorBrush(Color.Parse(ChartPalette.Get(polygon.PaletteIndex))), new Pen(palette.Border, 1));
+                    FillPolygon(context, polygon.Points, new SolidColorBrush(PreviewTheme.ParseDocumentColor(ChartPalette.Get(polygon.PaletteIndex))), new Pen(palette.Border, 1));
                     break;
                 case ChartLine line:
                     context.DrawLine(new Pen(palette.Muted, 0.6), P(line.From), P(line.To));
@@ -200,11 +200,6 @@ internal sealed class DiagramControl : Control, IWidthAware
         {
             var rect = R(subgraph.Bounds);
             context.DrawRectangle(null, frame, rect, 6, 6);
-            var title = Format(subgraph.Subgraph.Title, palette.Muted, FontWeight.SemiBold);
-            title.MaxTextWidth = Math.Max(1, rect.Width - 16);
-            title.MaxLineCount = 1;
-            title.Trimming = TextTrimming.CharacterEllipsis;
-            context.DrawText(title, new Point(rect.X + 8, rect.Y + 5));
         }
 
         foreach (var edge in layout.Edges)
@@ -222,6 +217,18 @@ internal sealed class DiagramControl : Control, IWidthAware
                 context.DrawEllipse(palette.Muted, null, P(edge.LabelLeader[0]), 2, 2);
             }
             DrawEdge(context, edge, palette);
+        }
+
+        // Titles follow the edges so a connector passing through a group header cannot strike through its text.
+        foreach (var subgraph in layout.Subgraphs)
+        {
+            var rect = R(subgraph.Bounds);
+            var title = Format(subgraph.Subgraph.Title, palette.Muted, FontWeight.SemiBold);
+            title.MaxTextWidth = Math.Max(1, rect.Width - 16);
+            title.MaxLineCount = 1;
+            title.Trimming = TextTrimming.CharacterEllipsis;
+            context.DrawRectangle(palette.Fill, null, new Rect(rect.X + 6, rect.Y + 4, title.Width + 4, title.Height + 2), 3, 3);
+            context.DrawText(title, new Point(rect.X + 8, rect.Y + 5));
         }
 
         foreach (var node in layout.Nodes)

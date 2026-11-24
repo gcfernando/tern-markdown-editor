@@ -30,8 +30,7 @@ public static class PreviewBuilder
     public static PreviewDocument Build(string markdown, PreviewOptions options, SafeResourceResolver? resolver)
         => Build(markdown, options, resolver, CancellationToken.None);
 
-    /// <summary>Builds a model, observing cancellation before and after parsing and throughout model construction.
-    /// The underlying Markdig parse itself cannot be interrupted.</summary>
+    /// <summary>Builds a model, observing cancellation between parsed blocks and throughout model construction.</summary>
     public static PreviewDocument Build(string markdown, PreviewOptions options, SafeResourceResolver? resolver, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -54,7 +53,7 @@ public static class PreviewBuilder
         MarkdownDocument document;
         try
         {
-            document = Markdig.Markdown.Parse(text, MarkdownPipelines.For(options.Profile));
+            document = MarkdownPipelines.Parse(text, options.Profile, cancellationToken);
         }
         catch (ArgumentException)
         {

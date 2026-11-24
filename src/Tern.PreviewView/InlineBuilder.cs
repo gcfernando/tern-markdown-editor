@@ -36,8 +36,6 @@ internal sealed class InlineBuilder(RichTextBlock block, double baseSize, FontFa
 
     public int Position { get; private set; }
 
-    public bool HasContent => Position > 0;
-
     public void MapSource(Tern.Rendering.Preview.SourceLocation source, int start, int baseOffset) =>
         block.AddSearchSource(source.StartOffset - baseOffset, source.EndOffset - source.StartOffset, start, Position - start);
 

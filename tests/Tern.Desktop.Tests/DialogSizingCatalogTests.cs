@@ -53,6 +53,13 @@ public sealed class DialogSizingCatalogTests
                     dialog.Show(fixture.Window);
                     await Settle(dialog);
                     AssertBounded(dialog, entry.Id);
+                    ScrollbarClearanceAssertions.AssertTracks(dialog);
+                    var buttons = dialog.GetVisualDescendants().OfType<Button>().ToArray();
+                    var accent = buttons.Where(button => button.Classes.Contains("accent")).ToArray();
+                    Assert.True(accent.Length <= 1, $"{entry.Id}: more than one accent action.");
+                    Assert.All(accent, button => Assert.True(button.IsDefault, $"{entry.Id}: accent must be the default action."));
+                    Assert.All(buttons.Where(button => button.Classes.Contains("danger")),
+                        button => Assert.False(button.IsDefault, $"{entry.Id}: destructive action is the default."));
                     foreach (var label in entry.Actions) AssertActionInside(dialog, label);
                     if (dialog is OpenUrlWindow)
                     {
@@ -196,6 +203,53 @@ public sealed class DialogSizingCatalogTests
         finally { about.Close(); table.Close(); SetScale(fixture, 1); }
     }
 
+    [AvaloniaTheory]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public async Task Every_dialog_at_minimum_size_keeps_actions_reachable_and_labels_every_control(double scale)
+    {
+        using var fixture = new DesktopFixture();
+        SetScale(fixture, scale);
+        var problems = new List<string>();
+        try
+        {
+            foreach (var entry in Catalog(fixture))
+            {
+                var dialog = entry.Create();
+                try
+                {
+                    dialog.Show(fixture.Window);
+                    await Settle(dialog);
+                    if (dialog.MinWidth > 0) dialog.Width = dialog.MinWidth;
+                    if (dialog.MinHeight > 0) dialog.Height = dialog.MinHeight;
+                    await Settle(dialog);
+                    foreach (var control in dialog.GetVisualDescendants().OfType<Control>()
+                                 .Where(item => item.TemplatedParent is null && item.IsEffectivelyVisible
+                                     && item is Button or CheckBox or RadioButton or ComboBox or TextBox or Slider))
+                    {
+                        var labelled = !string.IsNullOrWhiteSpace(AutomationProperties.GetName(control)) || AutomationProperties.GetLabeledBy(control) is not null
+                            || control is ContentControl { Content: string { Length: > 0 } } || control is TextBox { PlaceholderText.Length: > 0 }
+                            || control is ContentControl { Content: Visual content } && content.GetSelfAndVisualDescendants().OfType<TextBlock>().Any(text => !string.IsNullOrWhiteSpace(text.Text));
+                        if (!labelled) problems.Add($"{entry.Id}@{scale}: unlabelled {control.GetType().Name}");
+                        if (control.IsEffectivelyEnabled && !control.Focusable) problems.Add($"{entry.Id}@{scale}: {control.GetType().Name} cannot take keyboard focus");
+                    }
+                    foreach (var label in entry.Actions)
+                    {
+                        // A long form may scroll, so the action only has to be reachable once it is brought into view.
+                        dialog.GetVisualDescendants().OfType<Button>().FirstOrDefault(button => AutomationProperties.GetName(button) == label || Equals(button.Content, label))?.BringIntoView();
+                        await Settle(dialog);
+                        try { AssertActionInside(dialog, label); }
+                        catch (Exception ex) when (ex is Xunit.Sdk.XunitException or InvalidOperationException) { problems.Add($"{entry.Id}@{scale}: {dialog.MinWidth}x{dialog.MinHeight} client {dialog.ClientSize}: {ex.Message.ReplaceLineEndings(" ")}"); }
+                    }
+                }
+                finally { dialog.Close(); Dispatcher.UIThread.RunJobs(); }
+            }
+        }
+        finally { SetScale(fixture, 1); }
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems.Distinct()));
+    }
+
     private static CatalogEntry[] Catalog(DesktopFixture fixture)
     {
         const string current = "# Meeting notes\n\nCurrent saved document.\n";
@@ -206,27 +260,32 @@ public sealed class DialogSizingCatalogTests
             [new TextEdit(10, 6, "meeting.md")], [new LinkEditPreview(1, "[Meeting](old.md)", "[Meeting](meeting.md)", 1)])], []);
         return
         [
-            new("destination", () => new AddDestinationWindow("Company", fixture.Docs, true, "Create document"), "Cancel destination choice"),
             new("about", () => new AboutWindow(), "Close about"),
-            new("ai-connections", () => new AIConnectionsWindow(Path.Combine(fixture.AppData, "catalog-ai"), new EmptyCredentials()), "AI setup next", "Close"),
+            new("ai-connections", () => new AIConnectionsWindow(Path.Combine(fixture.AppData, "catalog-ai"), new EmptyCredentials()), "Next step", "Close"),
+            new("knowledge-assistant", fixture.Window.CreateKnowledgeAssistantWindow, "Find my notes", "How it works"),
             new("copilot", () => new CopilotConnectionWindow(), "Continue", "Close"),
             new("create-item", () => new CreateItemWindow(CreateItemKind.Workspace, fixture.Docs, true), "Create", "Cancel creation"),
             new("export", () => new ExportWindow("meeting.md", null, current, MarkdownProfile.Extended, null, ExportFormat.Html), "Export document", "Close export"),
-            new("print-preview", () => new PrintPreviewWindow("meeting.md", current, Tern.Export.ExportDefaults.PreviewOptions), "Open selected PDF…", "Close"),
-            new("starter-templates", () => new StarterTemplatesWindow(), "Use template", "Cancel"),
+            new("print-preview", () => new PrintPreviewWindow("meeting.md", current, Tern.Export.ExportDefaults.PreviewOptions), "Print…", "Open selected PDF…", "Close"),
+            new("starter-templates", () => new StarterTemplatesWindow(warnings: ["A template was skipped."],
+                userTemplateDirectory: fixture.Shell.UserTemplatesDirectory), "Use template", "Cancel"),
             new("insert-table", () => new InsertTableWindow(), "Insert table", "Cancel"),
+            new("workspace-replace", () => new WorkspaceReplaceWindow(fixture.Docs), "Preview replacements", "Cancel"),
             new("insert-link", () => new InsertLinkWindow("Useful reference", Path.Combine(fixture.Docs, "meeting.md"), []), "Insert link", "Cancel"),
             new("insert-image", () => new InsertImageWindow(SyntheticImage(), "diagram.png", Path.Combine(fixture.Docs, "meeting.md"), null), "Insert image", "Cancel"),
             new("version-history", () => new HistoryWindow("meeting.md", versions, current), "Open selected version as unsaved copy", "Close"),
             new("version-history-empty", () => new HistoryWindow("meeting.md", [], current), "Close"),
+            new("git-diff", () => new GitDiffWindow("meeting.md", "# Committed\noriginal", current), "Close"),
             new("feature-guide", () => new HelpWindow(fixture.Shell.Registry), "Exit guide", "Next"),
             new("filename", () => new FileNameWindow(false, fixture.Docs, true, "meeting.md"), "Rename", "Cancel"),
+            new("move-to", () => new MoveToWindow("meeting.md", fixture.Docs, [fixture.Docs, Path.Combine(fixture.Docs, "Archive")]), "Move", "Cancel"),
             new("mcp", () => new MCPConnectionsWindow(), "Continue", "Close"),
             new("merge", () => new MergeWindow("meeting.md", ThreeWayMerger.Merge("one\ntwo\n", "one\nmy change\n", "one\ndisk change\n")), "Accept merged text", "Cancel"),
             new("open-url", () => new OpenUrlWindow(), "Save portable copy…", "Close"),
             new("prompt", () => new PromptWindow("Close document", "Save changes to meeting.md before closing?", ["Save", "Don't save", "Cancel"], 0, 2), "Save", "Cancel"),
             new("rename-links", () => new RenameLinksWindow(repair), "Apply reviewed link updates", "Keep links unchanged"),
             new("recovery", () => new RecoveryReviewWindow(record, current), "Restore as unsaved copy", "Ask later"),
+            new("save-fragments", () => new SaveFragmentsWindow([new Tern.Workspaces.SaveFragment(Path.Combine(fixture.Docs, ".meeting.md.0123456789abcdef0123456789abcdef.tern-save-backup"), Tern.Workspaces.SaveFragmentKind.SaveBackup, Path.Combine(fixture.Docs, "meeting.md"), DateTime.UtcNow.AddDays(-2), 20)], _ => Task.FromResult(false)), "Open as copy", "Close"),
             new("reset", () => new ResetWindow(fixture.Shell), "Reset selected application data", "Cancel"),
             new("settings", () => new SettingsWindow(new AppSettings { UiScale = fixture.Shell.Settings.UiScale }, fixture.Shell.Registry), "Close settings"),
             new("shortcuts", () => new ShortcutsWindow(fixture.Shell.Registry), "Close shortcuts"),

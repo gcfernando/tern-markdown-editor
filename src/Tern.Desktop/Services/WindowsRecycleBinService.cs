@@ -16,8 +16,10 @@ public sealed partial class WindowsRecycleBinService(nint ownerWindow = 0) : ILo
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("The Windows Recycle Bin is not available.");
         var fullPath = Path.GetFullPath(path);
-        if ((File.GetAttributes(fullPath) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
-            throw new IOException("Only a regular local file can be sent to the Recycle Bin.");
+        var attributes = File.GetAttributes(fullPath);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("A link cannot be sent to the Recycle Bin. Remove the link itself in File Explorer.");
+        // A real folder is allowed; the shell recycles it as one item and never falls back to permanent deletion.
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var worker = new Thread(() =>
         {

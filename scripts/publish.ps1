@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $env:AVALONIA_TELEMETRY_OPTOUT = '1'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repositoryRoot 'src/Tern.Desktop/Tern.Desktop.csproj'
-$publishDirectory = Join-Path $repositoryRoot 'artifacts/publish/win-x64'
+$publishDirectory = [IO.Path]::GetFullPath((Join-Path $repositoryRoot '..\tern-build-output\publish\win-x64'))
 
 # Keep the complete output directory together; Tern.exe depends on its adjacent files.
 & dotnet publish $projectPath --configuration $Configuration --runtime win-x64 --self-contained true --output $publishDirectory -m:1

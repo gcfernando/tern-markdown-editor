@@ -7,6 +7,54 @@ namespace Tern.Workspaces.Tests;
 public sealed class WorkspaceScannerTests(ITestOutputHelper output)
 {
     [Fact]
+    public async Task Incremental_files_preserve_old_snapshots_and_copy_only_changed_ancestors()
+    {
+        using var dir = new TempDirectory();
+        dir.Write("keep.md", "original");
+        dir.Write("notes/existing.md", "existing");
+        var scanner = new WorkspaceScanner();
+        var before = await scanner.ScanAsync(dir.Path);
+        var keptNode = Assert.Single(before.Tree.Children, child => child.Name == "keep.md");
+        dir.Write("keep.md", "updated content");
+        var updated = await scanner.TryRefreshFilesAsync(before,
+            new WorkspaceChangeSet([new(WorkspaceChangeKind.Changed, dir.Combine("keep.md"))], false));
+        Assert.NotNull(updated);
+        Assert.Same(before.Tree, updated.Tree);
+        Assert.Equal(15, Assert.Single(updated.Files, file => file.RelativePath == "keep.md").Length);
+        Assert.Equal(8, Assert.Single(before.Files, file => file.RelativePath == "keep.md").Length);
+
+        dir.Write("notes/new.md", "new");
+        var added = await scanner.TryRefreshFilesAsync(updated,
+            new WorkspaceChangeSet([new(WorkspaceChangeKind.Created, dir.Combine("notes/new.md"))], false));
+        Assert.NotNull(added);
+        Assert.Equal(3, added.Tree.FileCount);
+        Assert.Equal(2, before.Tree.FileCount);
+        Assert.Same(keptNode, Assert.Single(added.Tree.Children, child => child.Name == "keep.md"));
+        Assert.Equal(["existing.md", "new.md"], Assert.Single(added.Tree.Children, child => child.Name == "notes").Children.Select(child => child.Name));
+        Assert.Single(Assert.Single(before.Tree.Children, child => child.Name == "notes").Children);
+    }
+
+    [Fact]
+    public async Task Incremental_files_recheck_exclusions_and_size_and_require_known_directories()
+    {
+        using var dir = new TempDirectory();
+        dir.Write("keep.md", "ok");
+        var scanner = new WorkspaceScanner(new WorkspaceScanOptions { MaxFileSizeBytes = 8 });
+        var before = await scanner.ScanAsync(dir.Path);
+        dir.Write(WorkspaceScanOptions.IgnoreFileName, "ignored.md");
+        dir.Write("ignored.md", "ok");
+        dir.Write("large.md", "too large to admit");
+        dir.Write("new-folder/new.md", "ok");
+        foreach (var path in new[] { "ignored.md", "large.md", "new-folder/new.md" })
+            Assert.Null(await scanner.TryRefreshFilesAsync(before,
+                new WorkspaceChangeSet([new(WorkspaceChangeKind.Created, dir.Combine(path))], false)));
+        Assert.Null(await scanner.TryRefreshFilesAsync(before,
+            new WorkspaceChangeSet([new(WorkspaceChangeKind.Deleted, dir.Combine("keep.md"))], false)));
+        Assert.Equal(1, before.Tree.FileCount);
+        Assert.Single(before.Files);
+    }
+
+    [Fact]
     public async Task File_links_outside_the_workspace_are_excluded_but_internal_links_are_allowed()
     {
         using var dir = new TempDirectory();

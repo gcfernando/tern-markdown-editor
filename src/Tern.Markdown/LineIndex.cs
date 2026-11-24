@@ -38,7 +38,6 @@ public sealed class LineIndex
         return (index >= 0 ? index : ~index - 1) + 1;
     }
 
-    public int ColumnOf(int offset) => Math.Clamp(offset, 0, Length) - LineStart(LineOf(offset));
 
     public int LineStart(int line) => _starts[Math.Clamp(line, 1, _starts.Count) - 1];
 

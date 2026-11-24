@@ -2,7 +2,10 @@ using System.Text.Json;
 
 namespace Tern.Workspaces;
 
-public sealed record TabState(string Path, int CaretOffset, double ScrollOffset);
+public sealed record TabState(string Path, int CaretOffset, double ScrollOffset)
+{
+    public string? DiskSha256 { get; init; }
+}
 
 public sealed record FileViewState(int CaretOffset, double ScrollOffset);
 
@@ -30,7 +33,7 @@ public sealed class SessionStore
 {
     public const int CurrentVersion = 1;
     public const string FileName = "session.json";
-    public const int MaxTabs = 200;
+    public const int MaxTabs = 2000;
     public const int MaxFileViews = 500;
     public const int MaxWorkspaces = 32;
 
@@ -102,7 +105,9 @@ public sealed class SessionStore
 
             tabPaths.Add(normalized);
 
-            tabs.Add(new TabState(path!, Math.Max(0, JsonStateFile.GetInt(element, "caret", 0)), Math.Max(0, JsonStateFile.GetDouble(element, "scroll") ?? 0)));
+            var hash = JsonStateFile.GetString(element, "diskSha256");
+            tabs.Add(new TabState(path!, Math.Max(0, JsonStateFile.GetInt(element, "caret", 0)), Math.Max(0, JsonStateFile.GetDouble(element, "scroll") ?? 0))
+            { DiskSha256 = hash is { Length: 64 } && hash.All(Uri.IsHexDigit) ? hash : null });
         }
 
         var active = JsonStateFile.GetString(root, "activeTab");
@@ -151,8 +156,11 @@ public sealed class SessionStore
         if (!TryNormalizeStoredPath(previousWorkspace, out _)) previousWorkspace = null;
         var activeIndex = JsonStateFile.GetInt(root, "activeTabIndex", -1);
         return new SessionSnapshot(previousWorkspace, tabs, active, window, views)
-        { OpenWorkspaceRoots = workspaceRoots, OpenFolderRoots = folderRoots,
-            ActiveTabIndex = activeIndex >= 0 && activeIndex < tabs.Count ? activeIndex : null };
+        {
+            OpenWorkspaceRoots = workspaceRoots,
+            OpenFolderRoots = folderRoots,
+            ActiveTabIndex = activeIndex >= 0 && activeIndex < tabs.Count ? activeIndex : null
+        };
     }
 
     private static double? Positive(double? value) => value is > 0 ? value : null;
@@ -198,6 +206,7 @@ public sealed class SessionStore
             writer.WriteString("path", tab.Path);
             writer.WriteNumber("caret", tab.CaretOffset);
             writer.WriteNumber("scroll", tab.ScrollOffset);
+            if (tab.DiskSha256 is { Length: 64 } hash && hash.All(Uri.IsHexDigit)) writer.WriteString("diskSha256", hash);
             writer.WriteEndObject();
         }
 

@@ -26,21 +26,22 @@ public sealed record PlainTextExportOptions
 public static class PlainTextExporter
 {
     /// <summary>Renders <paramref name="markdown"/> as plain text with <c>\n</c> line endings.</summary>
-    public static string Export(string markdown, PlainTextExportOptions? options = null)
+    public static string Export(string markdown, PlainTextExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         options ??= new PlainTextExportOptions();
-        var document = PreviewBuilder.Build(markdown, options.Preview);
-        return Export(document, options);
+        var document = PreviewBuilder.Build(markdown, options.Preview, null, cancellationToken);
+        return Export(document, options, cancellationToken);
     }
 
     /// <summary>Renders an already built preview document.</summary>
-    public static string Export(PreviewDocument document, PlainTextExportOptions? options = null)
+    public static string Export(PreviewDocument document, PlainTextExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(document);
+        cancellationToken.ThrowIfCancellationRequested();
         options ??= new PlainTextExportOptions();
         if (options.Width is < 20 or > 240) throw new ArgumentOutOfRangeException(nameof(options), "Text width must be between 20 and 240.");
-        var writer = new TextBlockWriter(options);
+        var writer = new TextBlockWriter(options, cancellationToken);
         var lines = writer.Blocks(document.Blocks);
         if (document.Truncated)
         {
@@ -49,24 +50,25 @@ public static class PlainTextExporter
         }
 
         writer.AppendLinks(lines);
+        cancellationToken.ThrowIfCancellationRequested();
         return string.Join('\n', lines).Trim('\n', '\r') + "\n";
     }
 
     /// <summary>Exports to a UTF-8 file without BOM.</summary>
-    public static void ExportToFile(string markdown, string outputPath, PlainTextExportOptions? options = null)
+    public static void ExportToFile(string markdown, string outputPath, PlainTextExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(Export(markdown, options)), options?.Preview.DocumentPath);
+        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(Export(markdown, options, cancellationToken)), options?.Preview.DocumentPath, cancellationToken);
     }
 
     /// <summary>Writes a previously built preview so callers can retain its truncation outcome.</summary>
-    public static void ExportToFile(PreviewDocument document, string outputPath, PlainTextExportOptions? options = null)
+    public static void ExportToFile(PreviewDocument document, string outputPath, PlainTextExportOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(Export(document, options)), options?.Preview.DocumentPath);
+        AtomicFile.Write(outputPath, new UTF8Encoding(false).GetBytes(Export(document, options, cancellationToken)), options?.Preview.DocumentPath, cancellationToken);
     }
 
-    private sealed class TextBlockWriter(PlainTextExportOptions options)
+    private sealed class TextBlockWriter(PlainTextExportOptions options, CancellationToken cancellationToken)
     {
         private readonly List<string> _links = [];
         private int _indent;
@@ -85,6 +87,7 @@ public static class PlainTextExporter
         }
         private List<string> Prose(string text, string continuation = "")
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!options.ReadableLayout) return Split(text);
             var result = new List<string>();
             var width = Math.Max(20, options.Width - _indent);
@@ -93,11 +96,13 @@ public static class PlainTextExporter
                 var line = "";
                 foreach (var word in paragraph.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (line.Length > 0 && line.Length + 1 + word.Length > width)
                     { result.Add(line); line = continuation; }
                     var remaining = word;
                     while (remaining.Length > width - continuation.Length)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         if (line.Trim().Length > 0) { result.Add(line); line = continuation; }
                         var count = width - continuation.Length;
                         if (count < remaining.Length && char.IsLowSurrogate(remaining[count])) count--;
@@ -133,6 +138,7 @@ public static class PlainTextExporter
 
         private List<string> Block(BlockNode block)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             switch (block)
             {
                 case HeadingNode heading:
@@ -308,6 +314,7 @@ public static class PlainTextExporter
 
         private void Append(StringBuilder builder, InlineNode node)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             switch (node)
             {
                 case TextNode text:

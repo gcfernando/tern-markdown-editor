@@ -39,6 +39,62 @@ public static class LineSplitter
 
         return [.. lines];
     }
+
+    /// <summary>Each line without its terminator; an unterminated last line is marked so adding a final newline still counts as a change.</summary>
+    public static string[] Keys(string[] lines)
+    {
+        var keys = new string[lines.Length];
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var end = line.Length;
+            while (end > 0 && line[end - 1] is '\n' or '\r') end--;
+            keys[i] = end == line.Length ? line + "\0" : line[..end];
+        }
+
+        return keys;
+    }
+}
+
+/// <summary>Line-ending helpers for merging text whose sides may use different conventions.</summary>
+public static class LineEndings
+{
+    /// <summary>The most frequent terminator in the text (CRLF, LF or CR), or null when it has no line break.</summary>
+    public static string? Dominant(string text)
+    {
+        int crlf = 0, lf = 0, cr = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n') { crlf++; i++; }
+                else cr++;
+            }
+            else if (text[i] == '\n') lf++;
+        }
+
+        if (crlf + lf + cr == 0) return null;
+        if (crlf >= lf && crlf >= cr) return "\r\n";
+        return lf >= cr ? "\n" : "\r";
+    }
+
+    public static string Normalize(string text, string newLine)
+    {
+        if (text.Length == 0) return text;
+        var builder = new System.Text.StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n') i++;
+                builder.Append(newLine);
+            }
+            else if (text[i] == '\n') builder.Append(newLine);
+            else builder.Append(text[i]);
+        }
+
+        return builder.ToString();
+    }
 }
 
 /// <summary>

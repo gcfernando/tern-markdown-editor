@@ -31,7 +31,7 @@ blockquote>:last-child{margin-bottom:0}
 code,kbd,samp{font:.875em/1.4 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace}
 code{padding:.15em .35em;background:var(--code-bg);border-radius:4px}
 pre{padding:1em;overflow:auto;background:var(--soft);border:1px solid var(--border);border-radius:6px;line-height:1.45}
-pre code{padding:0;background:none;font-size:.85em}
+pre code{padding:0;background:none;font-size:.85em;tab-size:4}
 .syntax-keyword{color:#cf222e}.syntax-string{color:#0a3069}.syntax-function{color:#8250df}.syntax-type{color:#953800}.syntax-constant{color:#0550ae}.syntax-comment{color:#59636e}
 :root[data-theme=dark] .syntax-keyword{color:#ff7b72}:root[data-theme=dark] .syntax-string{color:#a5d6ff}:root[data-theme=dark] .syntax-function{color:#d2a8ff}:root[data-theme=dark] .syntax-type{color:#ffa657}:root[data-theme=dark] .syntax-constant{color:#79c0ff}:root[data-theme=dark] .syntax-comment{color:#9198a1}
 @media(prefers-color-scheme:dark){:root[data-theme=auto] .syntax-keyword{color:#ff7b72}:root[data-theme=auto] .syntax-string{color:#a5d6ff}:root[data-theme=auto] .syntax-function{color:#d2a8ff}:root[data-theme=auto] .syntax-type{color:#ffa657}:root[data-theme=auto] .syntax-constant{color:#79c0ff}:root[data-theme=auto] .syntax-comment{color:#9198a1}}

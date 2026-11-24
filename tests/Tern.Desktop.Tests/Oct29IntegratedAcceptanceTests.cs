@@ -117,9 +117,9 @@ public sealed class Oct29IntegratedAcceptanceTests
 
     private static string OutputDirectory()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
-        var path = Path.Combine(root!.FullName, "docs", "review", "oct29", "after");
+        // Acceptance evidence belongs to the isolated test temporary directory,
+        // never to the project's checked-in review documents.
+        var path = Path.Combine(Path.GetTempPath(), "Tern-test-review", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Directory.CreateDirectory(path);
         return path;
     }

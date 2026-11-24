@@ -3,6 +3,7 @@ namespace Tern.Workspaces;
 /// <summary>The few front-matter fields Tern understands.</summary>
 public sealed record FrontMatterFields(string? Title, IReadOnlyList<string> Tags, IReadOnlyList<string> Aliases)
 {
+    public int? TargetWords { get; init; }
     public static FrontMatterFields Empty { get; } = new(null, [], []);
 }
 
@@ -20,6 +21,7 @@ public static class FrontMatterReader
         }
 
         string? title = null;
+        int? targetWords = null;
         var tags = new List<string>();
         var aliases = new List<string>();
         var lines = yaml.Split('\n');
@@ -40,6 +42,12 @@ public static class FrontMatterReader
 
             var key = line[..colon].Trim().ToLowerInvariant();
             var value = line[(colon + 1)..].Trim();
+            if (key == "target-words")
+            {
+                if (int.TryParse(Unquote(value), System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var target) && target > 0) targetWords = target;
+                continue;
+            }
             if (key is not ("title" or "tags" or "tag" or "aliases" or "alias"))
             {
                 continue;
@@ -69,7 +77,7 @@ public static class FrontMatterReader
             }
         }
 
-        return new FrontMatterFields(title, tags.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), aliases);
+        return new FrontMatterFields(title, tags.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), aliases) { TargetWords = targetWords };
     }
 
     private static List<string> ReadBlockList(string[] lines, ref int index)

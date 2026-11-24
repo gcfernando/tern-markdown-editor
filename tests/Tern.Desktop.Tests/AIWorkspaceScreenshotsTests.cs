@@ -49,7 +49,7 @@ public sealed class AIWorkspaceScreenshotsTests
         await Capture(connections, "connections-compact");
         connections.Close();
         var guide = new HelpWindow(f.Shell.Registry, answerAI: (_, _) => Task.FromResult(
-            "Start with a short summary of the meeting. Group the decisions under a clear heading, then list each action with its owner and due date.\n\nIn Tern, select a saved AI connection in the main toolbar and press Alt+Space. Ask it to turn the current note into an action plan while keeping names and dates. Check the result in Split view; Undo restores the previous draft."));
+            "Start with a short summary of the meeting. Group the decisions under a clear heading, then list each action with its owner and due date.\n\nIn Tern, select a saved AI connection in the main toolbar and press Ctrl+Shift+Space. Ask it to turn the current note into an action plan while keeping names and dates. Check the result in Split view; Undo restores the previous draft."));
         guide.Show(f.Window);
         Find<TextBox>(guide, "Search feature help").Text = "How do I turn meeting notes into an action plan?";
         Find<Button>(guide, "Ask question").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -67,7 +67,7 @@ public sealed class AIWorkspaceScreenshotsTests
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
         Assert.NotNull(root);
-        var folder = Path.Combine(root.FullName, "artifacts", "screenshots", "ai-workflow");
+        var folder = Tern.Tests.Shared.TestOutput.Folder("screenshots", "ai-workflow");
         Directory.CreateDirectory(folder);
         using var bitmap = window.CaptureRenderedFrame(); Assert.NotNull(bitmap);
         using var output = File.Create(Path.Combine(folder, name + ".png")); bitmap.Save(output, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());

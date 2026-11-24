@@ -15,6 +15,62 @@ namespace Tern.Desktop.Tests;
 public sealed class WorkspaceStackPresentationTests
 {
     [AvaloniaFact]
+    public async Task Workspace_tree_exposes_real_preparation_progress_and_cancel_then_hides_finished_controls()
+    {
+        using var fixture = new DesktopFixture();
+        await fixture.WriteAsync("prepared.md", "# Ready later\nzebra");
+        var sawPreparation = false;
+        Exception? preparationAssertion = null;
+        fixture.Shell.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(fixture.Shell.Workspace) || fixture.Shell.Workspace is not { IsPreparingContent: true }) return;
+            preparationAssertion = Record.Exception(() =>
+            {
+                Settle(fixture);
+                var row = Assert.Single(fixture.Window.FileTree.Items.OfType<TreeRow>());
+                Assert.True(row.IsPreparingContent);
+                Assert.Single(row.Children);
+                var cancel = Assert.Single(fixture.Window.FileTree.GetVisualDescendants().OfType<Button>(), button =>
+                    ReferenceEquals(button.DataContext, row) && AutomationProperties.GetName(button) == "Cancel workspace indexing and keep the file tree");
+                var progress = Assert.Single(fixture.Window.FileTree.GetVisualDescendants().OfType<ProgressBar>(), bar =>
+                    ReferenceEquals(bar.DataContext, row) && AutomationProperties.GetName(bar) == "Workspace preparation progress");
+                Assert.True(cancel.IsEffectivelyVisible);
+                Assert.True(progress.IsEffectivelyVisible);
+                sawPreparation = true;
+                cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            });
+        };
+        Assert.True(await fixture.Shell.OpenWorkspaceAsync(fixture.Docs));
+        Settle(fixture);
+        Assert.Null(preparationAssertion);
+        Assert.True(sawPreparation);
+        Assert.Single(fixture.Shell.Workspace!.Snapshot.Files);
+        Assert.False(fixture.Shell.Workspace.IsContentReady);
+        Assert.Contains("incomplete", Assert.Single(fixture.Window.FileTree.Items.OfType<TreeRow>()).SectionNotice);
+        Assert.DoesNotContain(fixture.Window.FileTree.GetVisualDescendants().OfType<Button>(), button =>
+            button.IsEffectivelyVisible && AutomationProperties.GetName(button) == "Cancel workspace indexing and keep the file tree");
+    }
+
+    [AvaloniaFact]
+    public async Task Online_only_tree_row_is_marked_without_changing_the_filename()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var fixture = new DesktopFixture();
+        var path = await fixture.WriteAsync("cloud-note.md", "# Synthetic online-only fixture");
+        File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.Offline);
+        try
+        {
+            Assert.True(await fixture.Shell.OpenWorkspaceAsync(fixture.Docs));
+            Settle(fixture);
+            var row = Assert.Single(Assert.Single(fixture.Window.FileTree.Items.OfType<TreeRow>()).Children);
+            Assert.Equal("cloud-note.md", row.Name);
+            Assert.Equal("cloud-note.md (online-only)", row.DisplayName);
+            Assert.Contains(fixture.Window.FileTree.GetVisualDescendants().OfType<TextBlock>(), block => block.Text == row.DisplayName);
+        }
+        finally { File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.Offline); }
+    }
+
+    [AvaloniaFact]
     public async Task Restoring_library_does_not_expand_a_collapsed_workspace_with_a_selected_document()
     {
         using var fixture = new DesktopFixture();

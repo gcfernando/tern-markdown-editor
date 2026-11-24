@@ -31,7 +31,8 @@ internal sealed class PdfRenderer : IDisposable
     private readonly SafeResourceResolver _resolver;
     private readonly ImageEmbedder _images;
     private readonly List<string> _warnings;
-    private readonly PdfTypography _typography = new();
+    private readonly CancellationToken _cancellationToken;
+    private readonly PdfTypography _typography;
     private readonly PdfDiagramPainter _painter;
     private readonly List<PdfPage> _pages = [];
     private readonly List<LinkTarget> _links = [];
@@ -59,13 +60,16 @@ internal sealed class PdfRenderer : IDisposable
     private Action? _repeatHeader;
     private bool _repeating;
 
-    public PdfRenderer(PdfDocument document, PdfExportOptions options, SafeResourceResolver resolver, ImageEmbedder images, List<string> warnings)
+    public PdfRenderer(PdfDocument document, PdfExportOptions options, SafeResourceResolver resolver, ImageEmbedder images, List<string> warnings,
+        CancellationToken cancellationToken = default)
     {
         _document = document;
         _options = options;
         _resolver = resolver;
         _images = images;
         _warnings = warnings;
+        _cancellationToken = cancellationToken;
+        _typography = new PdfTypography(cancellationToken);
         _painter = new PdfDiagramPainter(_typography);
         _size = options.BaseFontSize;
         _blockGap = _size * 0.7;
@@ -115,6 +119,7 @@ internal sealed class PdfRenderer : IDisposable
         var brush = new XSolidBrush(Muted);
         for (var i = 0; i < _pages.Count; i++)
         {
+            _cancellationToken.ThrowIfCancellationRequested();
             using var gfx = XGraphics.FromPdfPage(_pages[i], XGraphicsPdfPageOptions.Append);
             var y = _pageHeight - (_options.Margins.Bottom / 2);
             gfx.DrawString($"{(i + 1).ToString(CultureInfo.InvariantCulture)} / {_pages.Count.ToString(CultureInfo.InvariantCulture)}", font, brush, new XPoint(_pageWidth / 2, y), XStringFormats.Center);
@@ -126,6 +131,7 @@ internal sealed class PdfRenderer : IDisposable
     {
         foreach (var pending in _pendingLinks)
         {
+            _cancellationToken.ThrowIfCancellationRequested();
             var target = _links[pending.Link - 1];
             var page = _pages[pending.Page];
             var rect = new PdfRectangle(new XRect(pending.Rect.X, _pageHeight - pending.Rect.Bottom, pending.Rect.Width, pending.Rect.Height));
@@ -157,6 +163,7 @@ internal sealed class PdfRenderer : IDisposable
 
     private void NewPage()
     {
+        _cancellationToken.ThrowIfCancellationRequested();
         if (_gfx is not null)
         {
             FlushBars();
@@ -259,6 +266,7 @@ internal sealed class PdfRenderer : IDisposable
 
     private void Block(BlockNode block)
     {
+        _cancellationToken.ThrowIfCancellationRequested();
         switch (block)
         {
             case HeadingNode heading:
@@ -396,6 +404,7 @@ internal sealed class PdfRenderer : IDisposable
 
     private void DrawLine(LineBox line, double x, double top, double width, TableAlignment alignment, XColor color)
     {
+        _cancellationToken.ThrowIfCancellationRequested();
         var offset = alignment switch
         {
             TableAlignment.Center => Math.Max(0, (width - line.Width) / 2),
@@ -601,7 +610,8 @@ internal sealed class PdfRenderer : IDisposable
         var size = _size * 0.88;
         var style = new TextStyle(false, false, true, false, false, false, 0, 0);
         var lineHeight = size * 1.35;
-        var source = PdfText.Safe(code.TrimEnd('\r', '\n')).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var source = PdfText.Safe(Tern.PreviewView.CodeDisplay.ExpandTabs(code.TrimEnd('\r', '\n'), _cancellationToken))
+            .Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         var tokens = Tern.PreviewView.CodeSyntaxHighlighter.Tokenize(source, language);
         var lines = new List<List<CodeRun>> { new() };
         var tokenIndex = 0;
@@ -609,6 +619,7 @@ internal sealed class PdfRenderer : IDisposable
         var lineWidth = 0d;
         foreach (var rune in source.EnumerateRunes())
         {
+            _cancellationToken.ThrowIfCancellationRequested();
             while (tokenIndex + 1 < tokens.Count && position >= tokens[tokenIndex].Start + tokens[tokenIndex].Length) tokenIndex++;
             var kind = tokens.Count > 0 ? tokens[tokenIndex].Kind : Tern.PreviewView.CodeTokenKind.Plain;
             position += rune.Utf16SequenceLength;
@@ -1170,10 +1181,12 @@ internal sealed class PdfRenderer : IDisposable
 
     private void AddText(List<Atom> sink, string text, TextStyle style)
     {
+        _cancellationToken.ThrowIfCancellationRequested();
         var safe = PdfText.Safe(text);
         var i = 0;
         while (i < safe.Length)
         {
+            _cancellationToken.ThrowIfCancellationRequested();
             var start = i;
             if (char.IsWhiteSpace(safe[i]))
             {

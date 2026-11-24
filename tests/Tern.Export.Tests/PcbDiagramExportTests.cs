@@ -21,7 +21,7 @@ public sealed class PcbDiagramExportTests
         var pdf = PdfExporter.Export(markdown);
         Assert.True(pdf.PageCount > 0);
         Assert.Empty(pdf.Warnings);
-        var output = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../artifacts/diagram-upgrade"));
+        var output = Tern.Tests.Shared.TestOutput.Folder("diagram-upgrade");
         Directory.CreateDirectory(output);
         File.WriteAllText(Path.Combine(output, "pcb-design.html"), html.Html);
         File.WriteAllBytes(Path.Combine(output, "pcb-design.pdf"), pdf.Data);

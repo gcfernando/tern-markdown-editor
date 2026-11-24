@@ -16,15 +16,15 @@ internal sealed class InsertImageWindow : Window
     internal TextBox AltInput { get; } = new();
     internal TextBox NameInput { get; } = new();
     internal TextBox FolderInput { get; } = new();
-    internal CheckBox CopyChoice { get; } = new() { Content = "Copy into note assets (portable)", IsChecked = true };
+    internal CheckBox CopyChoice { get; } = new() { Content = "Copy into document assets (portable)", IsChecked = true };
     internal Button InsertButton { get; } = new() { Content = "Insert image", IsDefault = true };
     private readonly TextBlock _destination = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _error = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _error = MessageTones.Follow(new() { TextWrapping = TextWrapping.Wrap });
     private bool _submitting;
 
-    public InsertImageWindow(byte[] bytes, string name, string note, string? original, Func<ImageInsertion, Task<string?>>? submit = null)
+    public InsertImageWindow(byte[] bytes, string name, string note, string? original, Func<ImageInsertion, Task<string?>>? submit = null, Control? operationFeedback = null)
     {
-        DialogParts.Setup(this, "Insert image", 620, 630);
+        DialogParts.Setup(this, "Insert image", 620, 630, DialogGuidance.Image);
         using var stream = new MemoryStream(bytes, writable: false);
         _thumbnail = Bitmap.DecodeToWidth(stream, 480);
         AltInput.Text = Path.GetFileNameWithoutExtension(name);
@@ -35,10 +35,16 @@ internal sealed class InsertImageWindow : Window
         browse.Click += async (_, _) =>
         {
             if (!StorageProvider.CanPickFolder) return;
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Image destination", AllowMultiple = false });
-            if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path) FolderInput.Text = path;
+            try
+            {
+                var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Image destination", AllowMultiple = false });
+                if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path) FolderInput.Text = path;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or NotSupportedException or System.Runtime.InteropServices.ExternalException)
+            { _error.Text = "Could not open the folder picker. Type the folder path instead. " + Tern.App.Shell.UserProblem.Plain(ex); }
         };
         var cancel = new Button { Content = "Cancel", IsCancel = true };
+        var destinationHost = new ContentControl { Content = _destination };
         cancel.Click += (_, _) => Close(null);
         InsertButton.Click += async (_, _) =>
         {
@@ -49,14 +55,16 @@ internal sealed class InsertImageWindow : Window
             InsertButton.IsEnabled = cancel.IsEnabled = AltInput.IsEnabled = NameInput.IsEnabled = FolderInput.IsEnabled = CopyChoice.IsEnabled = browse.IsEnabled = false;
             try
             {
+                if (operationFeedback is not null) destinationHost.Content = operationFeedback;
                 var error = await submit(choice);
                 if (error is null) { _submitting = false; Close(choice); return; }
                 _error.Text = error;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
-            { _error.Text = "The image could not be inserted. " + ex.Message; }
+            { _error.Text = "The image could not be inserted. " + Tern.App.Shell.UserProblem.Plain(ex); }
             finally
             {
+                destinationHost.Content = _destination;
                 _submitting = false; cancel.IsEnabled = AltInput.IsEnabled = true; CopyChoice.IsEnabled = original is not null;
                 Update();
             }
@@ -64,14 +72,16 @@ internal sealed class InsertImageWindow : Window
         Closing += (_, e) => { if (_submitting) e.Cancel = true; };
         var image = new Image { Source = _thumbnail, Height = 150, Stretch = Stretch.Uniform };
         AutomationProperties.SetName(image, "Selected image thumbnail");
-        Content = new StackPanel { Margin = new Thickness(20), Spacing = 10, Children =
+        var form = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(8).ToBinding(), Children =
         {
             image, DialogParts.Labeled("Description (alt text)", AltInput), CopyChoice,
             new TextBlock { Text = original is null ? "Clipboard image: a copy is required." : "Uncheck to link the original. Moving that original will break the link.", TextWrapping = TextWrapping.Wrap },
-            DialogParts.Labeled("Filename", NameInput), DialogParts.Labeled("Copy destination", FolderInput), browse, _destination, _error,
+            DialogParts.Labeled("Filename", NameInput), DialogParts.Labeled("Copy destination", FolderInput), browse, destinationHost, _error,
             new TextBlock { Text = "Undo removes the Markdown link. A copied image may remain on disk.", TextWrapping = TextWrapping.Wrap },
-            GuideParts.Actions(cancel, InsertButton)
         } };
+        Content = GuideParts.FrameWithReachableFooter(this, GuideParts.Title("Insert image"),
+            new ScrollViewer { Content = form, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled },
+            GuideParts.Actions(InsertButton, cancel));
         void Update()
         {
             if (_submitting) return;

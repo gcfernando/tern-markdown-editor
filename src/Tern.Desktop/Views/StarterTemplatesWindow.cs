@@ -10,9 +10,11 @@ public sealed class StarterTemplatesWindow : Window
 {
     internal ListBox Catalog { get; } = new();
     internal Button UseTemplate { get; } = new() { Content = "Use template", Classes = { "accent" }, IsDefault = true };
-    public StarterTemplatesWindow()
+    public StarterTemplatesWindow(IReadOnlyList<StarterTemplate>? templates = null, IReadOnlyList<string>? warnings = null,
+        string? userTemplateDirectory = null)
     {
-        DialogParts.Setup(this, "Starter templates", 900, 600, guidance: false);
+        var catalog = templates ?? StarterTemplates.All;
+        DialogParts.Setup(this, "Starter templates", 900, 600, DialogGuidance.Templates, guidance: false);
         var search = new TextBox { PlaceholderText = "Search templates…" };
         var name = GuideParts.Title("");
         var description = GuideParts.Caption("");
@@ -33,7 +35,7 @@ public sealed class StarterTemplatesWindow : Window
         {
             var selected = Catalog.SelectedItem;
             var query = search.Text?.Trim() ?? "";
-            var items = StarterTemplates.All.Where(t => (t.Name + " " + t.Description).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            var items = catalog.Where(t => (t.Name + " " + t.Description).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
             Catalog.ItemsSource = items;
             Catalog.SelectedItem = items.Contains(selected) ? selected : items.FirstOrDefault();
         }
@@ -41,14 +43,20 @@ public sealed class StarterTemplatesWindow : Window
         UseTemplate.Click += (_, _) => { if (Catalog.SelectedItem is StarterTemplate item) Close(item); };
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close((StarterTemplate?)null);
-        var left = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = 12, Children = { search, Catalog } };
+        var left = new Grid { RowDefinitions = new("Auto,*"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding(), Children = { search, Catalog } };
         Grid.SetRow(Catalog, 1);
-        var right = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 12, Children = { name, description, preview } };
+        var right = new Grid { RowDefinitions = new("Auto,Auto,*"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding(), Children = { name, description, preview } };
         Grid.SetRow(description, 1); Grid.SetRow(preview, 2);
-        var body = new Grid { ColumnDefinitions = new("280,*"), ColumnSpacing = 24, Children = { left, right } };
+        var body = new Grid { ColumnDefinitions = new("280,*"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(24).ToBinding(), Children = { left, right } };
         Grid.SetColumn(right, 1);
         body.SizeChanged += (_, _) => body.ColumnDefinitions[0].Width = new GridLength(Math.Min(280, body.Bounds.Width * .4));
-        Content = GuideParts.Frame(GuideParts.Vertical(GuideParts.Title("Start with a template"), GuideParts.Caption("Choose a structure. Tern creates a new, unsaved note.")), body, GuideParts.Actions(cancel, UseTemplate));
+        var source = userTemplateDirectory is null ? "the Settings templates folder" : userTemplateDirectory;
+        var header = GuideParts.Vertical(GuideParts.Title("Start with a template"),
+            GuideParts.Caption("Creates a new, unsaved note. {{date}}, {{time}}, {{title}} and YYYY-MM-DD are filled when used."),
+            GuideParts.Caption("Add .md templates in " + source + " or .tern\\templates in the active workspace."));
+        if (warnings is { Count: > 0 })
+            header.Children.Add(GuideParts.Caption($"Template loading reported {warnings.Count} issue(s); see Activity for details."));
+        Content = GuideParts.Frame(header, body, GuideParts.Actions(UseTemplate, cancel));
         Filter();
     }
 }

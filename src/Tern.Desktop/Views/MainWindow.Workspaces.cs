@@ -49,11 +49,11 @@ public partial class MainWindow
         if (_shown is not null) _shell.RememberViewState(_shown, Editor.CaretOffset, Editor.VerticalOffset);
     }
 
-    internal async Task<bool> CreateWorkspaceAtAsync(string parent, string name)
+    internal async Task<bool> CreateWorkspaceAtAsync(string parent, string name, Action? physicalCreationCompleted = null)
     {
         var validation = FileNameValidator.Validate(name);
         if (!validation.IsValid) { _shell.StatusMessage = validation.Message ?? "Choose a valid workspace folder name."; return false; }
-        var created = await _shell.CreateWorkspaceAsync(Path.Combine(parent, name));
+        var created = await _shell.CreateWorkspaceAsync(Path.Combine(parent, name), physicalCreationCompleted);
         if (created) await ShowNavAsync("Files");
         return created;
     }
@@ -70,11 +70,11 @@ public partial class MainWindow
         // Legacy workspaces were directory roots recorded in application history, with no portable descriptor.
         if (!_shell.IsKnownWorkspace(folder))
         {
-            _shell.StatusMessage = "This is a plain folder. Choose Open Folder to browse it, or Create Workspace to create a named workspace in a new directory.";
+            _shell.StatusMessage = "This is a plain folder. Choose Open Folder to browse it, then Make Folder a Workspace… to add content search, or Create Workspace to create a named workspace in a new directory.";
             _dialogs.ShowMessage("Choose a workspace", _shell.StatusMessage);
             return;
         }
-        if (await _shell.OpenWorkspaceAsync(folder)) await ShowNavAsync("Files");
+        await OpenThenShowFilesAsync(treeReady => _shell.OpenWorkspaceAsync(folder, treeReady: treeReady));
     }
 
     private void OnExpandAllRootsClick(object? sender, RoutedEventArgs e)
@@ -82,6 +82,24 @@ public partial class MainWindow
         var expand = (sender as Control)?.Tag as string == "expand";
         foreach (var row in _treeRoots.SelectMany(r => r.Flatten()).Where(r => r.IsDirectory)) row.IsExpanded = expand;
         _shell.StatusMessage = expand ? "All Library folders expanded." : "All Library folders collapsed.";
+    }
+
+    private async void OnTreePromoteClick(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Control { DataContext: TreeRow { IsDirectory: true, CanPromote: true } row }) await PromoteFolderFromUiAsync(row.FullPath);
+    }
+
+    private async Task PromoteFolderFromUiAsync(string? path)
+    {
+        path ??= _shell.Workspace is { IsNamedWorkspace: false } browsed ? browsed.Root : null;
+        if (path is null) return;
+        if (!await _dialogs.ConfirmPromoteFolderAsync(path))
+        {
+            _shell.SetStatus("Folder left as it was.", StatusSeverity.Info);
+            return;
+        }
+        if (await _shell.PromoteFolderAsync(path)) await ShowNavAsync("Files");
     }
 
     private async void OnTreeCreateClick(object? sender, RoutedEventArgs e)
@@ -112,7 +130,7 @@ public partial class MainWindow
         {
             if (!_windowClosed)
             {
-                _shell.StatusMessage = "Creation could not finish: " + ex.Message;
+                _shell.StatusMessage = "Creation could not finish: " + _shell.PlainProblem(ex);
                 _dialogs?.ShowMessage("Check the creation location", _shell.StatusMessage + " Check that location before retrying.");
             }
         }
@@ -151,6 +169,6 @@ public partial class MainWindow
                 ? "This parent is inside an open workspace. Choose a separate folder, or cancel and use the selected workspace." : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        { return "Cannot use this parent folder: " + ex.Message; }
+        { return "Cannot use this parent folder: " + _shell.PlainProblem(ex); }
     }
 }

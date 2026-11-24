@@ -41,6 +41,62 @@ public sealed class RecoveryStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Quarantined_damaged_files_are_reported_once_and_valid_checkpoints_stay()
+    {
+        var store = new RecoveryStore(_dir);
+        var id = Guid.NewGuid();
+        await store.WriteCheckpointAsync(Record(id, "valid"));
+        var bad = Path.Combine(_dir, $"{Guid.NewGuid():N}.00000001.tern-recovery");
+        await File.WriteAllTextAsync(bad, "garbage");
+
+        var first = store.Scan();
+        Assert.Single(first.Corrupt);
+        Assert.Equal(1, store.Quarantine(first.Corrupt.Select(c => c.Path)));
+
+        var second = store.Scan();
+        Assert.Empty(second.Corrupt);
+        Assert.Equal("valid", Assert.Single(second.Entries).Record.Text);
+        Assert.Equal("garbage", await File.ReadAllTextAsync(Path.Combine(store.DamagedDirectory, Path.GetFileName(bad))));
+    }
+
+    [Fact]
+    public async Task Quarantine_never_overwrites_an_earlier_quarantined_file()
+    {
+        var store = new RecoveryStore(_dir);
+        var name = $"{Guid.NewGuid():N}.00000001.tern-recovery";
+        for (var i = 0; i < 2; i++)
+        {
+            var path = Path.Combine(_dir, name);
+            await File.WriteAllTextAsync(path, "garbage" + i);
+            Assert.Equal(1, store.Quarantine([path]));
+        }
+        Assert.Equal(2, Directory.GetFiles(store.DamagedDirectory).Length);
+    }
+
+    [Fact]
+    public async Task Delete_damaged_removes_only_checkpoint_files_in_the_recovery_folder()
+    {
+        var store = new RecoveryStore(_dir);
+        var id = Guid.NewGuid();
+        await store.WriteCheckpointAsync(Record(id, "valid"));
+        var bad = Path.Combine(_dir, $"{Guid.NewGuid():N}.00000001.tern-recovery");
+        await File.WriteAllTextAsync(bad, "garbage");
+        var outside = Path.Combine(Path.GetTempPath(), "tern-outside-" + Guid.NewGuid().ToString("N") + ".tern-recovery");
+        var notes = Path.Combine(_dir, "notes.txt");
+        await File.WriteAllTextAsync(outside, "x");
+        await File.WriteAllTextAsync(notes, "x");
+        try
+        {
+            Assert.Equal(1, store.DeleteDamaged([bad, outside, notes]));
+            Assert.False(File.Exists(bad));
+            Assert.True(File.Exists(outside));
+            Assert.True(File.Exists(notes));
+            Assert.Equal("valid", Assert.Single(store.Scan().Entries).Record.Text);
+        }
+        finally { File.Delete(outside); }
+    }
+
+    [Fact]
     public async Task Overlapping_scheduler_flushes_leave_the_newest_revision_recoverable()
     {
         var store = new RecoveryStore(_dir);
@@ -150,6 +206,19 @@ public sealed class RecoveryStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Retiring_a_missing_directory_or_session_never_throws_and_checkpoints_self_heal()
+    {
+        var store = new RecoveryStore(Path.Combine(_dir, "gone"));
+        Assert.True(store.Retire(Guid.NewGuid()));
+
+        var id = Guid.NewGuid();
+        await store.WriteCheckpointAsync(Record(id, "x"));
+        Directory.Delete(Path.Combine(_dir, "gone"), true);
+        await store.WriteCheckpointAsync(Record(id, "y"));
+        Assert.Single(store.Scan().Entries);
+    }
+
+    [Fact]
     public async Task Garbage_files_in_the_directory_are_ignored()
     {
         var store = new RecoveryStore(_dir);
@@ -160,6 +229,91 @@ public sealed class RecoveryStoreTests : IDisposable
 
         Assert.Empty(scan.Entries);
         Assert.Single(scan.Corrupt);
+    }
+
+    [Fact]
+    public async Task Continuous_half_second_edits_for_thirty_seconds_produce_multiple_checkpoints()
+    {
+        var store = new RecoveryStore(_dir);
+        var session = new Tern.Domain.Documents.DocumentSession("stream.md", "", TextFileFormat.NewFileDefault, null);
+        using var scheduler = new RecoveryScheduler(store);
+        scheduler.Track(session);
+        var checkpoints = 0;
+        scheduler.CheckpointWritten += (_, _) => Interlocked.Increment(ref checkpoints);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        while (elapsed.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            session.ApplyEdits([TextEdit.Insert(session.Buffer.Length, "x")]);
+            await Task.Delay(500);
+        }
+        Assert.True(Volatile.Read(ref checkpoints) >= 2, "Continuous editing must not postpone recovery indefinitely.");
+        Assert.True(await scheduler.FlushAllAsync());
+        Assert.Equal(session.GetSnapshot().Text, Assert.Single(store.Scan().Entries).Record.Text);
+    }
+
+    [Fact]
+    public async Task Edits_during_a_slow_write_are_checkpointed_next_without_duplicate_timer_writes()
+    {
+        var store = new RecoveryStore(_dir);
+        var session = new Tern.Domain.Documents.DocumentSession("slow.md", "", TextFileFormat.NewFileDefault, null);
+        using var scheduler = new RecoveryScheduler(store, TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(80));
+        using var release = new ManualResetEventSlim();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writes = 0;
+        store.CheckpointPhase = phase =>
+        {
+            if (phase != "flushed-before-publish" || Interlocked.Increment(ref writes) != 1) return;
+            started.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new IOException("Synthetic write barrier timed out.");
+        };
+        scheduler.Track(session);
+        session.ApplyEdits([TextEdit.Insert(0, "first")]);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            for (var i = 0; i < 10; i++)
+            {
+                session.ApplyEdits([TextEdit.Insert(session.Buffer.Length, " newer")]);
+                await Task.Delay(15);
+            }
+        }
+        finally { release.Set(); }
+        await WaitFor(() => store.Scan().Entries.SingleOrDefault()?.Record.Text == session.GetSnapshot().Text);
+        await Task.Delay(150);
+        Assert.Equal(2, Volatile.Read(ref writes));
+    }
+
+    [Theory]
+    [InlineData("save")]
+    [InlineData("untrack")]
+    [InlineData("dispose")]
+    public async Task Pending_checkpoint_cannot_revive_after_save_untrack_or_disposal(string action)
+    {
+        var store = new RecoveryStore(_dir);
+        var session = new Tern.Domain.Documents.DocumentSession("retired.md", "", TextFileFormat.NewFileDefault, null);
+        using var scheduler = new RecoveryScheduler(store, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        using var release = new ManualResetEventSlim();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.CheckpointPhase = phase =>
+        {
+            if (phase != "flushed-before-publish") return;
+            started.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new IOException("Synthetic write barrier timed out.");
+        };
+        scheduler.Track(session);
+        session.ApplyEdits([TextEdit.Insert(0, "unsaved")]);
+        var flush = Task.Run(scheduler.FlushAllAsync);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (action == "save")
+                session.MarkSaved(session.GetSnapshot(), session.Format, new Tern.Domain.Documents.DiskBaseline(1, DateTime.UtcNow, "saved"));
+            else if (action == "untrack") scheduler.Untrack(session, retire: true);
+            else scheduler.Dispose();
+        }
+        finally { release.Set(); }
+        Assert.True(await flush);
+        Assert.Empty(store.Scan().Entries);
     }
 
     [Fact]

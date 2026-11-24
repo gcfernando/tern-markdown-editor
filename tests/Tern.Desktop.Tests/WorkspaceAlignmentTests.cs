@@ -36,6 +36,7 @@ public sealed class WorkspaceAlignmentTests
         fixture.Window.ApplySettings();
         fixture.Window.ApplyTheme();
         fixture.Shell.SelectWorkspace(fixture.Shell.OpenWorkspaces.Single(workspace => workspace.Root == company));
+        if (fixture.Window.LibraryAutoCollapsed) fixture.Window.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.B, KeyModifiers = Avalonia.Input.KeyModifiers.Control | Avalonia.Input.KeyModifiers.Shift });
         await fixture.Window.ShowNavAsync("Files");
         Pump(fixture);
 

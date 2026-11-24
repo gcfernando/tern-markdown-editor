@@ -51,6 +51,52 @@ public sealed class FolderWorkspaceContractTests
     }
 
     [Fact]
+    public async Task Promoting_a_browsed_folder_adds_a_descriptor_indexes_content_and_moves_nothing()
+    {
+        using var fixture = new ShellFixture();
+        var note = await fixture.WriteAsync("Notes/a.md", "# Title\nThe quokka lives here.");
+        Assert.True(await fixture.Shell.OpenFolderAsync(fixture.Docs));
+        var folder = Assert.Single(fixture.Shell.OpenWorkspaces);
+        Assert.False(folder.HasContentIndex);
+        Assert.Empty(folder.Search("quokka").Hits);
+        Assert.True(DocumentCommandPolicy.CanExecute(CommandIds.PromoteFolder, fixture.Shell.GetCommandContext()));
+
+        Assert.True(await fixture.Shell.PromoteFolderAsync(fixture.Docs), fixture.Shell.StatusMessage);
+
+        Assert.True(File.Exists(Path.Combine(fixture.Docs, WorkspaceDefinition.FileName)));
+        Assert.True(File.Exists(note));
+        Assert.True(fixture.Shell.HasWorkspace);
+        var promoted = Assert.Single(fixture.Shell.OpenWorkspaces);
+        Assert.True(promoted.IsNamedWorkspace);
+        Assert.True(promoted.HasContentIndex);
+        Assert.Single(promoted.Search("quokka").Hits);
+        Assert.False(DocumentCommandPolicy.CanExecute(CommandIds.PromoteFolder, fixture.Shell.GetCommandContext()));
+    }
+
+    [Fact]
+    public async Task Promoting_a_folder_inside_a_workspace_is_refused_and_leaves_no_descriptor()
+    {
+        using var fixture = new ShellFixture();
+        var company = Path.Combine(fixture.Docs, "Company");
+        Assert.True(await fixture.Shell.CreateWorkspaceAsync(company));
+        var inner = Path.Combine(company, "HR");
+        Directory.CreateDirectory(inner);
+        Assert.False(await fixture.Shell.PromoteFolderAsync(inner));
+        Assert.False(File.Exists(Path.Combine(inner, WorkspaceDefinition.FileName)));
+        Assert.False(await fixture.Shell.PromoteFolderAsync(Path.Combine(fixture.Docs, "missing")));
+    }
+
+    [Fact]
+    public async Task Promoting_a_folder_that_already_holds_a_descriptor_does_not_overwrite_it()
+    {
+        using var fixture = new ShellFixture();
+        var descriptor = Path.Combine(fixture.Docs, WorkspaceDefinition.FileName);
+        await File.WriteAllTextAsync(descriptor, "{ broken");
+        Assert.False(await fixture.Shell.PromoteFolderAsync(fixture.Docs));
+        Assert.Equal("{ broken", await File.ReadAllTextAsync(descriptor));
+    }
+
+    [Fact]
     public async Task Plain_folder_populates_tree_without_metadata_or_workspace_search_and_restores_as_folder()
     {
         using var fixture = new ShellFixture();

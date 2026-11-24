@@ -49,8 +49,6 @@ internal sealed class BlockPanel : Panel
 
     public int RealizedCount => Math.Max(0, _realizedLast - _realizedFirst + 1);
 
-    public double TotalHeight => _tops[^1];
-
     public void SetFactory(Func<BlockSlot, BlockHost> factory) => _factory = factory;
 
     public void SetSlots(IEnumerable<BlockSlot> slots)
@@ -72,19 +70,6 @@ internal sealed class BlockPanel : Panel
         InvalidateMeasure();
     }
 
-    /// <summary>Drops every realised control so the next layout rebuilds them (font or size changes).</summary>
-    public void ResetControls()
-    {
-        foreach (var slot in _slots)
-        {
-            slot.Host = null;
-        }
-
-        Children.Clear();
-        _realizedFirst = -1;
-        _realizedLast = -2;
-        InvalidateMeasure();
-    }
 
     public double TopOf(int index) => _tops[Math.Clamp(index, 0, _slots.Count)];
 

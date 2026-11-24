@@ -26,8 +26,8 @@ public sealed class RemoteImageLoader : IDisposable
 
     public RemoteImageLoader() : this(null, null) { }
 
-    /// <summary>Fetches fresh bytes for export on its background worker. No disk cache is used.</summary>
-    public byte[]? FetchForExport(string destination) => LoadAsync(destination, CancellationToken.None).GetAwaiter().GetResult();
+    public Func<string, bool>? AccessAllowed { get; set; }
+
 
     internal RemoteImageLoader(HttpMessageHandler? transport,
         Func<string, CancellationToken, Task<IPAddress[]>>? resolver, TimeSpan? timeout = null)
@@ -53,10 +53,16 @@ public sealed class RemoteImageLoader : IDisposable
 
     /// <summary>Returns validated image bytes or null on network or format failures.
     /// Caller cancellation propagates; a request timeout returns null. Nothing logs the URL or its query.</summary>
-    public async Task<byte[]?> LoadAsync(string destination, CancellationToken cancellationToken)
+    public Task<byte[]?> LoadAsync(string destination, CancellationToken cancellationToken) =>
+        LoadForDocumentAsync("", destination, cancellationToken);
+
+    public byte[]? FetchForDocument(string documentKey, string destination) =>
+        LoadForDocumentAsync(documentKey, destination, CancellationToken.None).GetAwaiter().GetResult();
+
+    public async Task<byte[]?> LoadForDocumentAsync(string documentKey, string destination, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (Volatile.Read(ref _disposed) != 0 || !TryDestination(destination, out var original)) return null;
+        if (Volatile.Read(ref _disposed) != 0 || AccessAllowed?.Invoke(documentKey) == false || !TryDestination(destination, out var original)) return null;
         var entered = false;
         try
         {
@@ -68,7 +74,9 @@ public sealed class RemoteImageLoader : IDisposable
             var current = original;
             for (var redirects = 0; redirects <= 3; redirects++)
             {
+                if (AccessAllowed?.Invoke(documentKey) == false) return null;
                 await ResolvePublicAsync(current.IdnHost, token).ConfigureAwait(false);
+                if (AccessAllowed?.Invoke(documentKey) == false) return null;
                 using var request = new HttpRequestMessage(HttpMethod.Get, current);
                 request.Headers.Accept.ParseAdd("image/*");
                 request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
@@ -97,7 +105,7 @@ public sealed class RemoteImageLoader : IDisposable
                 if (!IsImage(bytes)) return null;
                 token.ThrowIfCancellationRequested();
 
-                return bytes;
+                return AccessAllowed?.Invoke(documentKey) == false ? null : bytes;
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }

@@ -49,6 +49,6 @@ public partial class MainWindow
         });
         if (edits.Count == 0) return;
         tab.ApplyEdits(edits);
-        _shell.StatusMessage = "Link repaired in the editor. Save to update the file; Undo to revert.";
+        _shell.SetStatus("Link fixed. Save to keep it, or choose Undo to go back.", Tern.App.Shell.StatusSeverity.Success);
     }
 }

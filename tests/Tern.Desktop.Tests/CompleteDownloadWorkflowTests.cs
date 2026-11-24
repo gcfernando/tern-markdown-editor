@@ -99,7 +99,7 @@ public sealed class CompleteDownloadWorkflowTests
         await fixture.Window.ShowNavAsync("Recent");
         Pump(fixture);
         var button = Assert.Single(fixture.Window.GetVisualDescendants().OfType<Button>(),
-            control => control.IsEffectivelyVisible && AutomationProperties.GetName(control) == "Download online file");
+            control => control.IsEffectivelyVisible && AutomationProperties.GetName(control) == "Save portable copy");
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await UntilAsync(fixture, () => fixture.Shell.ActiveTab?.FilePath == destination);
         AssertLocalResources(destination, expected);

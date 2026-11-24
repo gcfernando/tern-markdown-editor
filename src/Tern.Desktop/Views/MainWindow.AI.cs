@@ -3,6 +3,8 @@ using Avalonia.Automation;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Tern.App.Commands;
+using Tern.App.Documents;
+using Tern.App.Shell;
 using Tern.Desktop.Services;
 using Tern.Domain.Text;
 using Avalonia.Threading;
@@ -28,14 +30,16 @@ public partial class MainWindow
             AIConnectionPicker.SelectedItem = _aiWorkspace.SelectedConnection;
             AIBar.IsVisible = true;
             UpdateAIEntryCaption();
-            AIConnectionAction.IsEnabled = _aiWorkspace.SelectedConnection is not null;
+            AIConnectionAction.IsEnabled = _aiWorkspace.SelectedConnection is not null && !_shell.Settings.OfflineMode;
+            ToolTip.SetTip(AIConnectionAction, _shell.Settings.OfflineMode ? "Offline mode blocks AI and MCP. Turn Offline off to connect." : "Use the selected connection");
+            ToolTip.SetShowOnDisabled(AIConnectionAction, true);
             AIConnectionAction.Content = _aiWorkspace.SelectedConnection is { Kind: "mcp" } ? "Open MCP tools" : "Write with AI";
             Avalonia.Automation.AutomationProperties.SetName(AIConnectionAction, AIConnectionAction.Content.ToString());
             RefreshAISummary();
             foreach (var panel in OverlayLayer.Children.OfType<AIPromptPanel>()) panel.RefreshConnections(_aiWorkspace);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException or ArgumentException)
-        { _shell.StatusMessage = "AI connections could not be loaded: " + ex.Message; }
+        { _shell.StatusMessage = "AI connections could not be loaded: " + _shell.PlainProblem(ex); }
         finally { _refreshingAI = false; }
     }
 
@@ -60,6 +64,7 @@ public partial class MainWindow
 
     private void ObserveAIConnections()
     {
+        _aiWorkspace.SelectionChanged += OnGlobalAISelectionChanged;
         AIConnectionManager.ConnectionsChanged += OnSavedAIConnectionsChanged;
         IntegrationProfileStore.ConnectionsChanged += OnSavedAIConnectionsChanged;
         _aiReloadTimer.Tick += (_, _) => { _aiReloadTimer.Stop(); if (!_windowClosed) ReloadAIConnections(); };
@@ -76,7 +81,7 @@ public partial class MainWindow
             _aiWatcher.EnableRaisingEvents = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        { _shell.StatusMessage = "AI connections will refresh when Settings closes; live file updates are unavailable: " + ex.Message; }
+        { _shell.StatusMessage = "AI connections will refresh when Settings closes; live file updates are unavailable: " + _shell.PlainProblem(ex); }
     }
 
     private void QueueAIRefresh() => Dispatcher.UIThread.Post(() =>
@@ -91,10 +96,17 @@ public partial class MainWindow
 
     private void StopObservingAIConnections()
     {
+        _aiWorkspace.SelectionChanged -= OnGlobalAISelectionChanged;
         AIConnectionManager.ConnectionsChanged -= OnSavedAIConnectionsChanged;
         IntegrationProfileStore.ConnectionsChanged -= OnSavedAIConnectionsChanged;
         _aiReloadTimer.Stop();
         _aiWatcher?.Dispose();
+    }
+
+    private void OnGlobalAISelectionChanged(object? sender, EventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) { if (!_windowClosed) ReloadAIConnections(); }
+        else QueueAIRefresh();
     }
 
     private void OnAIConnectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -106,7 +118,7 @@ public partial class MainWindow
     {
         try { _aiWorkspace.Select(id); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        { _shell.StatusMessage = "The AI choice is active for this session, but could not be saved: " + ex.Message; }
+        { _shell.StatusMessage = "The AI choice is active for this session, but could not be saved: " + _shell.PlainProblem(ex); }
         ReloadAIConnections();
     }
 
@@ -119,33 +131,33 @@ public partial class MainWindow
 
     private async Task ShowMCPToolsAsync(string profileId)
     {
+        if (!RequireNetwork()) return;
         HideOverlay();
-        await new MCPConnectionsWindow(_shell.Paths.SettingsDirectory, selectedProfileId: profileId, useTools: true).ShowDialog(this);
+        await new MCPConnectionsWindow(new MCPConnectionClient { NetworkAllowed = () => !_shell.Settings.OfflineMode }, _shell.Paths.SettingsDirectory, selectedProfileId: profileId, useTools: true).ShowDialog(this);
         ReloadAIConnections();
     }
 
     private async Task ShowAIConnectionsAsync(Window owner)
     {
+        if (!RequireNetwork()) return;
         await new AIConnectionsWindow(_shell.Paths.SettingsDirectory,
             openCopilot: parent => new CopilotConnectionWindow(_shell.Paths.SettingsDirectory).ShowDialog(parent),
             writingShortcut: WritingShortcut()).ShowDialog(owner);
         ReloadAIConnections();
     }
 
-    private void OnMarkdownAIActionClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is MenuItem { Tag: string action }) ShowAIWritingPrompt(action);
-    }
 
     internal void ShowAIWritingPrompt(string? initialAction = null, string? instruction = null, string? preferredScope = null)
     {
+        if (!RequireNetwork()) return;
         if (_shown is not { IsReadOnly: false } tab || !CanRunCommand(CommandIds.AskAI)) return;
         ReloadAIConnections();
         HideOverlay();
         var snapshot = tab.Session.GetSnapshot();
         var selection = (Start: Editor.SelectionStart, Length: Editor.IsEffectivelyVisible ? Editor.SelectionLength : 0);
         var caret = Editor.CaretOffset;
-        var scopes = selection.Length > 0 ? new[] { "Selected text", "Entire note", "Instruction only" } : new[] { "Entire note", "Instruction only" };
+        // A selection is the user's stated target, so the whole note is offered only without one.
+        var scopes = selection.Length > 0 ? new[] { "Selected text", "Instruction only" } : new[] { "Entire document", "Instruction only" };
         var scope = new ComboBox { ItemsSource = scopes, SelectedIndex = Math.Max(0, Array.IndexOf(scopes, preferredScope)) };
         AutomationProperties.SetName(scope, "AI text scope");
         var action = initialAction;
@@ -153,9 +165,37 @@ public partial class MainWindow
             : Equals(scope.SelectedItem, "Selected text") ? selection : (0, snapshot.Text.Length);
         bool TargetIsCurrent() => !_windowClosed && _shell.Tabs.Contains(tab) && ReferenceEquals(_shell.ActiveTab, tab)
             && !tab.IsReadOnly && tab.Session.IsCurrent(snapshot.Revision);
-        bool InsertsResult() => Equals(scope.SelectedItem, "Instruction only") || action is "Summarize" or "Explain" or "Extract action items";
-        string Message(string question, string text) => AIWorkspaceService.WritingMessage(question, text, InsertsResult());
-        var panel = new AIPromptPanel(tab.DisplayName, _aiWorkspace, async (profileId, question, token) =>
+        bool StandaloneResult() => Equals(scope.SelectedItem, "Instruction only") || action is "Summarize" or "Explain" or "Extract action items";
+        // Selected text is always replaced after review; a whole-note summary is inserted so it cannot overwrite the note.
+        bool InsertsResult() => StandaloneResult() && !Equals(scope.SelectedItem, "Selected text");
+        Tern.App.AIRequest Message(string profileId, string question, string text) =>
+            AIWorkspaceService.WritingRequest(question, _aiWorkspace.PrepareNoteText(profileId, text), StandaloneResult());
+        void ReviewAtCurrentCursor(string result)
+        {
+            if (_windowClosed || _shown is not { IsReadOnly: false } target || !_shell.Tabs.Contains(target))
+            {
+                _shell.SetStatus("Open an editable note before inserting the AI result. Copy remains available.", StatusSeverity.Warning);
+                return;
+            }
+            var currentSnapshot = target.Session.GetSnapshot();
+            var offset = Math.Clamp(Editor.CaretOffset, 0, currentSnapshot.Text.Length);
+            if (offset > 0 && offset < currentSnapshot.Text.Length && currentSnapshot.Text[offset - 1] == '\r' && currentSnapshot.Text[offset] == '\n')
+                offset++;
+            var text = result.ReplaceLineEndings(target.Session.Format.NewLineText);
+            bool CurrentTarget() => !_windowClosed && _shell.Tabs.Contains(target) && ReferenceEquals(_shown, target)
+                && !target.IsReadOnly && target.Session.IsCurrent(currentSnapshot.Revision);
+            ShowWritingReview(new AIEditReview(currentSnapshot.Text, text, offset, edits =>
+            {
+                if (!CurrentTarget()) return false;
+                ContextFor(target).Buffer.Apply(edits);
+                _shell.SetStatus("AI result inserted. Undo to restore the previous draft.", StatusSeverity.Success);
+                return true;
+            }, HideOverlay, CopyAIResult, () => ShowAIWritingPrompt(),
+                insertResult: true, copyText: text, canApply: CurrentTarget, reanchorInsert: () => ReviewAtCurrentCursor(result)), target);
+            _shell.SetStatus($"Review insertion into {target.DisplayName} at the current cursor. Nothing has been applied.", StatusSeverity.Info);
+        }
+        AIPromptPanel? panel = null;
+        panel = new AIPromptPanel(tab.DisplayName, _aiWorkspace, async (profileId, question, token) =>
         {
             if (!TargetIsCurrent())
                 throw new InvalidOperationException("The note changed. Reopen Write with AI.");
@@ -163,12 +203,15 @@ public partial class MainWindow
             var original = snapshot.Text.Substring(range.Start, range.Length);
             var insert = InsertsResult();
             string response;
-            try { response = await _aiWorkspace.SendWritingAsync(profileId, Message(question, original), TargetIsCurrent, token); }
+            var copilot = _aiWorkspace.Connections.Any(connection => connection.Id == profileId && connection.Kind == "copilot");
+            var activity = panel?.CurrentActivity;
+            try { response = await _aiWorkspace.SendWritingAsync(profileId, Message(profileId, question, original), TargetIsCurrent, token,
+                new Progress<string>(phase => activity?.Report(phase))); }
             finally { if (!_windowClosed) RefreshAISummary(); }
             token.ThrowIfCancellationRequested();
-            if (!TargetIsCurrent()) throw new InvalidOperationException("The active note changed while AI was working. Its text has been kept. Reopen Write with AI.");
+            activity?.Report("Checking the returned Markdown before review");
             var newline = tab.Session.Format.NewLineText;
-            var markdown = AIWorkspaceService.MarkdownResponse(response).ReplaceLineEndings(newline);
+            var markdown = AIWorkspaceService.MarkdownResponse(copilot ? AIWorkspaceService.RestoreNoteText(response) : response).ReplaceLineEndings(newline);
             if (string.IsNullOrWhiteSpace(markdown)) throw new InvalidOperationException("AI returned no Markdown. Your note has not changed.");
             var offset = range.Start;
             string? copyText = null;
@@ -184,10 +227,13 @@ public partial class MainWindow
                 copyText = markdown.TrimStart('\r', '\n').TrimEnd();
                 markdown = (offset == 0 ? "" : atLineStart ? newline : newline + newline) + copyText + suffix;
             }
-            else if (range.Start + range.Length < snapshot.Text.Length && original.EndsWith('\n') && !markdown.EndsWith('\n'))
-                markdown += newline;
-            HideOverlay();
-            ShowOverlay(new AIEditReview(original, markdown, offset, edits =>
+            else
+            {
+                if (StandaloneResult()) markdown = markdown.TrimStart('\r', '\n').TrimEnd();
+                if (range.Start + range.Length < snapshot.Text.Length && original.EndsWith('\n') && !markdown.EndsWith('\n'))
+                    markdown += newline;
+            }
+            ShowWritingReview(new AIEditReview(original, markdown, offset, edits =>
             {
                 if (!TargetIsCurrent()) return false;
                 ContextFor(tab).Buffer.Apply(edits);
@@ -203,19 +249,39 @@ public partial class MainWindow
                     Editor.Select(selection.Start, selection.Length);
                 }
                 ShowAIWritingPrompt(action, question, current ? scope?.SelectedItem as string : null);
-            }, insert, copyText));
+            }, insert, copyText, canApply: TargetIsCurrent, reanchorInsert: () => ReviewAtCurrentCursor(copyText ?? markdown)), tab);
             return "Suggestion ready for review.";
         }, HideOverlay, () => ShowAIConnectionsAsync(this), SelectAIConnection, WritingShortcut(),
             (profileId, question) =>
             {
                 if (!TargetIsCurrent()) return "The note changed. Reopen Write with AI.";
                 var range = Range();
-                if (range.Length > AIConnectionClient.MaximumMessageCharacters) return "Choose a smaller scope: the request exceeds 32,768 characters.";
-                return _aiWorkspace.WritingValidationError(profileId, Message(question, snapshot.Text.Substring(range.Start, range.Length)));
+                return _aiWorkspace.WritingValidationError(profileId, Message(profileId, question, snapshot.Text.Substring(range.Start, range.Length)));
             }, scope: scope, initialAction: initialAction, changeAction: selected => action = selected, writingOnly: true,
-            isEmptyDraft: snapshot.Text.Length == 0, initialInstruction: instruction);
+            isEmptyDraft: snapshot.Text.Length == 0, initialInstruction: instruction, activities: _shell.Activities);
         panel.MaxHeight = Math.Max(250, Body.Bounds.Height - 40);
         ShowOverlay(panel);
+    }
+
+    private void ShowWritingReview(AIEditReview review, DocumentTab target)
+    {
+        HideOverlay();
+        review.Activities = _shell.Activities;
+        review.ActivityIdentity = target.DisplayName;
+        void Changed(object? sender, EventArgs e) => review.RefreshTargetState();
+        void ShellChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ShellViewModel.ActiveTab)) review.RefreshTargetState();
+        }
+        target.Session.StateChanged += Changed;
+        _shell.PropertyChanged += ShellChanged;
+        review.DetachedFromVisualTree += (_, _) =>
+        {
+            target.Session.StateChanged -= Changed;
+            _shell.PropertyChanged -= ShellChanged;
+        };
+        ShowOverlay(review);
+        review.RefreshTargetState();
     }
 
     private async void CopyAIResult(string text)
@@ -225,7 +291,7 @@ public partial class MainWindow
             if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.ExternalException)
-        { _shell.StatusMessage = "Could not copy the AI result: " + ex.Message; }
+        { _shell.StatusMessage = "Could not copy the AI result: " + _shell.PlainProblem(ex); }
     }
 
     private string WritingShortcut() => Gesture.Describe(_shell.Registry.GetGesture(CommandIds.AskAI)) is { Length: > 0 } shortcut ? shortcut : "Edit → Write with AI";
@@ -235,7 +301,7 @@ public partial class MainWindow
         if (!GuideQuestionPrompt.CanAnswer(_shell.Registry, question)) return GuideQuestionPrompt.ScopeMessage;
         if (_aiWorkspace.HelpSelectedConnection is not { } profile)
             return "Installed Tern guide · offline answer\n\n" + GuideQuestionPrompt.OfflineAnswer(_shell.Registry, question);
-        var message = GuideQuestionPrompt.Build(_shell.Registry, question, forCopilot: profile.Kind == "copilot");
+        var message = GuideQuestionPrompt.BuildRequest(_shell.Registry, question, forCopilot: profile.Kind == "copilot", _aiWorkspace.SendCharactersFor(profile.Id));
         try { return await _aiWorkspace.SendAsync(profile.Id, message, token); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         { return "Provider timed out. Installed Tern guide · offline answer\n\n" + GuideQuestionPrompt.OfflineAnswer(_shell.Registry, question); }

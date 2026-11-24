@@ -87,5 +87,10 @@ public sealed class RecoveryProvenanceTests
         Assert.True(replacement.IsExternalDraft);
         Assert.Null(replacement.OriginalPath);
         Assert.Equal(original.Text, replacement.Text);
+        var activity = Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Restoring recovery checkpoint");
+        Assert.Equal(Tern.App.Shell.ActivityState.Completed, activity.State);
+        Assert.Equal("Recovered as unsaved copy; original unchanged", activity.Phase);
+        Assert.Null(activity.Cancel);
+        Assert.NotNull(activity.Finished);
     }
 }

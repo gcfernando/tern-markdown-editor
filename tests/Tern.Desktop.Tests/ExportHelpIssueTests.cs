@@ -43,7 +43,7 @@ public sealed class ExportHelpIssueTests
         }
         finally { export.Close(); }
         using var tutor = new HelpTutorView(f.Window.AIWorkspace, f.Shell.Registry, () => Task.CompletedTask, null, null, _ => { }, null);
-        var help = new Window(); DialogParts.Setup(help, "Ask about Tern", Math.Min(width, 900), Math.Min(height, 680)); help.Content = tutor;
+        var help = new Window(); DialogParts.Setup(help, "Ask about Tern", Math.Min(width, 900), Math.Min(height, 680), DialogGuidance.Help); help.Content = tutor;
         help.Show(f.Window); Pump(help);
         try
         {
@@ -96,7 +96,7 @@ public sealed class ExportHelpIssueTests
         foreach (var question in new[] { "Explain photosynthesis", "Write a poem about cats", "Who won the football match?" })
         {
             Assert.False(GuideQuestionPrompt.CanAnswer(registry, question));
-            Assert.Throws<InvalidOperationException>(() => GuideQuestionPrompt.Build(registry, question, false));
+            Assert.Throws<InvalidOperationException>(() => GuideQuestionPrompt.Build(registry, question, false, AIConnectionRules.DefaultSendCharacters));
         }
         foreach (var question in new[] { "How do I export a PDF?", "How do I search a note?", "Explain Markdown headings" })
             Assert.True(GuideQuestionPrompt.CanAnswer(registry, question), question);

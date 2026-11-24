@@ -40,15 +40,22 @@ public sealed class SearchIndex : IDisposable
     private SqliteConnection? _reader;
     private bool _disposed;
 
-    private SearchIndex(string databasePath, string workspaceRoot)
+    private SearchIndex(string databasePath, string workspaceRoot, bool memoryOnly = false)
     {
-        DatabasePath = Path.GetFullPath(databasePath);
+        IsMemoryOnly = memoryOnly;
+        DatabasePath = memoryOnly ? ":memory:" : Path.GetFullPath(databasePath);
         Root = WorkspacePaths.Normalize(workspaceRoot);
         // Pooling would keep file handles alive after Dispose, which blocks deleting the cache on Windows.
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = DatabasePath, Pooling = false, Mode = SqliteOpenMode.ReadWriteCreate }.ToString();
+        _connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = memoryOnly ? "tern-private-" + Guid.NewGuid().ToString("N") : DatabasePath,
+            Pooling = false, Mode = memoryOnly ? SqliteOpenMode.Memory : SqliteOpenMode.ReadWriteCreate,
+            Cache = memoryOnly ? SqliteCacheMode.Shared : SqliteCacheMode.Default
+        }.ToString();
     }
 
     public string DatabasePath { get; }
+    public bool IsMemoryOnly { get; }
 
     public string Root { get; }
 
@@ -88,6 +95,14 @@ public sealed class SearchIndex : IDisposable
         return index;
     }
 
+    public static SearchIndex OpenInMemory(string workspaceRoot)
+    {
+        EnsureFtsAvailable();
+        var index = new SearchIndex("", workspaceRoot, memoryOnly: true);
+        index.CreateFresh();
+        return index;
+    }
+
     public static bool IsCorruption(SqliteException ex) =>
         ex.SqliteErrorCode is SqliteCorrupt or SqliteNotADatabase;
 
@@ -108,7 +123,6 @@ public sealed class SearchIndex : IDisposable
 
     public int DocumentCount => Read(connection => Convert.ToInt32(Scalar(connection, "SELECT COUNT(*) FROM docs"), CultureInfo.InvariantCulture));
 
-    public CorpusStats GetCorpusStats() => Read(ReadCorpusStats);
 
     internal static CorpusStats ReadCorpusStats(SqliteConnection connection)
     {
@@ -170,6 +184,65 @@ public sealed class SearchIndex : IDisposable
     }
 
     /// <summary>Records a new mtime/size for a file whose content hash did not change, so it is not re-hashed next time.</summary>
+    /// <summary>
+    /// Faster writes for a large index pass. The index is a disposable cache: if power is lost it is detected and rebuilt,
+    /// and no note content depends on it.
+    /// </summary>
+    public IDisposable BeginBulkWrite()
+    {
+        lock (_writeGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var writer = Writer();
+            Execute(writer, null, "PRAGMA synchronous = OFF");
+            Execute(writer, null, "PRAGMA cache_size = -65536");
+            Execute(writer, null, "PRAGMA wal_autocheckpoint = 20000");
+        }
+        return new BulkWrite(this);
+    }
+
+    private sealed class BulkWrite(SearchIndex index) : IDisposable
+    {
+        private int _ended;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _ended, 1) != 0) return;
+            lock (index._writeGate)
+                if (!index._disposed)
+                {
+                    var writer = index.Writer();
+                    Execute(writer, null, "PRAGMA synchronous = NORMAL");
+                    Execute(writer, null, "PRAGMA cache_size = -2000");
+                    Execute(writer, null, "PRAGMA wal_autocheckpoint = 1000");
+                }
+        }
+    }
+
+    /// <summary>Updates many stamps in one transaction, for example after a checkout changes timestamps but not content.</summary>
+    public void TouchMany(IReadOnlyCollection<(string RelativePath, IndexStamp Stamp)> stamps)
+    {
+        if (stamps.Count == 0) return;
+        lock (_writeGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var connection = Writer();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE docs SET mtime_ticks = @m, size = @s, hash = @h WHERE path = @p";
+            var mtime = command.Parameters.Add("@m", SqliteType.Integer);
+            var size = command.Parameters.Add("@s", SqliteType.Integer);
+            var hash = command.Parameters.Add("@h", SqliteType.Text);
+            var path = command.Parameters.Add("@p", SqliteType.Text);
+            foreach (var (relativePath, stamp) in stamps)
+            {
+                mtime.Value = stamp.MtimeTicks; size.Value = stamp.Size; hash.Value = stamp.Hash; path.Value = relativePath;
+                command.ExecuteNonQuery();
+            }
+            transaction.Commit();
+        }
+    }
+
     public void Touch(string relativePath, IndexStamp stamp)
     {
         lock (_writeGate)
@@ -201,6 +274,15 @@ public sealed class SearchIndex : IDisposable
     // One long-lived reader: opening a WAL database costs tens of milliseconds, far more than a typical query.
     internal T Read<T>(Func<SqliteConnection, T> action)
     {
+        if (IsMemoryOnly)
+        {
+            lock (_writeGate) return ReadCore(action);
+        }
+        return ReadCore(action);
+    }
+
+    private T ReadCore<T>(Func<SqliteConnection, T> action)
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
         lock (_readGate)
         {
@@ -210,6 +292,7 @@ public sealed class SearchIndex : IDisposable
                 try
                 {
                     opened.Open();
+                    if (IsMemoryOnly) Execute(opened, null, "PRAGMA temp_store = MEMORY");
                 }
                 catch
                 {
@@ -265,6 +348,7 @@ public sealed class SearchIndex : IDisposable
 
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
+        if (IsMemoryOnly) Execute(connection, null, "PRAGMA temp_store = MEMORY");
         _writer = connection;
         return connection;
     }
@@ -334,7 +418,7 @@ public sealed class SearchIndex : IDisposable
 
     private void CreateFresh()
     {
-        var directory = Path.GetDirectoryName(DatabasePath);
+        var directory = IsMemoryOnly ? null : Path.GetDirectoryName(DatabasePath);
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
@@ -364,6 +448,7 @@ public sealed class SearchIndex : IDisposable
 
     private void DeleteFiles()
     {
+        if (IsMemoryOnly) return;
         foreach (var suffix in new[] { string.Empty, "-wal", "-shm", "-journal" })
         {
             var path = DatabasePath + suffix;

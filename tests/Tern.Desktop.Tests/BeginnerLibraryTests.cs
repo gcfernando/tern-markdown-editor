@@ -90,9 +90,11 @@ public sealed class BeginnerLibraryTests
         var menu = fixture.Window.FindControl<Menu>("ApplicationMenu")!;
         var format = Assert.Single(menu.Items.OfType<MenuItem>(), m => m.Header?.ToString() == "F_ormat");
         var heading = Assert.Single(format.Items.OfType<MenuItem>(), m => Equals(m.Header, "Heading"));
-        Assert.Equal(new[] { CommandIds.Heading1, CommandIds.Heading2, CommandIds.Heading3 }, heading.Items.OfType<MenuItem>().Select(i => i.Tag as string));
+        Assert.Equal(new[] { CommandIds.Heading1, CommandIds.Heading2, CommandIds.Heading3, CommandIds.HeadingUp, CommandIds.HeadingDown }, heading.Items.OfType<MenuItem>().Select(i => i.Tag as string));
         var items = format.Items.OfType<MenuItem>().Where(m => m.Tag is string).Concat(heading.Items.OfType<MenuItem>()).ToArray();
-        Assert.Equal(new[] { CommandIds.Bold, CommandIds.Italic, CommandIds.InlineCode, CommandIds.Strikethrough, CommandIds.HeadingUp, CommandIds.HeadingDown, CommandIds.ToggleQuote, CommandIds.ToggleBullet, CommandIds.ToggleNumbered, CommandIds.ToggleTask, CommandIds.InsertLink, CommandIds.InsertImage, CommandIds.PasteImage, CommandIds.InsertTable, CommandIds.InsertCodeBlock, CommandIds.InsertRule, CommandIds.Heading1, CommandIds.Heading2, CommandIds.Heading3 }, items.Select(i => i.Tag as string));
+        Assert.Equal(new[] { CommandIds.Bold, CommandIds.Italic, CommandIds.InlineCode, CommandIds.Strikethrough, CommandIds.ToggleQuote, CommandIds.ToggleBullet, CommandIds.ToggleNumbered, CommandIds.ToggleTask, CommandIds.ToggleTaskAtCaret, CommandIds.Indent, CommandIds.Outdent, CommandIds.InsertLink, CommandIds.InsertImage, CommandIds.PasteImage, CommandIds.InsertCodeBlock, CommandIds.InsertRule, CommandIds.Heading1, CommandIds.Heading2, CommandIds.Heading3, CommandIds.HeadingUp, CommandIds.HeadingDown }, items.Select(i => i.Tag as string));
+        var table = Assert.Single(format.Items.OfType<MenuItem>(), item => Equals(item.Header, "Table"));
+        Assert.Equal(new[] { CommandIds.InsertTable }.Concat(Tern.App.Editing.TableEditingService.Commands), table.Items.OfType<MenuItem>().Select(item => item.Tag as string));
         Assert.All(items, item => Assert.True(fixture.Shell.Registry.TryGet((string)item.Tag!, out _)));
         Assert.All(items, item => Assert.False(fixture.Window.CanRunCommand((string)item.Tag!)));
         var tab = fixture.Shell.NewDocument("word");
@@ -129,7 +131,11 @@ public sealed class BeginnerLibraryTests
         Assert.Equal(missing, row.IsMissing);
         var button = Assert.Single(list.GetVisualDescendants().OfType<Button>(), b => Equals(b.DataContext, row) && AutomationProperties.GetName(b) == "File reference actions");
         Assert.True(button.IsEffectivelyVisible);
-        Assert.Equal("⋯", button.Content);
+        var icon = Assert.IsType<VectorIcon>(button.Content);
+        Assert.Equal("More", icon.Kind);
+        Assert.NotNull(icon.Data);
+        Assert.Equal(AccessibilityView.Raw, AutomationProperties.GetAccessibilityView(icon));
+        Assert.NotNull(ToolTip.GetTip(button));
         Assert.True(button.Bounds.Width >= 32 && button.Bounds.Height >= 36);
         if (nav == "Files" && !missing)
         {
@@ -146,6 +152,10 @@ public sealed class BeginnerLibraryTests
         fixture.Window.MouseUp(point, MouseButton.Left);
         Pump(fixture);
         GuiContractActions.InvokeFileReferenceAction(button, fixture.Window);
+        // The real menu handler awaits the protected discarded-draft write before
+        // closing tabs/removing references. Wait for that terminal state, not one pump.
+        for (var attempt = 0; attempt < 200 && fixture.Shell.Recent.Files.Any(entry => entry.Path == path); attempt++)
+        { await Task.Delay(10, TestContext.Current.CancellationToken); Pump(fixture); }
         Assert.Same(second, fixture.Shell.ActiveTab);
         Assert.Equal(nav == "Recent", fixture.Shell.Tabs.Contains(first));
         Assert.Equal("unsaved # Original\n", first.CurrentText);
@@ -155,6 +165,9 @@ public sealed class BeginnerLibraryTests
         Assert.DoesNotContain(list.Items.OfType<SideRow>(), r => r.Path == path);
         var reloaded = new RecentItemsStore(AppPaths.Under(fixture.AppData).StateDirectory);
         Assert.DoesNotContain(reloaded.Files, r => r.Path == path);
+        if (nav == "Files")
+            Assert.Equal("unsaved # Original\n", Assert.Single(fixture.Shell.DiscardedDrafts.Scan().Entries,
+                entry => entry.Record.SessionId == first.Session.Id).Record.Text);
         Assert.Equal(!missing, File.Exists(path));
         if (!missing) Assert.Equal("# Original\n", await File.ReadAllTextAsync(path));
     }
@@ -196,7 +209,11 @@ public sealed class BeginnerLibraryTests
         fixture.Dialogs.SaveChoice = SaveChoice.Discard;
         close.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Pump(fixture);
+        for (var attempt = 0; attempt < 200 && fixture.Shell.Tabs.Contains(tab); attempt++)
+        { await Task.Delay(10, TestContext.Current.CancellationToken); Pump(fixture); }
         Assert.DoesNotContain(tab, fixture.Shell.Tabs);
+        Assert.Equal("unsaved # Saved\n", Assert.Single(fixture.Shell.DiscardedDrafts.Scan().Entries,
+            entry => entry.Record.SessionId == tab.Session.Id).Record.Text);
         Assert.Single(fixture.Window.FileTree.Items.OfType<TreeRow>());
         Assert.Equal("# Saved\n", await File.ReadAllTextAsync(path));
     }

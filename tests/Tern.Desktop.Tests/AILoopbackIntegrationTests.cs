@@ -34,7 +34,7 @@ public sealed class AILoopbackIntegrationTests
             var body = new byte[length];
             await stream.ReadExactlyAsync(body, deadline.Token);
             using var json = JsonDocument.Parse(body);
-            Assert.Equal("Reviewed loopback text café 😀", json.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+            AIWire.AssertIndependent(json.RootElement, Tern.App.AIRequest.ConnectionTest("Reviewed loopback text café 😀"));
             Assert.Contains("Authorization: Bearer artificial-test-key", header.ToString(), StringComparison.OrdinalIgnoreCase);
             var response = Encoding.UTF8.GetBytes(providerId == "chat-completions"
                 ? "{\"choices\":[{\"message\":{\"content\":\"local protocol verified\"}}]}"

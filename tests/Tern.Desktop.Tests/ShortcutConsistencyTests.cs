@@ -70,9 +70,9 @@ public sealed class ShortcutConsistencyTests
         }
         var reference = f.Window.ApplicationMenu.GetLogicalDescendants().OfType<MenuItem>()
             .Single(m => Equals(m.Tag, CommandIds.ToggleReference));
-        Assert.Equal(Key.D2, reference.InputGesture!.Key);
+        Assert.Equal(Key.D5, reference.InputGesture!.Key);
         reference.ApplyTemplate();
-        Assert.Contains("Ctrl+Alt+2", string.Join("; ", reference.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Name + "=" + t.Text)), StringComparison.Ordinal);
+        Assert.Contains("Ctrl+Shift+5", string.Join("; ", reference.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Name + "=" + t.Text)), StringComparison.Ordinal);
     }
 
     [AvaloniaFact]
@@ -186,7 +186,7 @@ public sealed class ShortcutConsistencyTests
         f.Shell.NewDocument("Note");
         Pump(f);
         var splitter = Assert.Single(f.Window.GetVisualDescendants().OfType<GridSplitter>(),
-            control => AutomationProperties.GetName(control) == "Resize sidebar");
+            control => AutomationProperties.GetName(control) == "Resize Library");
         var width = f.Window.Body.ColumnDefinitions[0].ActualWidth;
         Assert.True(splitter.IsTabStop);
         Assert.True(splitter.Focus(NavigationMethod.Tab));

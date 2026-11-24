@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -13,6 +14,15 @@ namespace Tern.Desktop.Views;
 public partial class MainWindow
 {
     private bool _tabNavigationWired;
+    private ILookup<string, DocumentTab>? _tabNameLookup;
+
+    private async void OnTabMiddlePressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(TabStrip).Properties.IsMiddleButtonPressed || e.Source is not Visual source) return;
+        if (source.GetSelfAndVisualAncestors().OfType<ListBoxItem>().FirstOrDefault()?.DataContext is not DocumentTab tab) return;
+        e.Handled = true;
+        await _shell.CloseTabAsync(tab);
+    }
 
     private void OnTabBarDoubleTapped(object? sender, TappedEventArgs e)
     {
@@ -27,15 +37,34 @@ public partial class MainWindow
     private async void OnDocumentContextClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem item) return;
-        var tab = item.DataContext switch
+        if (Equals(item.Tag, "tab.reopen"))
         {
-            DocumentTab document => document,
-            SideRow { Path: { } path } row => _shell.FindOpenSource(path, row.IsOnline),
-            TreeRow { IsDirectory: false } row => _shell.FindOpenSource(row.FullPath),
-            _ => null
-        };
+            await _shell.ReopenClosedTabAsync();
+            e.Handled = true;
+            return;
+        }
+        var context = item.DataContext;
+        var tab = await FindContextTabAsync(context);
+        if (_windowClosed || !ReferenceEquals(context, item.DataContext)) return;
         if (tab is null && Equals(item.Tag, "tab.closeAll")) tab = _shell.ActiveTab;
         if (tab is null) return;
+        if (Equals(item.Tag, "tab.copyPath"))
+        {
+            if (tab.FilePath is { } path && Clipboard is { } clipboard) await clipboard.SetTextAsync(path);
+            e.Handled = true;
+            return;
+        }
+        if (Equals(item.Tag, "tab.reveal"))
+        {
+            if (tab.FilePath is { } path)
+            {
+                try { _launcher.RevealInFileManager(path); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+                { _shell.SetStatus("Cannot reveal the document: " + _shell.PlainProblem(ex), StatusSeverity.Error); }
+            }
+            e.Handled = true;
+            return;
+        }
         if (Equals(item.Tag, "tab.rename"))
         {
             if (tab.CanRename) await RenameDocumentFromContextAsync(tab);
@@ -85,9 +114,9 @@ public partial class MainWindow
         if (right is not null) { right.IsVisible = overflow; right.IsEnabled = scroll.Offset.X + scroll.Viewport.Width < scroll.Extent.Width - 0.5; }
     }
 
-    private string TabTitle(DocumentTab tab)
+    private static string TabTitle(DocumentTab tab, ILookup<string, DocumentTab> names)
     {
-        var peers = _shell.Tabs.Where(t => string.Equals(t.DisplayName, tab.DisplayName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var peers = names[tab.DisplayName].ToArray();
         if (peers.Length <= 1) return tab.DisplayName;
         var location = tab.FilePath is { } path ? Path.GetDirectoryName(path) : tab.SourceUrl ?? "Unsaved draft";
         if (tab.FilePath is not null)
@@ -108,22 +137,28 @@ public partial class MainWindow
 
     private void UpdateTabTitles()
     {
+        var names = _tabNameLookup ??= _shell.Tabs.ToLookup(tab => tab.DisplayName, StringComparer.OrdinalIgnoreCase);
+        var renameHint = "Double-click to rename; " + CommandHint(Tern.App.Commands.CommandIds.Rename) + "\n";
         foreach (var item in TabStrip.GetVisualDescendants().OfType<ListBoxItem>())
         {
             if (item.DataContext is not DocumentTab tab) continue;
             if (item.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.Name == "TabTitleText") is not { } title) continue;
-            title.SetCurrentValue(TextBlock.TextProperty, TabTitle(tab));
-            ToolTip.SetTip(title, "Double-click to rename; " + CommandHint(Tern.App.Commands.CommandIds.Rename) + "\n" + (tab.FilePath ?? tab.SourceUrl ?? "Unsaved draft"));
+            title.SetCurrentValue(TextBlock.TextProperty, TabTitle(tab, names));
+            ToolTip.SetTip(title, renameHint + (tab.FilePath ?? tab.SourceUrl ?? "Unsaved draft"));
         }
     }
 
     private void OnOpenDocumentsClick(object? sender, RoutedEventArgs e) => ShowPicker("Open documents", string.Empty,
-        query => _shell.Tabs.Where(t => t.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
-            || (t.FilePath?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
-            .Select(tab => new PickerItem(TabTitle(tab), tab.FilePath ?? tab.SourceUrl ?? "Unsaved draft",
+        query =>
+        {
+            var names = _shell.Tabs.ToLookup(tab => tab.DisplayName, StringComparer.OrdinalIgnoreCase);
+            return _shell.Tabs.Where(t => t.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || (t.FilePath?.Contains(query, StringComparison.OrdinalIgnoreCase) == true))
+            .Select(tab => new PickerItem(TabTitle(tab, names), tab.FilePath ?? tab.SourceUrl ?? "Unsaved draft",
                 (ReferenceEquals(tab, _shown) ? "Active · " : "") + (tab.IsReadOnly ? "Read-only" : tab.IsDirty ? "Unsaved" : "Saved"), tab,
-                CloseDocument: async () => { if (_shell.Tabs.Contains(tab)) await _shell.CloseTabAsync(tab); })).ToArray(),
-        item => { if (item.Payload is DocumentTab tab && _shell.Tabs.Contains(tab)) _shell.ActiveTab = tab; HideOverlay(); }, "No open documents");
+                CloseDocument: async () => { if (_shell.Tabs.Contains(tab)) await _shell.CloseTabAsync(tab); })).ToArray();
+        },
+        item => { if (item.Payload is DocumentTab tab && _shell.Tabs.Contains(tab)) _shell.SelectTab(tab, Tern.App.Shell.TabActivationReason.User); HideOverlay(); }, "No open documents");
 
     private void OnTabScrollClick(object? sender, RoutedEventArgs e)
     {

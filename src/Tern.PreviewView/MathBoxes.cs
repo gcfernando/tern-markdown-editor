@@ -194,12 +194,10 @@ internal sealed class MathFenceBox : MathBox
 {
     private readonly string _fence;
     private readonly double _thickness;
-    private readonly double _axis;
 
     public MathFenceBox(string fence, double height, double axis, double size)
     {
         _fence = fence;
-        _axis = axis;
         _thickness = Math.Max(1, size * 0.07);
         Width = fence switch
         {

@@ -26,6 +26,7 @@ public enum LinkKind
 public sealed record LinkInfo(LinkKind Kind, string Destination, SourceRange Range, int Line, string Label);
 
 public sealed record TaskItemInfo(int Line, bool Checked, SourceRange Marker, string Text);
+public sealed record ImageOccurrence(string Destination, string Alt, int Line, SourceRange Range);
 
 public sealed record CodeBlockInfo(string? Language, SourceRange Range, int Line, bool IsFenced);
 
@@ -51,9 +52,15 @@ public sealed class MarkdownAnalysis
 
     public IReadOnlyList<LinkInfo> Links { get; init; } = [];
 
+    /// <summary>HTTP(S) Markdown image occurrences, including resolved reference-style images; code is excluded.</summary>
+    public int RemoteImageCount { get; init; }
+
     public IReadOnlyList<TaskItemInfo> Tasks { get; init; } = [];
+    public IReadOnlyList<ImageOccurrence> Images { get; init; } = [];
 
     public IReadOnlyList<CodeBlockInfo> CodeBlocks { get; init; } = [];
+
+    public IReadOnlyList<SourceRange> CodeSpans { get; init; } = [];
 
     public IReadOnlyList<TableInfo> Tables { get; init; } = [];
 

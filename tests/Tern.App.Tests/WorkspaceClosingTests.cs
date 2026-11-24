@@ -6,6 +6,28 @@ namespace Tern.App.Tests;
 
 public sealed class WorkspaceClosingTests
 {
+    [Fact]
+    public async Task Window_close_during_existing_confirmation_reports_why_it_is_blocked()
+    {
+        using var f = new ShellFixture();
+        var tab = f.Shell.NewDocument();
+        tab.ApplyEdits([TextEdit.Insert(0, "unsaved")]);
+        var answer = new TaskCompletionSource<SaveChoice>(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Dialogs.SaveResponse = _ => answer.Task;
+        var firstClose = f.Shell.CloseDocumentsAsync();
+        try
+        {
+            Assert.Equal(1, f.Dialogs.SavePrompts);
+            Assert.False(await f.Shell.PrepareExitAsync(new(0, 0, 1440, 900, false, 260, true)));
+            Assert.Equal(1, f.Dialogs.SavePrompts);
+            Assert.Contains("Finish the open save prompt first", f.Shell.StatusMessage);
+            Assert.Contains(tab, f.Shell.Tabs);
+        }
+        finally { answer.TrySetResult(SaveChoice.Cancel); }
+        Assert.False(await firstClose);
+        Assert.Equal("unsaved", tab.CurrentText);
+    }
+
     [Theory]
     [InlineData(SaveChoice.Cancel, false)]
     [InlineData(SaveChoice.Discard, true)]
@@ -68,11 +90,48 @@ public sealed class WorkspaceClosingTests
         using var f = new ShellFixture();
         var path = await f.WriteAsync("a.md", "original");
         var tab = await f.Shell.OpenFileAsync(path);
-        Directory.CreateDirectory(Path.Combine(f.Shell.Paths.StateDirectory, SessionStore.FileName));
+        var sessionFile = Path.Combine(f.Shell.Paths.StateDirectory, SessionStore.FileName);
+        Directory.CreateDirectory(sessionFile);
         var layout = new WindowLayoutHint(0, 0, 1440, 900, false, 260, true);
+
+        // Cancel keeps the app and documents open.
+        f.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Cancel);
         Assert.False(await f.Shell.PrepareExitAsync(layout));
         Assert.Contains(tab!, f.Shell.Tabs);
         Assert.Contains("session could not be saved", f.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
+
+        // Retry succeeds once the obstacle is gone.
+        f.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Retry);
+        f.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Cancel);
+        Assert.False(await f.Shell.PrepareExitAsync(layout));
+        Assert.Equal(3, f.Dialogs.MetadataPrompts.Count);
+
+        // Exit anyway closes with the documents saved and untouched on disk.
+        f.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Continue);
+        Assert.True(await f.Shell.PrepareExitAsync(layout));
+        Assert.Empty(f.Shell.Tabs);
+        Assert.Equal("original", await File.ReadAllTextAsync(path));
+
+        // Retry after the folder is writable again persists the session.
+        using var g = new ShellFixture();
+        var other = await g.WriteAsync("b.md", "second");
+        await g.Shell.OpenFileAsync(other);
+        var blocked = Path.Combine(g.Shell.Paths.StateDirectory, SessionStore.FileName);
+        Directory.CreateDirectory(blocked);
+        g.Dialogs.MetadataResponses.Enqueue(MetadataFailureChoice.Retry);
+        var attempts = 0;
+        g.Dialogs.OnMetadataPrompt = () => { if (++attempts == 1) Directory.Delete(blocked); };
+        Assert.True(await g.Shell.PrepareExitAsync(layout));
+        Assert.Equal(other, Assert.Single(new SessionStore(g.Shell.Paths.StateDirectory).Load().Tabs).Path);
+    }
+
+    [Fact]
+    public async Task Exit_never_prompts_for_metadata_when_session_is_written()
+    {
+        using var f = new ShellFixture();
+        await f.Shell.OpenFileAsync(await f.WriteAsync("a.md", "original"));
+        Assert.True(await f.Shell.PrepareExitAsync(new WindowLayoutHint(0, 0, 1440, 900, false, 260, true)));
+        Assert.Empty(f.Dialogs.MetadataPrompts);
     }
 
     [Fact]

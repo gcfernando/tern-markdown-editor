@@ -1,4 +1,7 @@
 using System.Text;
+using Tern.Domain.Text;
+using Tern.Filesystem;
+using System.Security.Cryptography;
 
 namespace Tern.Workspaces;
 
@@ -23,7 +26,7 @@ public enum CollisionPolicy
 }
 
 /// <summary>Outcome of a file operation. For renames and moves, <see cref="Plan"/> holds the link repairs to apply next.</summary>
-public sealed record FileOperationResult(bool Succeeded, string? Path, RepairPlan? Plan, FileOperationError Error, string? Message)
+public sealed record FileOperationResult(bool Succeeded, string? Path, RepairPlan? Plan, FileOperationError Error, string? Message, CreatedFileReceipt? CreatedFile = null)
 {
     internal static FileOperationResult Ok(string path, RepairPlan? plan = null) => new(true, path, plan, FileOperationError.None, null);
 
@@ -46,7 +49,7 @@ public sealed class WorkspaceFileOperations
         _planner = planner;
     }
 
-    public FileOperationResult CreateFile(string directory, string name, string content = "", CollisionPolicy collision = CollisionPolicy.Fail)
+    public FileOperationResult CreateFile(string directory, string name, string content = "", CollisionPolicy collision = CollisionPolicy.Fail, TextFileFormat? format = null)
     {
         var prepared = PrepareChild(directory, name, collision);
         if (prepared.Error is not null)
@@ -56,17 +59,19 @@ public sealed class WorkspaceFileOperations
 
         try
         {
+            // Validate/encode before creating a destination: an unrepresentable character must leave no file.
+            var bytes = format is null ? new UTF8Encoding(false, true).GetBytes(content) : TextFileCodec.Encode(content, format);
             // CreateNew makes the existence check atomic: a file created meanwhile is never overwritten.
             using var stream = new FileStream(prepared.Path!, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            var bytes = new UTF8Encoding(false).GetBytes(content);
             stream.Write(bytes);
-            return FileOperationResult.Ok(prepared.Path!);
+            return FileOperationResult.Ok(prepared.Path!) with
+            { CreatedFile = format is null ? null : new CreatedFileReceipt(prepared.Path!, format, Convert.ToHexString(SHA256.HashData(bytes))) };
         }
         catch (IOException) when (File.Exists(prepared.Path))
         {
             return FileOperationResult.Fail(FileOperationError.AlreadyExists, "A file with that name already exists.");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or EncoderFallbackException)
         {
             return FileOperationResult.Fail(FileOperationError.Failed, ex.Message);
         }
@@ -88,6 +93,32 @@ public sealed class WorkspaceFileOperations
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return FileOperationResult.Fail(FileOperationError.Failed, ex.Message);
+        }
+    }
+
+    public FileOperationResult ImportFile(string source, string directory)
+    {
+        var prepared = PrepareChild(directory, Path.GetFileName(source), CollisionPolicy.Fail);
+        if (prepared.Error is not null) return prepared.Error;
+        var temporary = Path.Combine(directory, ".tern-import-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                input.CopyTo(output);
+                output.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, prepared.Path!, overwrite: false);
+            return FileOperationResult.Ok(prepared.Path!);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var message = ex.Message;
+            try { File.Delete(temporary); }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            { message += " The incomplete temporary copy remains at " + temporary + ": " + cleanup.Message; }
+            return FileOperationResult.Fail(FileOperationError.Failed, message);
         }
     }
 

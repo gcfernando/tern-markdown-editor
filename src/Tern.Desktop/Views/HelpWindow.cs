@@ -12,23 +12,62 @@ namespace Tern.Desktop.Views;
 /// <summary>Everyday lessons first, with the complete searchable reference one level deeper.</summary>
 public sealed class HelpWindow : Window
 {
+    private Action<string?, string?>? _navigate;
+
+    internal static HelpWindow ShowFor(Window owner, Func<HelpWindow> create, string? featureId = null, string? question = null)
+    {
+        var root = owner;
+        while (root.Owner is Window parent) root = parent;
+        static HelpWindow? Find(Window window)
+        {
+            if (window is HelpWindow help) return help;
+            foreach (var child in window.OwnedWindows)
+                if (Find(child) is { } found) return found;
+            return null;
+        }
+        var guide = Find(root);
+        if (guide is null)
+        {
+            guide = root is MainWindow main ? main.CreateHelpWindow() : create();
+            guide.Show(owner);
+        }
+        else if (owner is not HelpWindow && !ReferenceEquals(guide.Owner, owner) && !OwnedBy(owner, guide))
+        {
+            guide.Hide();
+            guide.Show(owner);
+        }
+        guide._navigate?.Invoke(featureId, question);
+        guide.Activate();
+        return guide;
+    }
+
+    private static bool OwnedBy(Window window, Window ancestor)
+    {
+        while (window.Owner is Window owner)
+        {
+            if (ReferenceEquals(owner, ancestor)) return true;
+            window = owner;
+        }
+        return false;
+    }
+
     public HelpWindow(CommandRegistry registry, string? featureId = null, Func<string, Task>? openFeature = null, Func<string, Task>? askAI = null,
         Func<string, CancellationToken, Task<string>>? answerAI = null, string? initialQuestion = null,
         AIWorkspaceService? workspace = null, Func<Task>? configure = null, Func<string, bool>? canOpen = null, Action<string>? practice = null,
         Func<BeginnerLesson, Task>? walkThrough = null, Func<string?>? selectedText = null)
     {
-        DialogParts.Setup(this, "Learn Tern", 1080, 820);
+        DialogParts.Setup(this, "Learn Tern", 1080, 820, DialogGuidance.Help);
         MinWidth = 620; MinHeight = 560;
         var lessons = BeginnerLessons.For(registry);
         var all = FeatureCatalog.Search(registry, null);
         var goals = new ListBox { ItemsSource = lessons };
         AutomationProperties.SetName(goals, "Choose what you want to do");
-        goals.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<BeginnerLesson>((v, _) => v is null ? new TextBlock() : GuideParts.Vertical(new TextBlock { Text = v.Name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap }, GuideParts.Caption(v.When)));
+        goals.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<BeginnerLesson>((v, _) => v is null ? new TextBlock() : GuideParts.Vertical(GuideParts.Caption(v.Course), new TextBlock { Text = v.Name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap }, GuideParts.Caption(v.When)));
         var compactGoals = new ComboBox { ItemsSource = lessons, HorizontalAlignment = HorizontalAlignment.Stretch };
         compactGoals.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<BeginnerLesson>((v, _) => new TextBlock { Text = v?.Name, TextWrapping = TextWrapping.Wrap });
         AutomationProperties.SetName(compactGoals, "Choose a learning goal");
         var search = new TextBox { PlaceholderText = "Find help with Tern…\nTry search, export, Markdown headings or AI connections.",
-            AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 82, MaxHeight = 150, MaxLength = 8000, FontSize = GuideParts.Scaled(16), Padding = new Thickness(12) };
+            AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 82, MaxHeight = 150, MaxLength = 8000, [!TextBox.FontSizeProperty] = GuideParts.Font("Lead").ToBinding(), Padding = new Thickness(12) };
         AutomationProperties.SetName(search, "Search feature help");
         var categories = new ComboBox { ItemsSource = new[] { "All features" }.Concat(all.Select(f => f.Category).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)).ToArray(), SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(categories, "Feature categories");
@@ -39,21 +78,22 @@ public sealed class HelpWindow : Window
         compactFeatures.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<FeatureHelp>((v, _) => new TextBlock { Text = v?.Name, TextWrapping = TextWrapping.Wrap });
         AutomationProperties.SetName(compactFeatures, "Choose a matching feature");
         var count = GuideParts.Caption(""); AutomationProperties.SetName(count, "Feature result count");
-        var reference = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), RowSpacing = 12, Children = { categories, count, features } };
+        var reference = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding(), Children = { categories, count, features } };
         for (var i = 0; i < reference.Children.Count; i++) Grid.SetRow(reference.Children[i], i);
-        var goalTab = new TabItem { Header = "Start here", Content = goals, FontSize = GuideParts.Scaled(14) };
-        var referenceTab = new TabItem { Header = "Feature reference", Content = reference, FontSize = GuideParts.Scaled(14) };
+        var goalTab = new TabItem { Header = "Tern University", Content = goals };
+        var referenceTab = new TabItem { Header = "Feature reference", Content = reference };
         var tabs = new TabControl { ItemsSource = new[] { goalTab, referenceTab }, SelectedIndex = 0 };
         AutomationProperties.SetName(tabs, "Guide sections");
         var title = GuideParts.Title(""); AutomationProperties.SetName(title, "Lesson title");
         var purpose = GuideParts.Body("");
         var need = GuideParts.Body(""); AutomationProperties.SetName(need, "Before you start");
         var step = GuideParts.Body(""); AutomationProperties.SetName(step, "Tutorial step");
-        var example = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"), FontSize = GuideParts.Scaled(14) };
+        var example = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
+            [!TextBlock.FontSizeProperty] = GuideParts.Font("Body").ToBinding() };
         AutomationProperties.SetName(example, "Lesson example");
         var sourceIllustration = GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("WRITING MARKS"), GuideParts.Body("# My note\n\nRemember **tickets**.")));
-        var previewIllustration = GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("READING PREVIEW"), new TextBlock { Text = "My note", FontSize = GuideParts.Scaled(20), FontWeight = FontWeight.SemiBold }, GuideParts.Body("Remember tickets. (tickets appears bold)")));
-        var illustration = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 10, IsVisible = false, Children = { sourceIllustration, previewIllustration } };
+        var previewIllustration = GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("READING PREVIEW"), GuideParts.Title("My note"), GuideParts.Body("Remember tickets. (tickets appears bold)")));
+        var illustration = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding(), IsVisible = false, Children = { sourceIllustration, previewIllustration } };
         Grid.SetColumn(previewIllustration, 1);
         AutomationProperties.SetName(illustration, "Source to preview illustration");
         var exampleCard = GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("TRY THIS EXAMPLE — SELECT AND COPY THE TEXT"), example, illustration));
@@ -89,7 +129,9 @@ public sealed class HelpWindow : Window
         }
         Closed += (_, _) => { screenshotImage.Source = null; screenshotBitmap?.Dispose(); };
         var whatToDo = GuideParts.Caption("WHAT TO DO");
-        var answerText = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap, FontSize = GuideParts.Scaled(15), LineHeight = GuideParts.Scaled(23) };
+        var answerText = new SelectableTextBlock { TextWrapping = TextWrapping.Wrap,
+            [!TextBlock.FontSizeProperty] = GuideParts.Font("Body").ToBinding(),
+            [!TextBlock.LineHeightProperty] = GuideParts.LineHeight("Body").ToBinding() };
         AutomationProperties.SetName(answerText, "Guide AI answer");
         var answerCard = GuideParts.Card(GuideParts.Vertical(GuideParts.Caption("ANSWER"), answerText));
         answerCard.IsVisible = false;
@@ -97,13 +139,14 @@ public sealed class HelpWindow : Window
         var cancelAnswer = new Button { Content = "Cancel answer", IsVisible = false };
         cancelAnswer.Click += (_, _) => answerRequest?.Cancel();
         Closed += (_, _) => answerRequest?.Cancel();
-        var detail = new ScrollViewer { HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, Content = new StackPanel { Spacing = 18, Children = { title, GuideParts.Card(GuideParts.Vertical(whatToDo, step)), need, purpose, exampleCard, result, screenshot, trouble, advanced } } };
+        var detail = new ScrollViewer { HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, Content = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(16).ToBinding(), Children = { title, GuideParts.Card(GuideParts.Vertical(whatToDo, step)), need, purpose, exampleCard, result, screenshot, trouble, advanced } } };
         AutomationProperties.SetName(detail, "Lesson instructions");
         var back = new Button { Content = "Back" }; var next = new Button { Content = "Next", IsDefault = true };
         var skip = new Button { Content = "Skip tutorial" }; var replay = new Button { Content = "Replay" };
         var launch = new Button { IsVisible = false }; AutomationProperties.SetName(launch, "Open guided feature");
         var close = new Button { Content = "Exit guide", IsCancel = true };
         var walk = new Button { Content = "Walk me through", IsVisible = walkThrough is not null };
+        var actions = GuideParts.Actions(next, close, back, skip, replay, walk, launch);
         ((StackPanel)detail.Content!).Children.Insert(0, answerCard);
         var ask = new Button { Content = "Ask question  ↗", IsEnabled = false, IsVisible = false, Classes = { "accent" } };
         var askingAI = false;
@@ -116,7 +159,8 @@ public sealed class HelpWindow : Window
             step.Text = skipped ? "Tutorial skipped. Choose another goal, or Replay when you want to try again. Your writing has not been changed." : $"Step {index + 1} of {steps.Count}\n{steps[index]}";
             back.IsEnabled = !skipped && index > 0; next.IsEnabled = !skipped && index < steps.Count - 1; skip.IsEnabled = !skipped;
             launch.IsVisible = openFeature is not null && FeatureCatalog.CanLaunchFromGuide(launchId);
-            launch.Content = launchId == CommandIds.NewFile ? "Start a new document" : registry.TryGet(launchId ?? "", out var command) ? command.Title : "Open this tool";
+            launch.Content = registry.TryGet(launchId ?? "", out var command) ? command.Title : "Open this tool";
+            actions.SetPrimary(next.IsEnabled ? next : launch.IsVisible ? launch : replay);
         }
         void SelectLesson(BeginnerLesson lesson)
         {
@@ -183,7 +227,7 @@ public sealed class HelpWindow : Window
                     catch (OperationCanceledException) { answerText.Text = "The answer was canceled. You can ask again."; }
                     catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException
                         or System.Text.Json.JsonException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-                    { answerText.Text = ex.Message; }
+                    { answerText.Text = Tern.App.Shell.UserProblem.Plain(ex); }
                     finally { answerRequest.Dispose(); answerRequest = null; cancelAnswer.IsVisible = false; }
                 }
                 else if (askAI is not null) await askAI(question);
@@ -206,13 +250,13 @@ public sealed class HelpWindow : Window
             try { await openFeature(command); }
             finally { launching = false; launch.IsEnabled = true; }
         };
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("300,*"), ColumnSpacing = 24, Children = { tabs, detail } }; Grid.SetColumn(detail, 1);
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("300,*"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(24).ToBinding(), Children = { tabs, detail } }; Grid.SetColumn(detail, 1);
         var intro = GuideParts.Caption("");
         var guideTitle = GuideParts.Title("A question is a good place to start.");
         var wasCompact = false;
         void Arrange()
         {
-            var compact = Width < 900; body.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "300,*"); body.RowDefinitions = new RowDefinitions(compact ? "Auto,*" : "*"); body.RowSpacing = compact ? 18 : 0;
+            var compact = ClientSize.Width < GuideParts.Scaled(900); body.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "300,*"); body.RowDefinitions = new RowDefinitions(compact ? "Auto,*" : "*"); body.RowSpacing = compact ? GuideParts.SpaceValue(16) : 0;
             if (compact && !wasCompact) categories.SelectedIndex = 0;
             wasCompact = compact;
             goalTab.Content = compact ? compactGoals : goals;
@@ -220,20 +264,22 @@ public sealed class HelpWindow : Window
             tabs.MaxHeight = compact ? 110 : double.PositiveInfinity; tabs.MinHeight = 0;
             guideTitle.IsVisible = !compact;
             intro.IsVisible = !compact;
-            title.FontSize = GuideParts.Scaled(compact ? 18 : 22);
+            title[!TextBlock.FontSizeProperty] = GuideParts.Font(compact ? "Section" : "Title").ToBinding();
             whatToDo.IsVisible = !compact;
             intro.Text = compact ? "Ask a question or browse a tutorial." : "Find step-by-step help with Tern, or browse the practical guides below. Your notes stay out of guide questions.";
             Grid.SetColumn(detail, compact ? 0 : 1); Grid.SetRow(detail, compact ? 1 : 0);
         }
         SizeChanged += (_, _) => Arrange();
-        var questionCard = GuideParts.Card(GuideParts.Vertical(search, GuideParts.Actions(cancelAnswer, ask)));
-        Content = GuideParts.Frame(GuideParts.Vertical(guideTitle, intro, questionCard), body, GuideParts.Actions(back, next, skip, replay, walk, launch, close));
+        var questionCard = GuideParts.Card(GuideParts.Vertical(search, GuideParts.ButtonRow(cancelAnswer, ask)));
+        Content = GuideParts.Frame(GuideParts.Vertical(guideTitle, intro, questionCard), body, actions);
+        TabControl? helpSections = null;
+        HelpTutorView? tutor = null;
         if (workspace is not null)
         {
             var guides = Content;
             Content = null;
-            var helpSections = new TabControl();
-            var tutor = new HelpTutorView(workspace, registry, configure ?? (() => Task.CompletedTask), openFeature, canOpen,
+            helpSections = new TabControl();
+            tutor = new HelpTutorView(workspace, registry, configure ?? (() => Task.CompletedTask), openFeature, canOpen,
                 feature => { helpSections.SelectedIndex = 0; tabs.SelectedIndex = 1; features.SelectedItem = feature; SelectFeature(feature); }, practice, selectedText);
             helpSections.Items.Add(new TabItem { Header = "Guides · offline", Content = guides });
             helpSections.Items.Add(new TabItem { Header = "Ask & learn", Content = tutor });
@@ -242,6 +288,29 @@ public sealed class HelpWindow : Window
             Closed += (_, _) => tutor.Dispose();
         }
         Refresh(); goals.SelectedIndex = 0; SelectLesson(lessons[0]); Arrange();
+        _navigate = (feature, question) =>
+        {
+            if (question is not null)
+            {
+                if (tutor is not null && helpSections is not null)
+                {
+                    tutor.Question.Text = question;
+                    helpSections.SelectedIndex = 1;
+                    tutor.Question.Focus();
+                }
+                else search.Text = question;
+                return;
+            }
+            if (feature is null) return;
+            search.Text = "";
+            categories.SelectedIndex = 0;
+            Refresh();
+            if (features.Items.OfType<FeatureHelp>().FirstOrDefault(item => item.Id == feature) is not { } target) return;
+            if (helpSections is not null) helpSections.SelectedIndex = 0;
+            tabs.SelectedIndex = 1;
+            features.SelectedItem = target;
+            SelectFeature(target);
+        };
         if (featureId is not null && features.Items.OfType<FeatureHelp>().FirstOrDefault(f => f.Id == featureId) is { } initial)
         { tabs.SelectedIndex = 1; features.SelectedItem = initial; SelectFeature(initial); }
         if (initialQuestion is not null) search.Text = initialQuestion;

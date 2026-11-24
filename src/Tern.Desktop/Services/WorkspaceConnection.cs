@@ -1,7 +1,7 @@
 namespace Tern.Desktop.Services;
 
 /// <summary>A saved API model, Copilot CLI, or manually operated MCP tool server.</summary>
-public sealed record WorkspaceConnection(string Id, string Name, string Kind, string Model, string Destination)
+public sealed record WorkspaceConnection(string Id, string Name, string Kind, string Model, string Destination, int SendCharacters = AIConnectionRules.DefaultSendCharacters)
 {
     public bool CanWrite => Kind is "api" or "copilot";
     public string Capabilities => CanWrite ? "Text generation" : "Tools";

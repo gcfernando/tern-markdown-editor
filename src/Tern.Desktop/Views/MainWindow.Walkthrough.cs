@@ -27,9 +27,9 @@ public partial class MainWindow
         var next = new Button { Content = "Next" }; var back = new Button { Content = "Back" };
         var pause = new Button { Content = "Pause" }; var exit = new Button { Content = "Exit walkthrough" };
         var reveal = new Button { Content = "Show this tool" }; var replay = new Button { Content = "Replay", IsVisible = false };
-        var guides = new Button { Content = "Return to Guides", IsVisible = false };
+        var guides = new Button { Content = "Return to guides", IsVisible = false };
         var popup = new Popup { IsLightDismissEnabled = false, Placement = PlacementMode.Bottom, Child = new Border
-        { Classes = { "card" }, Padding = new Thickness(16), MaxWidth = 420, Child = GuideParts.Vertical(title, instruction, status, checkedStep, GuideParts.Actions(reveal, back, next, pause, replay, guides, exit)) } };
+        { Classes = { "card" }, Padding = new Thickness(16), MaxWidth = 420, Child = GuideParts.Vertical(title, instruction, status, checkedStep, GuideParts.ButtonRow(reveal, back, next, pause, replay, guides, exit)) } };
         ((Grid)Content!).Children.Add(popup);
         string TargetCommand() => lesson.Id switch
         {
@@ -88,7 +88,7 @@ public partial class MainWindow
         reveal.Click += async (_, _) => { if (CanRunCommand(TargetCommand())) await RunCommandAsync(TargetCommand()); Show(); };
         replay.Click += (_, _) => { stepIndex = 0; finished = false; paused = !ReferenceEquals(_shown, practice); checkedStep.IsChecked = false; Show(); };
         exit.Click += (_, _) => End();
-        guides.Click += (_, _) => { End(); CreateHelpWindow().Show(this); };
+        guides.Click += (_, _) => { End(); HelpWindow.ShowFor(this, () => CreateHelpWindow()); };
         popup.KeyDown += (_, e) => { if (e.Key == Key.Escape) { End(); e.Handled = true; } };
         _shell.PropertyChanged += Changed; _endWalkthrough = End;
         Activate(); Show(); exit.Focus();

@@ -325,23 +325,17 @@ def package(publish: Path, output: Path, commit: str, require_signed: bool = Fal
         "signing": "Verified Authenticode signatures" if signatures else "Unsigned preview candidate",
         "signatures": signatures,
         "acceptance": {
-            "requiredAutomatedScope": "Eight test projects excluding exactly eight external/interactive acceptance cases",
+            "requiredAutomatedScope": "Eight test projects excluding one interactive Windows Shell acceptance case",
             "manualTestClasses": [
-                "Tern.Desktop.Tests.RenderingCorpusModeTests",
-                "Tern.Desktop.Tests.Question35SampleTests",
                 "Tern.Desktop.Tests.NativeRecycleRestoreTests",
             ],
-            "manualTestMethods": [
-                "Tern.PreviewView.Tests.CorpusValidationTests.Every_inventoried_document_preserves_semantic_blocks_and_realizes_native_preview",
-                "Tern.PreviewView.Tests.CorpusLocalAssetTests.Every_corpus_image_records_actual_native_load_or_explicit_policy_block",
-                "Tern.PreviewView.Tests.ScrollbarDragTests.Held_left_mouse_thumb_drag_moves_down_and_back_up_without_snapback(suppliedSample: True; widths 400 and 760)",
-            ],
+            "manualTestMethods": [],
             "testFilter": (
                 Path(__file__).resolve().parent / "automated-test-filter.txt"
             )
             .read_text(encoding="utf-8")
             .strip(),
-            "reason": "Original untracked rendering corpus, supplied question 35 sample and interactive Windows Shell restore are unavailable on clean hosted runners.",
+            "reason": "Interactive Windows Shell restore is unavailable on clean hosted runners. Nine external-input acceptance cases were removed at the user's request; those inputs are not certified.",
             "remainingManualGates": [
                 "printing",
                 "accessibility",

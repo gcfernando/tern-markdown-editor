@@ -10,6 +10,9 @@
     <!-- One bounded lexical implementation keeps native preview and export colours aligned. -->
     <Compile Include="../Tern.PreviewView/CodeSyntaxHighlighter.cs" Link="Syntax/CodeSyntaxHighlighter.cs" />
     <Compile Include="../Tern.PreviewView/CodeSyntaxHighlighter.Markup.cs" Link="Syntax/CodeSyntaxHighlighter.Markup.cs" />
+    <Compile Include="../Tern.PreviewView/CodeSyntaxHighlighter.Languages.cs" Link="Syntax/CodeSyntaxHighlighter.Languages.cs" />
+    <Compile Include="../Tern.PreviewView/CodeSyntaxHighlighter.Scanner.cs" Link="Syntax/CodeSyntaxHighlighter.Scanner.cs" />
+    <Compile Include="../Tern.PreviewView/CodeDisplay.cs" Link="Syntax/CodeDisplay.cs" />
     <ProjectReference Include="..\Tern.Domain\Tern.Domain.csproj" />
     <ProjectReference Include="..\Tern.Filesystem\Tern.Filesystem.csproj" />
     <ProjectReference Include="..\Tern.Markdown\Tern.Markdown.csproj" />

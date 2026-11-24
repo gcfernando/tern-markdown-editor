@@ -13,8 +13,9 @@ Write notes, maintain project documentation and organize folders of ordinary Mar
 - Native preview without a browser engine: tables, task lists, footnotes, code, images, front matter, bounded math and supported Mermaid diagrams.
 - Library folders and workspaces, outline, backlinks, broken-link repair, statistics, Quick Open and SQLite full-text workspace search.
 - Encoding and line-ending preservation, atomic saves, external-change comparison and merge, local saved-text history and recovery checkpoints.
-- HTML, PDF and text export, formatted print preview with PDF-reader printing, image insertion and portable local attachment copies on Save As.
-- Fifteen beginner lessons and optional, explicitly reviewed AI writing and MCP tool requests.
+- HTML, PDF and text export, formatted print preview with direct Windows printing, image insertion and portable local attachment copies on Save As.
+- Nineteen beginner lessons in five courses and optional, explicitly reviewed AI writing and MCP tool requests.
+- Explore your notes: ask in everyday language and get a short AI answer from your own notes, with a link to every source. It uses the global AI selection, opens AI setup when needed, shows which notes will be read, sends no note text until you press Get my answer, and can create a reviewed A4 decision report.
 
 ![Tern in Split view with Markdown source, native reading preview, Library and Outline inspector](docs/images/gui/split-midnight.png)
 
@@ -41,9 +42,10 @@ Press `Ctrl+N`, write a heading and a few sentences, then press `Ctrl+S` to choo
 | Open notes or browse a folder | `Ctrl+O`, `Ctrl+Shift+O` or **+ Add** in the Library |
 | Find a note or command | Quick Open (`Ctrl+K`) or Command Palette (`Ctrl+Shift+P`) |
 | Search text | Find (`Ctrl+F`), Replace (`Ctrl+H`) or workspace search (`Ctrl+Shift+F`) |
+| Ask about workspace notes | **Edit → Explore your notes** (`Ctrl+Alt+F2`); ask, check your notes, then press **Get my answer** |
 | Add a link or picture | Insert Link (`Ctrl+Shift+K`) or the Format menu |
 | Learn or configure a feature | `F1` opens the guide; `Ctrl+,` opens Settings |
-| Export or print | Export as… (`Ctrl+Shift+E`), or Print preview… (`Ctrl+P`) followed by printing in your PDF reader |
+| Export or print | Export as… (`Ctrl+Shift+E`), or Print preview… (`Ctrl+P`), then **Print…** |
 
 Closing a tab, folder or workspace asks about unsaved changes and does not delete its files. Separate file-management actions can change files on disk. Save As can carry attachments inside the original note's folder; check the [copy rules](docs/user-guide.md#save-as-and-portable-attachments) before moving a collection.
 
@@ -53,7 +55,7 @@ The editor eagerly loads files up to **64 MiB**; this is a memory guard, not a r
 
 Settings controls appearance, fonts, wrapping, layout, shortcuts, session restoration and workspace exclusions. Configuration uses `%APPDATA%\Tern`; local state, recovery and search indexes use `%LOCALAPPDATA%\Tern`. `TERN_DATA_ROOT` selects an isolated root with separate settings, state, recovery and index directories. Back up important notes and state before clearing or replacing them.
 
-Saved AI connection keys use Windows Credential Manager; unsaved keys remain in memory. Optional requests can transmit a complete active note, a question or reviewed tool arguments. Opening a note with remote images can contact image hosts. Read [privacy, credentials and network access](docs/privacy.md) before opening confidential or untrusted content.
+Saved AI connection keys use Windows Credential Manager; unsaved keys remain in memory. Optional requests can transmit a complete active note, a question or reviewed tool arguments. Remote images default to Ask, with per-document consent and Always/Never settings. The Offline toggle blocks image requests, URL import, AI, MCP and Copilot. Read [privacy, credentials and network access](docs/privacy.md) before opening confidential or untrusted content.
 
 ## Development and testing
 
@@ -66,7 +68,7 @@ dotnet test Tern.slnx -c Release --no-build --no-restore -m:1
 dotnet run --project src/Tern.Desktop -c Release --no-build
 ```
 
-Dependencies and lockfiles are pinned, and warnings are errors. Eight test projects cover application, filesystem, rendering, workspace, headless UI and security behavior; benchmarks are separate. The unfiltered test command includes external-corpus and interactive Windows checks that need additional inputs. The reproducible CI gate excludes eight such cases explicitly; it does not establish full native acceptance. See [development](docs/development.md) and the [validation record](docs/BEGINNER_REVIEW_VALIDATION.md).
+Dependencies and lockfiles are pinned. The current build suppresses compiler warnings and does not treat them as errors; a zero-warning build is not an unsuppressed-warning check. Eight test projects cover application, filesystem, rendering, workspace, headless UI and security behavior; benchmarks are separate. The unfiltered test command includes external-corpus and interactive Windows checks that need additional inputs. The reproducible gate has six explicit filter clauses excluding nine cases; native Windows recycle/restore has also passed separately. It does not establish full native acceptance. See [development](docs/development.md) and the [validation record](docs/BEGINNER_REVIEW_VALIDATION.md).
 
 ## Automated releases
 
@@ -104,12 +106,14 @@ The previous README's detailed workflow and architecture reference is preserved 
 
 The [current GUI task guide](docs/gui-tasks.md) documents the implemented controls and synthetic screenshots. Native screen-reader, physical-DPI, printer, clipboard and clean-machine startup checks still require verification on Windows.
 
+Version **1.0.6** is the current development version. See the [changelog](CHANGELOG.md) for its AI writing, interface, template, Help and diagram changes. The published-release details below remain those of 1.0.5 until 1.0.6 is released.
+
 Version **1.0.5** updates onboarding, ten starter templates, authoring dialogs, task rendering and actual PDF page selection. Windows distributions include MSI, standalone Tern.exe and the portable ZIP. See the [illustrated workflows](docs/workflows-1.0.5.md) and [release notes](docs/release-notes-1.0.5.md).
 
 ### Help, export and guidance improvements
 
 - **Ask & learn:** AI connection and conversation actions sit above the larger question box. Answers render Markdown headings, emphasis, lists, code and tables in one reading area, with the newest answer revealed first. Copy conversation and Start new conversation become available when an answer is visible. What is shared? explains the submitted data. Without a writing connection, Tern answers from installed guides; provider failures also recover to an explicitly labelled offline answer.
-- **Export state:** changing Choose a format clears the destination, resets format options and clears completion status and notes. Open file and Show in folder appear only for the current complete successful result. Editing the destination or options, starting another export, or an export failure hides them. Actions share an aligned footer; Export notes start collapsed and only appear when needed.
+- **Export state:** changing Choose a format keeps the folder and file name, changes the extension, loads that format's saved options and clears completion status and notes. Open file and Show in folder appear only for the current complete successful result. Editing the destination or options, starting another export, or an export failure hides them. Actions share an aligned footer; Export notes start collapsed and only appear when needed.
 - **Readable TXT:** paragraphs wrap to a preferred 80-character width. Compact tables stay aligned; wide tables become labelled records. Numbered link references keep long URLs out of prose and retain relative and section destinations. Code indentation, nested lists and Unicode remain intact. Text files cannot display fonts, colours or actual images.
 - **PDF badges:** supported inert SVG images use the same bounded native renderer as preview and are embedded as PNG images. Unsupported SVG features still produce an export note instead of silently dropping content. HTML retains permitted SVG images.
 - **Next step guidance:** the main window and shared dialog shell show a contextual tip and installed Learn more help. Export tips change for destination selection, progress, success and failure. Ask & learn has its own question and answer guidance.

@@ -14,7 +14,7 @@ public sealed partial class ShellViewModel
         var previouslyActive = ActiveTab;
         if (!await ConfirmCloseAsync(tabs).ConfigureAwait(true))
         {
-            if (previouslyActive is not null && Tabs.Contains(previouslyActive)) ActiveTab = previouslyActive;
+            if (previouslyActive is not null && Tabs.Contains(previouslyActive)) SelectTab(previouslyActive, TabActivationReason.Programmatic);
             return false;
         }
         if (Tabs.Where(Matches).Any(tab => !tabs.Contains(tab)))
@@ -22,7 +22,7 @@ public sealed partial class ShellViewModel
         foreach (var tab in tabs) RemoveTab(tab, retireRecovery: true);
         Recent.Remove(online ? RecentKind.Url : RecentKind.File, source);
         StatusMessage = Recent.LastSaveError is { } error
-            ? "Document closed; the reference could not be removed from saved history: " + error.Message
+            ? "Document closed; the reference could not be removed from saved history: " + PlainProblem(error)
             : "Document closed and Library reference removed. Files remain on disk.";
         return true;
     }

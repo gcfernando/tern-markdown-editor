@@ -109,7 +109,8 @@ public sealed class ImageCommandWorkflowTests
         await fixture.Window.RunCommandAsync(CommandIds.InsertImage);
         Assert.Equal("Keep\n", tab.CurrentText);
         Assert.False(tab.IsDirty);
-        Assert.Contains(stage < 2 ? "cancelled" : "Native picker failure", fixture.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(stage < 2 ? "cancelled" : "Windows could not complete", fixture.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Native picker failure", fixture.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
         if (stage >= 2)
         {
             var diagnostic = fixture.Shell.StatusMessage;

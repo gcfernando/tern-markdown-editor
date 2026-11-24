@@ -60,7 +60,7 @@ public sealed class DuplicateSourceWorkflowTests
         File.Delete(path);
         var alternate = Path.Combine(Path.GetDirectoryName(path)!, ".", Path.GetFileName(path).ToUpperInvariant());
 
-        Assert.Same(original, fixture.Shell.FindOpenSource(alternate));
+        Assert.Same(original, await fixture.Shell.FindOpenSourceAsync(alternate));
         Assert.Same(original, await fixture.Shell.OpenFileAsync(alternate));
 
         Assert.Same(original, fixture.Shell.ActiveTab);
@@ -159,7 +159,7 @@ public sealed class DuplicateSourceWorkflowTests
         Assert.Null(online.FilePath);
         Assert.True(online.IsExternalDraft);
         Assert.Equal("Remote text\n", online.CurrentText);
-        Assert.Same(online, fixture.Shell.FindOpenSource("HTTPS://EXAMPLE.COM:443/notes.md#heading", online: true));
+        Assert.Same(online, await fixture.Shell.FindOpenSourceAsync("HTTPS://EXAMPLE.COM:443/notes.md#heading", online: true));
         Assert.True(await fixture.Shell.CloseTabAsync(online));
         Assert.Empty(fixture.Shell.Tabs);
         Assert.Equal(0, fixture.Dialogs.SavePrompts);
@@ -200,9 +200,9 @@ public sealed class DuplicateSourceWorkflowTests
         var lower = fixture.Shell.OpenOnlineDocument("https://example.com/guide.md?q=A", "same.md", "Lower");
         Assert.NotSame(first, second);
         Assert.NotSame(upper, lower);
-        Assert.Same(upper, fixture.Shell.FindOpenSource("https://example.com/Guide.md?q=A", online: true));
-        Assert.Same(lower, fixture.Shell.FindOpenSource("https://example.com/guide.md?q=A", online: true));
-        Assert.Null(fixture.Shell.FindOpenSource("https://example.com/Guide.md?q=a", online: true));
+        Assert.Same(upper, await fixture.Shell.FindOpenSourceAsync("https://example.com/Guide.md?q=A", online: true));
+        Assert.Same(lower, await fixture.Shell.FindOpenSourceAsync("https://example.com/guide.md?q=A", online: true));
+        Assert.Null(await fixture.Shell.FindOpenSourceAsync("https://example.com/Guide.md?q=a", online: true));
         Assert.Equal(4, fixture.Shell.Tabs.Count);
         Assert.Equal(0, fixture.Dialogs.DuplicatePrompts);
     }
@@ -324,6 +324,8 @@ public sealed class DuplicateSourceWorkflowTests
         Assert.Empty(Directory.EnumerateFiles(fixture.Docs));
         Assert.Empty(fixture.Shell.Recent.Files);
         Assert.Empty(fixture.Dialogs.Messages);
+        Assert.Equal(ActivityState.Canceled,
+            Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Saving downloaded online document").State);
     }
 
     [Fact]
@@ -348,6 +350,10 @@ public sealed class DuplicateSourceWorkflowTests
         Assert.Equal(format.Encoding, downloaded.Session.Format.Encoding);
         Assert.True(downloaded.Session.Format.HasBom);
         Assert.Equal(TextFileCodec.Encode(text, format), await File.ReadAllBytesAsync(path));
+        var activity = Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Saving downloaded online document");
+        Assert.Equal(ActivityState.Completed, activity.State);
+        Assert.Equal("Downloaded and opened", activity.Phase);
+        Assert.NotNull(activity.Finished);
         var history = new RecentItemsStore(fixture.Shell.Paths.StateDirectory);
         Assert.Equal(path, Assert.Single(history.Files).Path);
         Assert.Empty(history.Urls);
@@ -395,6 +401,9 @@ public sealed class DuplicateSourceWorkflowTests
         Assert.True(Directory.Exists(fixture.Docs));
         Assert.Empty(Directory.EnumerateFiles(fixture.Docs));
         Assert.NotEmpty(fixture.Dialogs.Messages);
+        var activity = Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Saving downloaded online document");
+        Assert.Equal(ActivityState.Failed, activity.State);
+        Assert.False(activity.IsActive);
     }
 
     [Fact]

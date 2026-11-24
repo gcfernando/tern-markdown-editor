@@ -107,6 +107,9 @@ public sealed class PreviewView : Decorator
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = _page,
         };
+        SmoothScrolling.SetIsEnabled(this, true);
+        SmoothScrolling.SetDuration(this, ReduceMotion ? TimeSpan.Zero : SmoothScrolling.StandardDuration);
+        SmoothScrolling.SetSuppressMotion(this, ReduceMotion);
         _scroller.ScrollChanged += OnScrollChanged;
         _scroller.TemplateApplied += (_, _) => ConfigureReadingScrollbar();
 
@@ -132,6 +135,8 @@ public sealed class PreviewView : Decorator
         Child = root;
 
         AddHandler(DoubleTappedEvent, OnDoubleTapped, handledEventsToo: true);
+        AddHandler(PointerWheelChangedEvent, (_, _) => { _programmatic = false; _expectedOffset = null; }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(ScrollGestureEvent, (_, _) => { _programmatic = false; _expectedOffset = null; }, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, OnPointerReleasedForLine, RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
@@ -178,9 +183,6 @@ public sealed class PreviewView : Decorator
 
     /// <summary>While true, <see cref="TopSourceLineChanged"/> is not raised (the host is driving the scroll position).</summary>
     public bool SuppressNotifications { get; set; }
-
-    /// <summary>True while the view itself is moving the scroll position (scroll-to, anchoring); such moves never raise <see cref="TopSourceLineChanged"/>.</summary>
-    public bool IsProgrammaticScroll => _programmatic;
 
     /// <summary>The source line (1-based) at the top of the viewport.</summary>
     public int TopSourceLine => TopLineAt(_scroller.Offset.Y);
@@ -257,26 +259,30 @@ public sealed class PreviewView : Decorator
 
     private void ConfigureReadingScrollbar()
     {
+        var sharedAppearance = this.TryFindResource("Tern.Scroll.SharedAppearance", out var shared) && shared is true;
         foreach (var bar in _scroller.GetVisualDescendants().OfType<ScrollBar>().Where(bar =>
             bar.Orientation == Orientation.Vertical && bar.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault() == _scroller))
         {
             bar.Classes.Add("reading-scrollbar");
-            bar.Width = bar.MinWidth = 18;
             bar.AllowAutoHide = false;
-            PreviewTheme.Bind(bar, ScrollBar.BackgroundProperty, PreviewKeys.CodeBackground);
-            PreviewTheme.Bind(bar, ScrollBar.ForegroundProperty, PreviewKeys.Foreground);
+            if (!sharedAppearance)
+            {
+                bar.Width = bar.MinWidth = 20;
+                PreviewTheme.Bind(bar, ScrollBar.BackgroundProperty, PreviewKeys.CodeBackground);
+                PreviewTheme.Bind(bar, ScrollBar.ForegroundProperty, PreviewKeys.Foreground);
+            }
             AutomationProperties.SetName(bar, "Reading scrollbar");
             ToolTip.SetTip(bar, "Drag the grip to scroll. Click the track for a page, or use Page Up / Page Down.");
             bar.ApplyTemplate();
             foreach (var thumb in bar.GetVisualDescendants().OfType<Thumb>())
             {
-                thumb.MinHeight = 24; thumb.MinWidth = 14;
+                if (!sharedAppearance) { thumb.MinHeight = 40; thumb.MinWidth = 20; }
                 thumb.DragStarted -= OnScrollbarDragStarted;
                 thumb.DragCompleted -= OnScrollbarDragCompleted;
                 thumb.DragStarted += OnScrollbarDragStarted;
                 thumb.DragCompleted += OnScrollbarDragCompleted;
                 thumb.ApplyTemplate();
-                foreach (var border in thumb.GetVisualDescendants().OfType<Border>())
+                foreach (var border in thumb.GetVisualDescendants().OfType<Border>().Where(_ => !sharedAppearance))
                 {
                     border.Opacity = 1;
                     border.CornerRadius = new CornerRadius(5);
@@ -369,12 +375,6 @@ public sealed class PreviewView : Decorator
         ApplyAnchor();
     }
 
-    /// <summary>Briefly highlights the rendered block containing a source line.</summary>
-    public void HighlightSourceBlock(int line)
-    {
-        if (!ReduceMotion && Document?.FindBlockIndexAtLine(line) is >= 0 and var index)
-            Flash(index, new SolidColorBrush(Color.Parse("#55FFB300")));
-    }
 
     /// <summary>Scrolls to a heading or safe explicit HTML anchor, with or without leading '#'.</summary>
     public bool ScrollToAnchor(string anchor)
@@ -453,12 +453,18 @@ public sealed class PreviewView : Decorator
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ReduceMotionProperty)
+        {
+            SmoothScrolling.SetDuration(this, ReduceMotion ? TimeSpan.Zero : SmoothScrolling.StandardDuration);
+            SmoothScrolling.SetSuppressMotion(this, ReduceMotion);
+        }
         if (change.Property == DocumentProperty)
         {
             ApplyDocument(change.GetOldValue<PreviewDocument?>(), change.GetNewValue<PreviewDocument?>());
         }
         else if (change.Property == ReadingWidthProperty || change.Property == UseFullWidthProperty)
         {
+            SmoothScrolling.CancelWithin(this);
             UpdatePageWidth();
         }
         else if (change.Property == FontSizeProperty || change.Property == FontFamilyProperty)
@@ -518,6 +524,7 @@ public sealed class PreviewView : Decorator
 
     private void Rebuild()
     {
+        SmoothScrolling.CancelWithin(this);
         ReleaseImages();
         _factory = new BlockFactory(FontSize, OnLinkTarget, _remoteImageLoader);
         var document = Document;
@@ -580,6 +587,7 @@ public sealed class PreviewView : Decorator
 
     private void ApplyDocument(PreviewDocument? oldDocument, PreviewDocument? document)
     {
+        SmoothScrolling.CancelWithin(this);
         var anchorSlot = _anchorSlot;
         var anchorLine = oldDocument is null ? 1 : TopSourceLine;
         var fraction = _anchorFraction;
@@ -722,8 +730,9 @@ public sealed class PreviewView : Decorator
         }
     }
 
-    private void MarkProgrammatic()
+    private void MarkProgrammatic(bool cancelWheel = true)
     {
+        if (cancelWheel) SmoothScrolling.CancelWithin(this);
         if (_programmatic)
         {
             return;
@@ -770,9 +779,9 @@ public sealed class PreviewView : Decorator
         var target = OffsetForAnchor();
         if (Math.Abs(target - _scroller.Offset.Y) > 0.5)
         {
-            MarkProgrammatic();
+            MarkProgrammatic(cancelWheel: false);
             _expectedOffset = target;
-            _scroller.Offset = new Vector(_scroller.Offset.X, target);
+            SmoothScrolling.CorrectAnchor(_scroller, new Vector(_scroller.Offset.X, target));
         }
     }
 

@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Tern.PreviewView.Tests" />
+    <InternalsVisibleTo Include="Tern" />
   </ItemGroup>
 
 </Project>

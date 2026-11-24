@@ -63,13 +63,13 @@ public sealed class SixScreenIssueTests
     public void Create_content_is_removed_for_every_scope_and_raw_request_ui_is_removed(bool selection)
     {
         using var f = new DesktopFixture();
-        var scope = new ComboBox { ItemsSource = selection ? new[] { "Selected text", "Entire note", "Instruction only" } : new[] { "Entire note", "Instruction only" }, SelectedIndex = 0 };
+        var scope = new ComboBox { ItemsSource = selection ? new[] { "Selected text", "Entire document", "Instruction only" } : new[] { "Entire document", "Instruction only" }, SelectedIndex = 0 };
         using var prompt = new AIPromptPanel("Practice.md", f.Window.AIWorkspace, (_, _, _) => Task.FromResult("unused"), () => { }, () => Task.CompletedTask, _ => { }, scope: scope);
         var window = new Window { Width = 1000, Height = 900, Content = prompt }; window.Show(f.Window); Pump(window);
         try
         {
             Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Create content"));
-            scope.SelectedItem = "Entire note"; Pump(window);
+            scope.SelectedItem = "Entire document"; Pump(window);
             Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Create content"));
             scope.SelectedItem = "Instruction only"; Pump(window);
             Assert.DoesNotContain(prompt.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Create content"));

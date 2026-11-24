@@ -237,6 +237,34 @@ public class ThreeWayMergerTests
     }
 
     [Fact]
+    public void Line_ending_only_change_on_disk_is_not_a_conflict_and_keeps_the_editor_endings()
+    {
+        var result = ThreeWayMerger.Merge("a\r\nb\r\nc\r\n", "a\r\nB\r\nc\r\n", "a\nb\nc\nd\n");
+
+        Assert.False(result.HasConflicts);
+        Assert.Equal("a\r\nB\r\nc\r\nd\r\n", result.MergedText);
+    }
+
+    [Fact]
+    public void Added_final_newline_on_disk_merges_with_an_unrelated_edit()
+    {
+        var result = ThreeWayMerger.Merge("a\nx\ny\nb", "A\nx\ny\nb", "a\nx\ny\nb\n");
+
+        Assert.False(result.HasConflicts);
+        Assert.Equal("A\nx\ny\nb\n", result.MergedText);
+    }
+
+    [Fact]
+    public void Keeping_both_sides_of_an_end_of_file_conflict_puts_them_on_separate_lines()
+    {
+        var result = ThreeWayMerger.Merge("a\nb", "a\nmine", "a\ndisk");
+
+        var conflict = Assert.IsType<ConflictRegion>(Assert.Single(result.Regions, r => r is ConflictRegion));
+        Assert.Equal("mine\ndisk", conflict.Both(result.NewLine));
+        Assert.Equal("a\nmine\ndisk", result.Render(c => c.Both(result.NewLine)));
+    }
+
+    [Fact]
     public void Insertions_at_different_places_merge()
     {
         var baseText = "a\nb\nc\nd\ne\n";

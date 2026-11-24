@@ -48,7 +48,7 @@ public sealed class SettingsViewportTests
         }
         var navigation = Assert.Single(window.GetVisualDescendants().OfType<ListBox>(), l => AutomationProperties.GetName(l) == "Settings categories");
         Assert.Equal(FeatureCatalog.SettingsFeatures.Select(f => f.Category).Append("AI connections").Append("Windows integration").Distinct(StringComparer.Ordinal).Count(), navigation.ItemCount);
-        if (minimum)
+        if (window.ClientSize.Width < GuideParts.Scaled(900))
         {
             Assert.True(choice.IsEffectivelyVisible);
             Assert.False(sidebar.IsVisible);
@@ -84,7 +84,11 @@ public sealed class SettingsViewportTests
         var search = Assert.Single(window.GetVisualDescendants().OfType<TextBox>(), t => AutomationProperties.GetName(t) == "Find a setting");
         search.Text = "wrap";
         Pump(window);
-        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "1 setting · Apply or Done commits changes; Cancel discards pending changes");
+        var status = Assert.Single(window.GetVisualDescendants().OfType<TextBlock>(), t => AutomationProperties.GetName(t) == "Settings result count");
+        Assert.StartsWith("2 settings", status.Text);
+        Assert.Contains("Apply or Done commits changes; Cancel discards pending changes", status.Text);
+        Assert.True(Assert.Single(window.GetVisualDescendants().OfType<Button>(), b => AutomationProperties.GetName(b) == "Help for Wrap long lines").IsEffectivelyVisible);
+        Assert.True(Assert.Single(window.GetVisualDescendants().OfType<Button>(), b => AutomationProperties.GetName(b) == "Help for Show Source column ruler").IsEffectivelyVisible);
         var folder = Path.Combine(Screenshots.Folder, "settings-viewport");
         Directory.CreateDirectory(folder);
         using var frame = window.CaptureRenderedFrame();

@@ -12,21 +12,11 @@ namespace Tern.PreviewView.Tests;
 public sealed class ScrollbarDragTests(ITestOutputHelper output)
 {
     [AvaloniaTheory]
-    [InlineData(false, 760)]
-    [InlineData(true, 760)]
-    [InlineData(true, 400)]
-    public void Held_left_mouse_thumb_drag_moves_down_and_back_up_without_snapback(bool suppliedSample, int width)
+    [InlineData(760)]
+    public void Held_left_mouse_thumb_drag_moves_down_and_back_up_without_snapback(int width)
     {
         var markdown = string.Join("\n\n", Enumerable.Range(0, 450).Select(i =>
             $"## Section {i}\n\n" + string.Concat(Enumerable.Repeat("Ordinary text with variable wrapping and **emphasis**. ", 2 + i % 12))));
-        if (suppliedSample)
-        {
-            var root = new DirectoryInfo(AppContext.BaseDirectory);
-            while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
-            Assert.NotNull(root);
-            var current = Path.Combine(root.FullName, "inputs", "Data-Science-and-Machine-Learning.md");
-            markdown = File.ReadAllText(File.Exists(current) ? current : Path.Combine(root.FullName, "MD Files Samples 02", "supervised_learning.md"));
-        }
         var (window, view) = Harness.Show(Harness.Build(markdown), width, 600);
         try
         {

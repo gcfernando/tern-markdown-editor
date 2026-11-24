@@ -22,7 +22,7 @@ public sealed class PcbFlowchartRenderingTests
         try
         {
         var text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "MarkdownSamples", "complex_pcb_circuit_network_design.md"));
-        var output = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../artifacts/diagram-upgrade/screenshots"));
+        var output = Tern.Tests.Shared.TestOutput.Folder("diagram-upgrade", "screenshots");
         Directory.CreateDirectory(output);
         var index = 0;
         foreach (Match match in Regex.Matches(text, @"```mermaid\s*\r?\n(.*?)```", RegexOptions.Singleline))

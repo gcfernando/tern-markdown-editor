@@ -143,7 +143,11 @@ class PackageTests(unittest.TestCase):
         self.sdk_version.assert_called_once_with(["dotnet", "--version"], cwd=self.source, text=True)
         self.assertTrue(manifest["selfContained"])
         self.assertEqual(manifest["sourceCommit"], "a" * 40)
-        self.assertEqual(len(manifest["acceptance"]["manualTestClasses"]), 3)
+        self.assertEqual(
+            manifest["acceptance"]["manualTestClasses"],
+            ["Tern.Desktop.Tests.NativeRecycleRestoreTests"],
+        )
+        self.assertEqual(manifest["acceptance"]["manualTestMethods"], [])
         with zipfile.ZipFile(archive) as bundle:
             text = bundle.read("README.md").decode()
             self.assertIn("(docs/guide.md)", text)

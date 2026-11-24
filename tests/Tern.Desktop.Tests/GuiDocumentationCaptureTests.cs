@@ -31,11 +31,13 @@ public sealed class GuiDocumentationCaptureTests
         f.Window.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Document save and recovery details")
             .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Capture(f.Window, "recovery-details", theme); f.Window.HideOverlay(); tab.RecoveryError = null;
-        var export = new ExportWindow("meeting.md", null, "# Meeting\n\n![Agenda chart](missing-chart.png)", MarkdownProfile.Gfm, null, ExportFormat.Html);
+        var export = new ExportWindow("meeting.md", null, "# Meeting\n\n![Agenda chart](missing-chart.png)", MarkdownProfile.Gfm, null, ExportFormat.Html) { Height = 900 };
         export.Show(f.Window);
-        Directory.CreateDirectory("artifacts/gui-pack");
-        Assert.True(await export.ExportAsync($"artifacts/gui-pack/synthetic-export-{theme}.html"));
-        Assert.NotEmpty(export.Warnings); Capture(export, "export-warnings", theme); export.Close();
+        var guiPack = Tern.Tests.Shared.TestOutput.Folder("gui-pack");
+        Assert.True(await export.ExportAsync(Path.Combine(guiPack, $"synthetic-export-{theme}.html")));
+        Assert.NotEmpty(export.Warnings);
+        Assert.Single(export.GetVisualDescendants().OfType<Expander>()).IsExpanded = true;
+        Capture(export, "export-warnings", theme); export.Close();
         using var tutor = new HelpTutorView(f.Window.AIWorkspace, f.Shell.Registry, () => Task.CompletedTask, null, null, _ => { }, null,
             () => "A selected practice excerpt");
         tutor.Question.Text = "How do I add a checklist and save my note?";

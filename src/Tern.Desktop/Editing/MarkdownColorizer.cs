@@ -4,6 +4,7 @@ using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 using Tern.Desktop.Themes;
+using Tern.PreviewView;
 
 namespace Tern.Desktop.Editing;
 
@@ -21,11 +22,17 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
     private LineKind[] _kinds = [];
     private TextDocument? _tracked;
     private bool _stale = true;
-    private string?[] _fenceAfter = [];
+    private sealed record FenceState(string Marker, string? Language, CodeLexicalState Lexical);
+    private FenceState?[] _fenceAfter = [];
     private int _dirtyStart;
     private int _dirtyEnd;
     private int _frontMatterEnd;
+    private bool _refreshQueued;
     internal int StateLinesVisited { get; private set; }
+    internal Action<TextDocument, int, int>? RepaintStateChanges { get; set; }
+    internal Action<TextDocument>? RefreshStateRequested { get; set; }
+    public bool HybridEnabled { get; set; }
+    public int CaretLine { get; set; }
 
     [GeneratedRegex(@"^ {0,3}(#{1,6})(\s.*)?$")]
     private static partial Regex Heading();
@@ -68,6 +75,7 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
         _dirtyStart = 0;
         _dirtyEnd = int.MaxValue;
         _frontMatterEnd = 0;
+        _refreshQueued = false;
         if (document is not null)
         {
             document.Changed += OnTextChanged;
@@ -82,6 +90,18 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
         _dirtyStart = _stale ? Math.Min(_dirtyStart, first) : first;
         _dirtyEnd = _stale ? Math.Max(_dirtyEnd, last) : last;
         _stale = true;
+        if (!_refreshQueued && RefreshStateRequested is { } refresh)
+        {
+            _refreshQueued = true;
+            refresh(_tracked);
+        }
+    }
+
+    internal void RefreshState(TextDocument document)
+    {
+        if (!ReferenceEquals(_tracked, document)) return;
+        _refreshQueued = false;
+        if (_stale) EnsureKinds(document);
     }
 
     protected override void ColorizeLine(DocumentLine line)
@@ -109,7 +129,12 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
                 Paint(line, 0, text.Length, ThemeManager.SyntaxMarker);
                 return;
             case LineKind.FenceBody:
-                Paint(line, 0, text.Length, ThemeManager.SyntaxCode);
+                var before = index > 0 ? _fenceAfter[index - 1] : null;
+                if (before is null || !CodeSyntaxHighlighter.IsKnownLanguage(before.Language))
+                    Paint(line, 0, text.Length, ThemeManager.SyntaxCode);
+                else
+                    foreach (var token in CodeSyntaxHighlighter.TokenizeLine(text, before.Language, before.Lexical, out _))
+                        Paint(line, token.Start, token.Length, CodeSyntaxHighlighter.ThemeKey(token.Kind));
                 return;
         }
 
@@ -117,6 +142,13 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
         if (heading.Success)
         {
             Paint(line, 0, text.Length, ThemeManager.SyntaxHeading, bold: true);
+            if (HybridEnabled && line.LineNumber != CaretLine)
+            {
+                ChangeLinePart(line.Offset, line.EndOffset, element =>
+                    element.TextRunProperties.SetFontRenderingEmSize(
+                        CurrentContext.GlobalTextRunProperties.FontRenderingEmSize * (1.7 - heading.Groups[1].Length * 0.08)));
+                Paint(line, heading.Groups[1].Index, heading.Groups[1].Length, ThemeManager.Muted);
+            }
             return;
         }
 
@@ -156,6 +188,23 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
         foreach (Match m in Link().Matches(text))
         {
             Paint(line, m.Index, m.Length, ThemeManager.SyntaxLink);
+        }
+        if (HybridEnabled && line.LineNumber != CaretLine)
+        {
+            if (quote.Success) Paint(line, quote.Index, quote.Length, ThemeManager.Muted);
+            if (list.Success) Paint(line, list.Index, list.Length, ThemeManager.Muted);
+            foreach (var expression in new[] { Strong(), Emphasis(), InlineCode() })
+                foreach (Match match in expression.Matches(text))
+                {
+                    var width = match.Value.StartsWith("**", StringComparison.Ordinal) || match.Value.StartsWith("__", StringComparison.Ordinal)
+                        || match.Value.StartsWith("~~", StringComparison.Ordinal) ? 2 : 1;
+                    Paint(line, match.Index, width, ThemeManager.Muted);
+                    Paint(line, match.Index + match.Length - width, width, ThemeManager.Muted);
+                }
+            foreach (Match match in Link().Matches(text))
+                for (var i = 0; i < match.Length; i++)
+                    if (match.Value[i] is '[' or ']' or '(' or ')' or '!')
+                        Paint(line, match.Index + i, 1, ThemeManager.Muted);
         }
     }
 
@@ -203,6 +252,8 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
             _dirtyEnd = int.MaxValue;
         }
         var i = Math.Clamp(_dirtyStart, 0, document.LineCount - 1);
+        var changedStart = int.MaxValue;
+        var lastVisited = i;
         if (i <= _frontMatterEnd)
         {
             var previousEnd = _frontMatterEnd;
@@ -229,13 +280,14 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
                     _fenceAfter[i] = null;
                 }
             }
-            if (previousEnd != _frontMatterEnd) _dirtyEnd = int.MaxValue;
+            if (previousEnd != _frontMatterEnd) { _dirtyEnd = int.MaxValue; changedStart = 0; }
         }
 
-        string? open = i == 0 ? null : _fenceAfter[i - 1];
+        FenceState? open = i == 0 ? null : _fenceAfter[i - 1];
         for (; i < _kinds.Length; i++)
         {
             StateLinesVisited++;
+            lastVisited = i;
             var oldKind = _kinds[i];
             var oldFence = _fenceAfter[i];
             var kind = LineKind.Normal;
@@ -245,11 +297,12 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
             {
                 if (fence.Success)
                 {
-                    open = fence.Groups[1].Value;
+                    open = new(fence.Groups[1].Value, CodeSyntaxHighlighter.NormalizeLanguage(text[fence.Length..]), default);
                     kind = LineKind.FenceEdge;
                 }
             }
-            else if (fence.Success && fence.Groups[1].Value[0] == open[0] && fence.Groups[1].Length >= open.Length)
+            else if (fence.Success && fence.Groups[1].Value[0] == open.Marker[0] && fence.Groups[1].Length >= open.Marker.Length
+                && string.IsNullOrWhiteSpace(text[fence.Length..]))
             {
                 kind = LineKind.FenceEdge;
                 open = null;
@@ -257,12 +310,28 @@ public sealed partial class MarkdownColorizer : DocumentColorizingTransformer
             else
             {
                 kind = LineKind.FenceBody;
+                // Continuation is a compact value, not cached tokens or a copy of the fence.
+                // Keep the existing pathological-line guard for both state and painting.
+                if (text.Length <= 32_768 && CodeSyntaxHighlighter.IsKnownLanguage(open.Language))
+                {
+                    CodeSyntaxHighlighter.TokenizeLine(text, open.Language, open.Lexical, out var next);
+                    open = open with { Lexical = next };
+                }
             }
             _kinds[i] = kind;
             _fenceAfter[i] = open;
+            if (oldKind != kind || oldFence != open) changedStart = Math.Min(changedStart, i);
             if (i >= _dirtyEnd && oldKind == kind && oldFence == open) break;
         }
 
         _stale = false;
+        if (changedStart != int.MaxValue)
+        {
+            // Include the convergence line: its incoming state can have changed even
+            // when its outgoing state is the same. Existing visual lines need repaint.
+            var first = document.GetLineByNumber(changedStart + 1).Offset;
+            var last = document.GetLineByNumber(Math.Min(document.LineCount, lastVisited + 1)).EndOffset;
+            RepaintStateChanges?.Invoke(document, first, Math.Max(0, last - first));
+        }
     }
 }

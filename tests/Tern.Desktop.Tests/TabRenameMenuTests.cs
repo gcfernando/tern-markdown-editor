@@ -26,8 +26,10 @@ public sealed class TabRenameMenuTests
             menu.Open(owner); Dispatcher.UIThread.RunJobs();
             var rename = Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Tag, "tab.rename"));
             Assert.Equal(ReferenceEquals(tab, local), rename.IsEnabled);
-            Assert.Equal(new[] { "Rename", "Close", "Close All", "Close Tabs to the Right", "Close Other Tabs" },
+            Assert.Equal(new[] { "Rename Document…", "Copy Path", "Reveal in File Explorer", "Reopen Closed Tab", "Close Tab", "Close All Documents", "Close Tabs to the Right", "Close Other Tabs" },
                 menu.Items.OfType<MenuItem>().Select(item => item.Header as string));
+            Assert.All(menu.Items.OfType<MenuItem>().Where(item => item.Tag is "tab.copyPath" or "tab.reveal"),
+                item => Assert.False(item.IsEnabled));
             Assert.Equal(2, fixture.Shell.Tabs.Count);
             menu.Close();
         }

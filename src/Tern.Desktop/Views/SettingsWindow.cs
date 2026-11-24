@@ -6,12 +6,15 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using System.Text.Json;
 using Tern.App.Commands;
 using Tern.App.Help;
 using Tern.App.Settings;
 using Tern.Markdown;
 using Tern.Desktop.Services;
+using Tern.Domain.Text;
+using Tern.Filesystem;
 
 namespace Tern.Desktop.Views;
 
@@ -24,14 +27,34 @@ public sealed class SettingsWindow : Window
     internal AppSettings WorkingSettings { get; private set; } = null!;
     private TextBlock? _sourceFontSample;
     private TextBlock? _readingFontSample;
+    private TextBlock? _readingTypefaceSample;
+    private CheckBox? _newFileBom;
+
+    private void RefreshNewFileBom()
+    {
+        var format = WorkingSettings.NewFileFormat;
+        WorkingSettings.DefaultEncodingHasBom = format.HasBom;
+        if (_newFileBom is null) return;
+        _newFileBom.IsEnabled = WorkingSettings.DefaultEncoding == TextEncodingKind.Utf8;
+        _newFileBom.IsChecked = format.HasBom;
+    }
 
     private void RefreshTypography()
     {
         if (_sourceFontSample is null || _readingFontSample is null) return;
         try { _sourceFontSample.FontFamily = new FontFamily(WorkingSettings.EditorFontFamily); } catch (ArgumentException) { }
-        _sourceFontSample.FontSize = WorkingSettings.EditorFontSize;
+        _sourceFontSample.FontSize = WorkingSettings.EditorFontSize * WorkingSettings.DocumentTextScale;
+        _sourceFontSample.LineHeight = _sourceFontSample.FontSize * WorkingSettings.EditorLineHeight;
         _sourceFontSample.TextWrapping = WorkingSettings.WordWrap ? TextWrapping.Wrap : TextWrapping.NoWrap;
-        _readingFontSample.FontSize = WorkingSettings.PreviewFontSize;
+        _readingFontSample.FontSize = WorkingSettings.PreviewFontSize * WorkingSettings.DocumentTextScale;
+        try
+        {
+            var family = new FontFamily(WorkingSettings.PreviewFontFamily);
+            _readingFontSample.FontFamily = family;
+            if (_readingTypefaceSample is not null) _readingTypefaceSample.FontFamily = family;
+        }
+        catch (ArgumentException) { }
+        if (_readingTypefaceSample is not null) _readingTypefaceSample.FontSize = WorkingSettings.PreviewFontSize * WorkingSettings.DocumentTextScale;
     }
     public SettingsWindow(AppSettings settings, CommandRegistry? registry = null, Func<string, Task>? openFeature = null, Func<string, Task>? askAI = null,
         Func<Window, Task>? configureAI = null, Func<IReadOnlyList<AIConnectionProfile>>? aiProfiles = null, string? initialCategory = null,
@@ -47,29 +70,39 @@ public sealed class SettingsWindow : Window
         _askAI = askAI;
         _answerAI = answerAI;
         registry ??= CommandRegistry.CreateDefault();
-        DialogParts.Setup(this, "Settings", 940, 760);
+        DialogParts.Setup(this, "Settings", 940, 760, DialogGuidance.Settings);
         MinWidth = 720;
         MinHeight = 520;
         var search = new TextBox { PlaceholderText = "Find a setting, such as wrap, font or restore…" };
         AutomationProperties.SetName(search, "Find a setting");
-        var navigation = new ListBox { ItemsSource = FeatureCatalog.SettingsFeatures.Select(f => f.Category).Append("AI connections").Append("Windows integration").Distinct(StringComparer.Ordinal).ToArray(), SelectedIndex = 0 };
+        var categoryKeys = SettingsNavigation.Categories.Select(category => category.Key).ToArray();
+        var categoryTemplate = new FuncDataTemplate<string>((key, _) => new TextBlock
+        {
+            Text = SettingsNavigation.Title(key ?? ""), TextWrapping = TextWrapping.Wrap,
+        });
+        var navigation = new ListBox { ItemsSource = categoryKeys, ItemTemplate = categoryTemplate, SelectedIndex = 0 };
         // This short list scrolls as part of the sidebar; realize every category so
         // the outer viewport can measure and reach the final row at large text sizes.
         navigation.ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel());
+        navigation.ContainerPrepared += (_, e) =>
+        {
+            if (e.Index >= 0 && e.Index < categoryKeys.Length)
+                AutomationProperties.SetName(e.Container, SettingsNavigation.Title(categoryKeys[e.Index]));
+        };
         AutomationProperties.SetName(navigation, "Settings categories");
-        var sections = new StackPanel { Spacing = 24 };
+        var sections = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(24).ToBinding() };
         var cards = new List<(SettingFeature Feature, Control Card)>();
         var reloadEditors = new Dictionary<string, Action>();
         var groups = new Dictionary<string, (Control Heading, StackPanel Cards)>();
-        var aiSection = new StackPanel { Spacing = 10 };
-        var windowsSection = new StackPanel { Spacing = 10 };
+        var aiSection = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(8).ToBinding() };
+        var windowsSection = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(8).ToBinding() };
         var results = GuideParts.Caption("All settings");
         AutomationProperties.SetName(results, "Settings result count");
         sections.Children.Add(results);
-        foreach (var category in FeatureCatalog.SettingsFeatures.Select(f => f.Category).Distinct(StringComparer.Ordinal))
+        foreach (var category in categoryKeys.Where(key => FeatureCatalog.SettingsFeatures.Any(feature => feature.Category == key)))
         {
-            var heading = new TextBlock { Text = category, FontSize = GuideParts.Scaled(18), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
-            var list = new StackPanel { Spacing = 12 };
+            var heading = new TextBlock { Text = SettingsNavigation.Title(category), [!TextBlock.FontSizeProperty] = GuideParts.Font("Section").ToBinding(), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+            var list = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(12).ToBinding() };
             groups[category] = (heading, list);
             sections.Children.Add(GuideParts.Vertical(heading, list));
             foreach (var feature in FeatureCatalog.SettingsFeatures.Where(f => f.Category == category))
@@ -80,12 +113,12 @@ public sealed class SettingsWindow : Window
                 ToolTip.SetTip(editor, feature.Description);
                 var help = new Button { Content = "How to use", HorizontalAlignment = HorizontalAlignment.Right };
                 AutomationProperties.SetName(help, "Help for " + feature.Name);
-                help.Click += (_, _) => new HelpWindow(registry, feature.Id, async id =>
+                help.Click += (_, _) => HelpWindow.ShowFor(this, () => new HelpWindow(registry, feature.Id, async id =>
                 {
                     if (id == CommandIds.Settings) { search.Text = feature.Name; Filter(); }
                     else if (id == CommandIds.Shortcuts) await new ShortcutsWindow(registry, _openFeature, _askAI, _answerAI).ShowDialog(this);
                     else if (_openFeature is not null) await _openFeature(id);
-                }, _askAI, answerAI).Show(this);
+                }, _askAI, answerAI), feature.Id);
                 var top = new DockPanel();
                 DockPanel.SetDock(help, Dock.Right);
                 top.Children.Add(help);
@@ -104,10 +137,10 @@ public sealed class SettingsWindow : Window
         }
         var aiSummary = GuideParts.Body("");
         var aiWritingDescription = GuideParts.Caption("");
-        var aiList = new StackPanel { Spacing = 10 };
+        var aiList = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(8).ToBinding() };
         void RefreshAI()
         {
-            var profiles = workspaceConnections?.Invoke() ?? (aiProfiles?.Invoke() ?? []).Select(p => new WorkspaceConnection(p.Id, p.Name, "api", p.Model, p.Endpoint)).ToArray();
+            var profiles = workspaceConnections?.Invoke() ?? (aiProfiles?.Invoke() ?? []).Select(p => new WorkspaceConnection(p.Id, p.Name, "api", p.Model, p.Endpoint, AIConnectionRules.NormalizeSendCharacters(p.SendCharacters))).ToArray();
             var shortcut = Gesture.Describe(registry.GetGesture(CommandIds.AskAI));
             var writingAction = shortcut.Length > 0 ? "Press " + shortcut : "Choose Edit → Write with AI";
             aiWritingDescription.Text = "Choose a connection in the main toolbar. " + writingAction + " in Source, Reading preview or the Reference pane. Choose what to share, generate a suggestion and review it before applying changes. For an MCP connection, choose Open MCP tools to review and run a tool separately.";
@@ -135,17 +168,24 @@ public sealed class SettingsWindow : Window
         aiSection.Children.Add(aiHeading);
         aiSection.Children.Add(aiCards);
         sections.Children.Add(aiSection);
-        var integrationStatus = GuideParts.Body(WindowsFileAssociations.CurrentRegistration());
-        var register = new Button { Content = "Register this copy with Windows", Classes = { "accent" } };
+        var integrationStatus = MessageTones.Follow(GuideParts.Body(WindowsFileAssociations.CurrentRegistration()));
+        var register = new Button { Content = "Register this copy with Windows", IsEnabled = OperatingSystem.IsWindows(), Classes = { "accent" } };
         register.Click += (_, _) =>
         {
             try { WindowsFileAssociations.RegisterCurrentCopy(); integrationStatus.Text = "Registered this copy. Your default app was kept.\n" + WindowsFileAssociations.CurrentRegistration(); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { integrationStatus.Text = "Could not register Tern: " + ex.Message; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { integrationStatus.Text = "Could not register Tern: " + Tern.App.Shell.UserProblem.Plain(ex); }
+        };
+        var unregister = new Button { Content = "Remove Explorer integration", IsEnabled = OperatingSystem.IsWindows() };
+        unregister.Click += (_, _) =>
+        {
+            try { WindowsFileAssociations.UnregisterCurrentUser(); integrationStatus.Text = "Removed Tern's Explorer integration for this user. Your default app and other applications were kept.\n" + WindowsFileAssociations.CurrentRegistration(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { integrationStatus.Text = "Could not remove Tern's Explorer integration: " + Tern.App.Shell.UserProblem.Plain(ex); }
         };
         windowsSection.Children.Add(GuideParts.Vertical(GuideParts.Title("Windows integration"), GuideParts.Card(GuideParts.Vertical(
             GuideParts.Body("Open Markdown files from any Explorer folder"),
             GuideParts.Caption("Adds Open with Tern for .md files and makes this copy available in Open with. Your current default app stays unchanged. Moving this EXE or portable folder requires re-registration."),
-            integrationStatus, GuideParts.Actions(register)))));
+            GuideParts.Caption("Remove Explorer integration removes Tern's registration for this user immediately. It does not change your default app or another application's registration."),
+            integrationStatus, GuideParts.ButtonRow(register, unregister)))));
         sections.Children.Add(windowsSection);
         RefreshAI();
         Activated += (_, _) => RefreshAI();
@@ -154,9 +194,9 @@ public sealed class SettingsWindow : Window
             var words = (search.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var (feature, card) in cards)
                 card.IsVisible = (words.Length > 0 || feature.Category == navigation.SelectedItem as string)
-                    && words.All(w => $"{feature.Name} {feature.Category} {feature.Description}".Contains(w, StringComparison.OrdinalIgnoreCase));
+                    && words.All(w => $"{feature.Name} {feature.Category} {SettingsNavigation.Title(feature.Category)} {feature.Description}".Contains(w, StringComparison.OrdinalIgnoreCase));
             windowsSection.IsVisible = words.Length == 0 ? navigation.SelectedItem as string == "Windows integration"
-                : words.All(w => "Windows integration Explorer Markdown registration default app Open with Tern".Contains(w, StringComparison.OrdinalIgnoreCase));
+                : words.All(w => "Windows integration Explorer Markdown registration default app Open with Tern remove unregister".Contains(w, StringComparison.OrdinalIgnoreCase));
             aiSection.IsVisible = words.Length == 0 ? navigation.SelectedItem as string == "AI connections"
                 : words.All(w => "AI connections providers models keys Ollama Claude writing".Contains(w, StringComparison.OrdinalIgnoreCase));
             foreach (var (category, group) in groups)
@@ -185,7 +225,13 @@ public sealed class SettingsWindow : Window
         var apply = new Button { Content = "Apply" };
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         var resetCategory = new Button { Content = "Reset this category to defaults" };
-        var applyStatus = GuideParts.Body("AI connection and credential changes are managed separately and take effect immediately.");
+        var applyStatus = MessageTones.Follow(GuideParts.Body("AI connection and credential changes are managed separately and take effect immediately."));
+        string PendingState() => JsonSerializer.Serialize(new
+        {
+            Settings = settings,
+            Bindings = registry.Overrides.OrderBy(binding => binding.Key, StringComparer.Ordinal)
+        });
+        var appliedState = PendingState();
         bool Commit()
         {
             var previous = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(liveSettings))!;
@@ -200,16 +246,22 @@ public sealed class SettingsWindow : Window
                 }
                 // Clone mutable collections before committing so further pending edits remain private.
                 liveSettings.WorkspaceExclusions = [.. settings.WorkspaceExclusions];
+                liveSettings.ExportPreferences = settings.ExportPreferences.Clone();
+                liveSettings.SavedWorkspaceSearches = settings.SavedWorkspaceSearches
+                    .ToDictionary(pair => pair.Key, pair => new List<string>(pair.Value ?? []));
+                liveSettings.RemoteImageTrustedFiles = [.. settings.RemoteImageTrustedFiles];
                 liveSettings.KeyBindings = registry.Overrides.ToDictionary();
                 liveRegistry.LoadOverrides(liveSettings.KeyBindings);
                 commit?.Invoke();
+                settings.KeyBindings = registry.Overrides.ToDictionary();
+                appliedState = PendingState();
                 applyStatus.Text = "Settings applied."; return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
             {
                 foreach (var property in typeof(AppSettings).GetProperties().Where(p => p.CanWrite)) property.SetValue(liveSettings, property.GetValue(previous));
                 liveRegistry.LoadOverrides(previousBindings);
-                applyStatus.Text = "Settings could not be saved. Pending changes are kept here for retry. " + ex.Message;
+                applyStatus.Text = "Settings could not be saved. Pending changes are kept here for retry. " + Tern.App.Shell.UserProblem.Plain(ex);
                 return false;
             }
         }
@@ -218,6 +270,7 @@ public sealed class SettingsWindow : Window
         cancel.Click += (_, _) => Close();
         resetCategory.Click += (_, _) =>
         {
+            if (!resetCategory.IsEnabled) return;
             var defaults = new AppSettings();
             foreach (var feature in FeatureCatalog.SettingsFeatures.Where(f => f.Category == navigation.SelectedItem as string))
             {
@@ -228,26 +281,35 @@ public sealed class SettingsWindow : Window
             }
             applyStatus.Text = "Category defaults are pending. Choose Apply or Done to commit them.";
         };
+        void UpdateResetScope() => resetCategory.IsEnabled = string.IsNullOrWhiteSpace(search.Text)
+            && FeatureCatalog.SettingsFeatures.Any(feature => feature.Category == navigation.SelectedItem as string);
+        search.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) UpdateResetScope(); };
+        navigation.SelectionChanged += (_, _) => UpdateResetScope();
         var sidebar = new ScrollViewer
         {
-            Content = GuideParts.Vertical(GuideParts.Caption("YOUR WORKSPACE"), navigation, GuideParts.Caption("Make space for the way you write.\n\nAI connections are available across notes once configured.")),
+            Content = GuideParts.Vertical(GuideParts.Caption("CATEGORIES"), navigation, GuideParts.Caption("Make space for the way you write.\n\nAI connections are available across notes once configured.")),
             Margin = new Thickness(0, 0, 20, 0),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
         AutomationProperties.SetName(sidebar, "Settings category viewport");
-        var categoryChoice = new ComboBox { ItemsSource = navigation.ItemsSource, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var categoryChoice = new ComboBox { ItemsSource = categoryKeys, ItemTemplate = categoryTemplate, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        categoryChoice.ContainerPrepared += (_, e) =>
+        {
+            if (e.Index >= 0 && e.Index < categoryKeys.Length)
+                AutomationProperties.SetName(e.Container, SettingsNavigation.Title(categoryKeys[e.Index]));
+        };
         AutomationProperties.SetName(categoryChoice, "Choose settings category");
         categoryChoice.SelectionChanged += (_, _) => navigation.SelectedIndex = categoryChoice.SelectedIndex;
         navigation.SelectionChanged += (_, _) => categoryChoice.SelectedIndex = navigation.SelectedIndex;
         var contentScroll = new ScrollViewer { Content = sections, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         AutomationProperties.SetName(contentScroll, "Settings content viewport");
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("240,*"), RowDefinitions = new RowDefinitions("Auto,*"), RowSpacing = 12, Children = { sidebar, categoryChoice, contentScroll } };
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("240,*"), RowDefinitions = new RowDefinitions("Auto,*"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding(), Children = { sidebar, categoryChoice, contentScroll } };
         Grid.SetRowSpan(sidebar, 2);
         Grid.SetColumn(contentScroll, 1);
         Grid.SetRowSpan(contentScroll, 2);
         var description = GuideParts.Body("Your editor, your rhythm. Personalize your workspace and connect the AI services you use.");
-        var footer = GuideParts.Vertical(applyStatus, GuideParts.Actions(resetCategory, cancel, apply, close));
-        var layout = new Grid { Margin = new Thickness(28), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 18, Children =
+        var footer = GuideParts.Vertical(applyStatus, GuideParts.Actions(close, cancel, resetCategory, apply));
+        var layout = new Grid { Margin = new Thickness(28), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(16).ToBinding(), Children =
         {
             GuideParts.Vertical(GuideParts.Caption("SETTINGS"), GuideParts.Title("Make Tern yours"), description),
             search, body, footer,
@@ -255,7 +317,7 @@ public sealed class SettingsWindow : Window
         for (var i = 0; i < layout.Children.Count; i++) Grid.SetRow(layout.Children[i], i);
         void FitNavigation()
         {
-            var compact = ClientSize.Width < 900 || ClientSize.Width < GuideParts.Scaled(720);
+            var compact = ClientSize.Width < GuideParts.Scaled(900);
             sidebar.IsVisible = !compact;
             categoryChoice.IsVisible = compact;
             description.IsVisible = !compact;
@@ -267,18 +329,98 @@ public sealed class SettingsWindow : Window
         SizeChanged += (_, _) => FitNavigation();
         Opened += (_, _) => FitNavigation();
         Content = layout;
-        if (initialCategory is not null) navigation.SelectedItem = initialCategory;
+        if (initialCategory is not null) navigation.SelectedItem = SettingsNavigation.ResolveKey(initialCategory);
         Filter();
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
+        UpdateResetScope();
+        appliedState = PendingState();
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Key.Enter || e.Source is not Control control) return;
+            var input = control as TextBox ?? control.GetVisualAncestors().OfType<TextBox>().FirstOrDefault();
+            if (input is not null && (!input.AcceptsReturn || e.KeyModifiers != KeyModifiers.None))
+                e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        var closingDecision = false;
+        var forceClose = false;
+        Closing += async (_, e) =>
+        {
+            if (forceClose || PendingState() == appliedState) return;
+            e.Cancel = true;
+            if (closingDecision) return;
+            closingDecision = true;
+            try
+            {
+                if (await PromptWindow.AskAsync(this, "Discard unapplied changes?",
+                    "Discard changes made since the last Apply? Previously applied settings and saved AI connections are kept.",
+                    ["Discard changes", "Keep editing"], 1, 1, destructiveIndex: 0) == 0)
+                {
+                    forceClose = true;
+                    Close();
+                }
+            }
+            finally { closingDecision = false; }
+        };
+        KeyDown += (_, e) => { if (e.Key == Key.Escape) { Close(); e.Handled = true; } };
     }
 
     private Control CreateEditor(AppSettings settings, string property, CommandRegistry registry)
     {
         switch (property)
         {
+            case nameof(AppSettings.RemoteImageTrustedFiles):
+                var forgetImages = new Button { Content = "Forget saved image approvals" };
+                forgetImages.Click += (_, _) => { settings.RemoteImageTrustedFiles.Clear(); forgetImages.Content = "Approvals cleared — choose Apply"; };
+                return forgetImages;
+            case nameof(AppSettings.RemoteImages): return Choice(settings.RemoteImages, v => settings.RemoteImages = v);
+            case nameof(AppSettings.OfflineMode): return Check(settings.OfflineMode, v => settings.OfflineMode = v);
             case nameof(AppSettings.Theme): return Choice(settings.Theme, v => settings.Theme = v);
+            case nameof(AppSettings.DefaultEncoding):
+                var encodingOptions = TextFileCodec.AvailableEncodings.Where(option => !option.HasBom).ToArray();
+                var encoding = new ComboBox
+                {
+                    ItemsSource = encodingOptions,
+                    ItemTemplate = new FuncDataTemplate<EncodingOption>((option, _) => new TextBlock
+                    { Text = option?.Name.Replace(" · no BOM", "", StringComparison.Ordinal), TextWrapping = TextWrapping.Wrap }),
+                    SelectedItem = encodingOptions.FirstOrDefault(option => option.Kind == settings.DefaultEncoding),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
+                encoding.SelectionChanged += (_, _) =>
+                {
+                    if (encoding.SelectedItem is not EncodingOption selected) return;
+                    settings.DefaultEncoding = selected.Kind;
+                    RefreshNewFileBom();
+                };
+                return encoding;
+            case nameof(AppSettings.DefaultEncodingHasBom):
+                var bom = _newFileBom = Check(settings.NewFileFormat.HasBom, v => settings.DefaultEncodingHasBom = v);
+                RefreshNewFileBom();
+                return bom;
+            case nameof(AppSettings.DefaultLineEnding):
+                var endings = new ComboBox { ItemsSource = new[] { LineEnding.CrLf, LineEnding.Lf, LineEnding.Cr },
+                    ItemTemplate = new FuncDataTemplate<LineEnding>((value, _) => new TextBlock
+                    { Text = value switch { LineEnding.CrLf => "CRLF (Windows)", LineEnding.Cr => "CR (classic Mac)", _ => "LF (Unix/macOS)" } }),
+                    SelectedItem = settings.DefaultLineEnding, MinWidth = 220 };
+                endings.SelectionChanged += (_, _) => { if (endings.SelectedItem is LineEnding value) settings.DefaultLineEnding = value; };
+                return endings;
             case nameof(AppSettings.DefaultProfile): return Choice(settings.DefaultProfile, v => settings.DefaultProfile = v);
             case nameof(AppSettings.DefaultViewMode): return Choice(settings.DefaultViewMode, v => settings.DefaultViewMode = v);
+            case nameof(AppSettings.PreviewFontFamily):
+                var readingFont = new TextBox { Text = settings.PreviewFontFamily, HorizontalAlignment = HorizontalAlignment.Stretch };
+                AutomationProperties.SetName(readingFont, "Reading font family");
+                var readingChoices = new ComboBox { ItemsSource = FontManager.Current.SystemFonts.Select(f => f.Name).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    PlaceholderText = "Choose an installed reading font", HorizontalAlignment = HorizontalAlignment.Stretch };
+                AutomationProperties.SetName(readingChoices, "Installed reading fonts");
+                readingChoices.SelectionChanged += (_, _) => { if (readingChoices.SelectedItem is string name) readingFont.Text = name; };
+                var readingSample = _readingTypefaceSample = new TextBlock { Text = "A note worth keeping\nThe quick brown fox · 0123456789", TextWrapping = TextWrapping.Wrap };
+                AutomationProperties.SetName(readingSample, "Reading font sample");
+                readingFont.PropertyChanged += (_, e) =>
+                {
+                    if (e.Property != TextBox.TextProperty || string.IsNullOrWhiteSpace(readingFont.Text)) return;
+                    settings.PreviewFontFamily = readingFont.Text;
+                    RefreshTypography();
+                };
+                RefreshTypography();
+                return GuideParts.Vertical(readingChoices, readingFont, readingSample, GuideParts.Caption("Installed fonts and fallback families affect Reading prose. Code blocks and exported files keep their own fonts."));
             case nameof(AppSettings.EditorFontFamily):
                 var font = new TextBox { Text = settings.EditorFontFamily, HorizontalAlignment = HorizontalAlignment.Stretch };
                 AutomationProperties.SetName(font, "Editor font");
@@ -299,7 +441,8 @@ public sealed class SettingsWindow : Window
             case nameof(AppSettings.PreviewFontSize): return DialogParts.Number(settings.PreviewFontSize, 8, 48, 1, v => { settings.PreviewFontSize = v; RefreshTypography(); });
             case nameof(AppSettings.ReadingWidth): return DialogParts.Number(settings.ReadingWidth, 360, 1600, 20, v => settings.ReadingWidth = v);
             case nameof(AppSettings.PreviewFullWidth): return Check(settings.PreviewFullWidth, v => settings.PreviewFullWidth = v);
-            case nameof(AppSettings.UiScale): return DialogParts.Number(settings.UiScale, 0.75, 2.5, 0.1, v => settings.UiScale = v);
+            case nameof(AppSettings.UiScale): return DialogParts.Number(settings.UiScale, AppSettings.MinimumUiScale, 2.5, 0.1, v => { settings.UiScale = v; RefreshTypography(); });
+            case nameof(AppSettings.ScaleDocumentText): return Check(settings.ScaleDocumentText, v => { settings.ScaleDocumentText = v; RefreshTypography(); });
             case nameof(AppSettings.SidebarWidth): return DialogParts.Number(settings.SidebarWidth, 180, 800, 10, v => settings.SidebarWidth = v);
             case nameof(AppSettings.SidebarVisible): return Check(settings.SidebarVisible, v => settings.SidebarVisible = v);
             case nameof(AppSettings.InspectorVisible): return Check(settings.InspectorVisible, v => settings.InspectorVisible = v);
@@ -314,11 +457,32 @@ public sealed class SettingsWindow : Window
                 var shortcuts = new Button { Content = "Edit keyboard shortcuts" };
                 shortcuts.Click += async (_, _) => await new ShortcutsWindow(registry, _openFeature, _askAI, _answerAI).ShowDialog(this);
                 return shortcuts;
+            case nameof(AppSettings.SavedWorkspaceSearches):
+                return GuideParts.Caption("Manage individual saved queries with Save search and Library Shortcuts in the main window. Workspaces and search category reset forgets all saved queries; notes are kept.");
+            case nameof(AppSettings.ExportPreferences):
+                return ExportPreferencesEditor.Build(settings.ExportPreferences);
             case nameof(AppSettings.TabSize): return DialogParts.Number(settings.TabSize, 1, 16, 1, v => settings.TabSize = (int)v);
             case nameof(AppSettings.ReduceMotion): return Check(settings.ReduceMotion, v => settings.ReduceMotion = v);
+            case nameof(AppSettings.SpellCheckEnabled): return Check(settings.SpellCheckEnabled, v => settings.SpellCheckEnabled = v);
+            case nameof(AppSettings.HybridSourceEnabled): return Check(settings.HybridSourceEnabled, v => settings.HybridSourceEnabled = v);
+            case nameof(AppSettings.AutoSaveEnabled): return Check(settings.AutoSaveEnabled, v => settings.AutoSaveEnabled = v);
+            case nameof(AppSettings.AutoSaveIdleSeconds): return DialogParts.Number(settings.AutoSaveIdleSeconds, 30, 3600, 1, v => settings.AutoSaveIdleSeconds = (int)v);
+            case nameof(AppSettings.ShowContextGuidance): return Check(settings.ShowContextGuidance, v => settings.ShowContextGuidance = v);
             case nameof(AppSettings.WordWrap): return Check(settings.WordWrap, v => { settings.WordWrap = v; RefreshTypography(); });
             case nameof(AppSettings.ShowLineNumbers): return Check(settings.ShowLineNumbers, v => settings.ShowLineNumbers = v);
             case nameof(AppSettings.HighlightCurrentLine): return Check(settings.HighlightCurrentLine, v => settings.HighlightCurrentLine = v);
+            case nameof(AppSettings.ShowSpaces): return Check(settings.ShowSpaces, v => settings.ShowSpaces = v);
+            case nameof(AppSettings.ShowTabs): return Check(settings.ShowTabs, v => settings.ShowTabs = v);
+            case nameof(AppSettings.ShowEndOfLine): return Check(settings.ShowEndOfLine, v => settings.ShowEndOfLine = v);
+            case nameof(AppSettings.ShowColumnRuler): return Check(settings.ShowColumnRuler, v => settings.ShowColumnRuler = v);
+            case nameof(AppSettings.ColumnRulerPosition): return DialogParts.Number(settings.ColumnRulerPosition, 40, 240, 1, v => settings.ColumnRulerPosition = (int)v);
+            case nameof(AppSettings.EditorLineHeight): return DialogParts.Number(settings.EditorLineHeight, 1, 2, .05, v => { settings.EditorLineHeight = v; RefreshTypography(); });
+            case nameof(AppSettings.AllowScrollBelowDocument): return Check(settings.AllowScrollBelowDocument, v => settings.AllowScrollBelowDocument = v);
+            case nameof(AppSettings.CutCopyWholeLine): return Check(settings.CutCopyWholeLine, v => settings.CutCopyWholeLine = v);
+            case nameof(AppSettings.FindMatchCase): return Check(settings.FindMatchCase, v => settings.FindMatchCase = v);
+            case nameof(AppSettings.FindWholeWord): return Check(settings.FindWholeWord, v => settings.FindWholeWord = v);
+            case nameof(AppSettings.FindUseRegex): return Check(settings.FindUseRegex, v => settings.FindUseRegex = v);
+            case nameof(AppSettings.TaskGroupByFile): return Check(settings.TaskGroupByFile, v => settings.TaskGroupByFile = v);
             case nameof(AppSettings.InsertSpacesForTab): return Check(settings.InsertSpacesForTab, v => settings.InsertSpacesForTab = v);
             case nameof(AppSettings.SyncScroll): return Check(settings.SyncScroll, v => settings.SyncScroll = v);
             case nameof(AppSettings.RestoreSession): return Check(settings.RestoreSession, v => settings.RestoreSession = v);
@@ -326,6 +490,9 @@ public sealed class SettingsWindow : Window
             case nameof(AppSettings.EnsureFinalNewlineOnSave): return Check(settings.EnsureFinalNewlineOnSave, v => settings.EnsureFinalNewlineOnSave = v);
             case nameof(AppSettings.TrimTrailingWhitespaceOnSave): return Check(settings.TrimTrailingWhitespaceOnSave, v => settings.TrimTrailingWhitespaceOnSave = v);
             case nameof(AppSettings.AllowExternalLinkOpening): return Check(settings.AllowExternalLinkOpening, v => settings.AllowExternalLinkOpening = v);
+            case nameof(AppSettings.HistoryBudgetMiB): return DialogParts.Number(settings.HistoryBudgetMiB, 1, 1024, 1, v => settings.HistoryBudgetMiB = (int)v);
+            case nameof(AppSettings.KnowledgeAssistantEnabled): return Check(settings.KnowledgeAssistantEnabled, v => settings.KnowledgeAssistantEnabled = v);
+            case nameof(AppSettings.KnowledgeAllowRemote): return Check(settings.KnowledgeAllowRemote, v => settings.KnowledgeAllowRemote = v);
             default: throw new ArgumentOutOfRangeException(nameof(property));
         }
     }
@@ -333,7 +500,7 @@ public sealed class SettingsWindow : Window
     private static CheckBox Check(bool value, Action<bool> apply) => DialogParts.Check("Enabled", value, apply);
     private static ComboBox Choice<T>(T selected, Action<T> apply) where T : struct, Enum
     {
-        var box = new ComboBox { ItemsSource = Enum.GetValues<T>(), SelectedItem = selected, MinWidth = 220 };
+        var box = new ComboBox { ItemsSource = Enum.GetValues<T>(), ItemTemplate = EnumChoices.Template<T>(), SelectedItem = selected, MinWidth = 220 };
         box.SelectionChanged += (_, _) => { if (box.SelectedItem is T value) apply(value); };
         return box;
     }

@@ -1,5 +1,6 @@
 using SkiaSharp;
 using Tern.App.Documents;
+using Tern.App.Shell;
 using Tern.Domain.Text;
 using Tern.Filesystem;
 using Tern.Workspaces;
@@ -38,7 +39,21 @@ internal static class ImageAttachmentImporter
         throw new IOException("Choose a different attachment name; too many copies use this name.");
     }
 
-    public static async Task<string> InsertAsync(DocumentTab tab, byte[] bytes, string folder, string name, int offset, long revision, bool allowExternalDestination = false, string? altText = null, Func<bool>? isCurrent = null, Func<string, Task<bool>>? confirmReplace = null)
+    /// <summary>Confirmation text for replacing an existing attachment; lists the notes that already show it.</summary>
+    internal static string BuildReplaceMessage(string target, IReadOnlyList<string> referencingNotes)
+    {
+        const int shown = 8;
+        var text = "Replace “" + Path.GetFileName(target) + "”?\n\nDestination: " + target
+            + "\n\nThe old image goes to the Windows Recycle Bin, so it can be restored from there.";
+        if (referencingNotes.Count == 0)
+            return text + "\n\nNo other note in the Library links to this image. Cancel keeps the existing file and stops insertion.";
+        return text + $"\n\n{referencingNotes.Count} other note(s) use this image and will show the new one:\n"
+            + string.Join("\n", referencingNotes.Take(shown).Select(note => "• " + note))
+            + (referencingNotes.Count > shown ? $"\n…and {referencingNotes.Count - shown} more." : string.Empty)
+            + "\n\nCancel keeps the existing file and stops insertion.";
+    }
+
+    public static async Task<string> InsertAsync(DocumentTab tab, byte[] bytes, string folder, string name, int offset, long revision, bool allowExternalDestination = false, string? altText = null, Func<bool>? isCurrent = null, Func<string, Task<bool>>? confirmReplace = null, ILocalFileDeletion? recycleBin = null)
     {
         if (tab.IsReadOnly || tab.FilePath is not { } document) throw new IOException("Save a writable document before inserting an attachment.");
         ValidateImage(bytes, name);
@@ -54,7 +69,8 @@ internal static class ImageAttachmentImporter
         if (File.Exists(target))
         {
             if (confirmReplace is null) throw new IOException("That filename already exists. Choose another name; the existing attachment was kept.");
-            if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0) throw new IOException("Choose a destination that is not a linked file.");
+            if (recycleBin is null) throw new IOException("The existing attachment can only be replaced when it can be moved to the Recycle Bin. Choose another name; the existing file was kept.");
+            if (CloudFiles.IsUnsafeReparsePoint(new FileInfo(target))) throw new IOException("Choose a destination that is not a linked file.");
             using (var previous = File.OpenRead(target))
             {
                 if (previous.Length > MaxBytes) throw new IOException("The existing destination exceeds 16 MiB. Choose another filename; the existing file was kept.");
@@ -72,12 +88,18 @@ internal static class ImageAttachmentImporter
             if (FileIdentity.ResolvePhysicalPath(folder) != targetFolder) throw new IOException("The attachment folder changed. Try again.");
             if (previousHash is not null)
             {
-                if ((File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0) throw new IOException("The destination changed to a linked file after confirmation. Insert the image again.");
+                if (CloudFiles.IsUnsafeReparsePoint(new FileInfo(target))) throw new IOException("The destination changed to a linked file after confirmation. Insert the image again.");
                 using (var previous = File.OpenRead(target))
                     if (!(await System.Security.Cryptography.SHA256.HashDataAsync(previous)).SequenceEqual(previousHash))
                         throw new IOException("The destination changed after confirmation. Insert the image again.");
+                try { await recycleBin!.MoveToRecycleBinAsync(target); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException or NotSupportedException or System.ComponentModel.Win32Exception)
+                { throw new IOException("The existing image could not be moved to the Recycle Bin, so it was kept: " + ex.Message, ex); }
+                if (File.Exists(target)) throw new IOException("The existing image is still in place after the Recycle Bin request, so it was kept.");
             }
-            File.Move(staged, target, overwrite: previousHash is not null);
+            try { File.Move(staged, target, overwrite: false); }
+            catch (Exception ex) when (previousHash is not null && ex is IOException or UnauthorizedAccessException)
+            { throw new IOException($"The old image was moved to the Recycle Bin but the new one could not be written to '{target}'. Restore the old image from the Recycle Bin: " + ex.Message, ex); }
             committed = true;
             RegisterSelectedImage(tab, target);
             InsertLink(tab, document, target, name, offset, altText);

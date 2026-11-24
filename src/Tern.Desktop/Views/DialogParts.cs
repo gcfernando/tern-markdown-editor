@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -22,13 +23,13 @@ internal static class DialogParts
     }
 
     /// <summary>Keep setup steps in one stable viewport, sized like the settings window that opened them.</summary>
-    public static void SetupWizard(Window window, string title)
+    public static void SetupWizard(Window window, string title, DialogGuidance guidanceKey)
     {
         window.Classes.Add("ai-connection-wizard");
-        Setup(window, title, 940, 760, stableViewport: true);
+        Setup(window, title, 940, 760, guidanceKey, stableViewport: true);
     }
 
-    public static void Setup(Window window, string title, double width, double height, bool stableViewport = false, bool guidance = true)
+    public static void Setup(Window window, string title, double width, double height, DialogGuidance guidanceKey, bool stableViewport = false, bool guidance = true)
     {
         window.Title = title;
         window.Width = width;
@@ -75,13 +76,30 @@ internal static class DialogParts
         }
         void ContentChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
-            if (e.Property.Name is "Text" or "IsVisible" or "IsExpanded" or "Content" or "ItemsSource" or "FontSize" or "SelectedItem")
-                QueueFit();
+            if (e.Property.Name is not ("Text" or "IsVisible" or "IsExpanded" or "Content" or "ItemsSource" or "FontSize" or "SelectedItem"))
+                return;
+            // A virtualized list recycles its rows whenever it is measured, including by
+            // the fit itself. Rows live in the list's bounded viewport and never size the dialog.
+            if (sender is Control control && control.FindAncestorOfType<VirtualizingPanel>() is not null)
+                return;
+            QueueFit();
         }
         void ObserveContent()
         {
             if (window.Content is not Control content) return;
-            foreach (var control in content.GetVisualDescendants().OfType<Control>().Prepend(content))
+            var controls = content.GetVisualDescendants().OfType<Control>().Prepend(content).ToArray();
+            var primary = controls.OfType<DialogActions>().LastOrDefault()?.Primary;
+            foreach (var button in controls.OfType<Button>())
+            {
+                if (button.Classes.Contains("danger")) button.IsDefault = false;
+                if (primary is not null && !ReferenceEquals(button, primary))
+                {
+                    button.Classes.Remove("accent");
+                    button.IsDefault = false;
+                }
+            }
+            // Scrollbars react to the fit itself; observing them would requeue it forever.
+            foreach (var control in controls.Where(control => control is not ScrollBar && control.FindAncestorOfType<ScrollBar>() is null))
                 if (observed.Add(control)) control.PropertyChanged += ContentChanged;
         }
         void LayoutUpdated(object? sender, EventArgs e)
@@ -93,7 +111,7 @@ internal static class DialogParts
         window.Opened += (_, _) =>
         {
             opened = true;
-            if (guidance) GuidanceStrip.Install(window);
+            if (guidance) GuidanceStrip.Install(window, guidanceKey);
             if (stableViewport && window.Owner is Window owner &&
                 (owner is SettingsWindow || owner.Classes.Contains("ai-connection-wizard")))
             {
@@ -107,6 +125,7 @@ internal static class DialogParts
             // Measuring once inside Opened can retain the initial empty viewport.
             QueueFit();
             window.LayoutUpdated += LayoutUpdated;
+            if (window.Content is Control animatedContent) Tern.Desktop.Services.MotionPolicy.Enter(animatedContent);
             Dispatcher.UIThread.Post(() =>
             {
                 if (!closed && (window.FocusManager?.GetFocusedElement() is not Control focused || ReferenceEquals(focused, window))
@@ -148,8 +167,15 @@ internal static class DialogParts
     {
         if (window.Content is not Control content) return;
         var width = window.ClientSize.Width > 0 ? window.ClientSize.Width : window.Width;
+        // Measure without scrollbar gutters. A bar left visible by the previous size
+        // narrows the text, inflates this height and can keep itself visible.
+        var autoViewers = content.GetVisualDescendants().OfType<ScrollViewer>()
+            .Where(viewer => viewer.VerticalScrollBarVisibility == ScrollBarVisibility.Auto
+                && !viewer.GetVisualAncestors().OfType<TextBox>().Any()).ToArray();
+        foreach (var viewer in autoViewers) viewer.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
         content.Measure(new Size(width, double.PositiveInfinity));
         var naturalHeight = Math.Ceiling(content.DesiredSize.Height);
+        foreach (var viewer in autoViewers) viewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         // The probe must not become the live measure for a star-row dialog. If
         // the bounded Height stays unchanged (for example after validation),
         // there is otherwise no resize to restore the finite viewport and the

@@ -70,6 +70,8 @@ public delegate string? HtmlUrlPolicy(HtmlUrlKind kind, string url);
 /// <summary>Limits and hooks for <see cref="HtmlSanitizer"/>.</summary>
 public sealed record HtmlSanitizerOptions
 {
+    public bool RejectTruncation { get; init; }
+
     /// <summary>Optional extra URL decision, applied after the built-in checks.</summary>
     public HtmlUrlPolicy? UrlPolicy { get; init; }
 
@@ -170,16 +172,20 @@ public sealed partial class HtmlSanitizer
     /// <summary>Sanitises <paramref name="html"/> into a correctly nested list of pieces.</summary>
     public IReadOnlyList<HtmlPiece> Parse(string html)
     {
+        if (_options.RejectTruncation && html.Length > _options.MaxInputLength)
+            throw new InvalidDataException("The HTML is too large to convert. Use Paste Plain Text instead.");
         var input = html.Length > _options.MaxInputLength ? html[.._options.MaxInputLength] : html;
         var pieces = new List<HtmlPiece>();
         var stack = new List<string>();
         string? skipping = null;
         var skipDepth = 0;
 
-        foreach (var token in HtmlTokenizer.Tokenize(input))
+        foreach (var token in HtmlTokenizer.Tokenize(input, _options.RejectTruncation))
         {
             if (pieces.Count >= _options.MaxPieces)
             {
+                if (_options.RejectTruncation)
+                    throw new InvalidDataException("The HTML contains too many elements. Use Paste Plain Text instead.");
                 break;
             }
 

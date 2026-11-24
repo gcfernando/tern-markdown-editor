@@ -1,6 +1,6 @@
 # Feature inventory and validation
 
-This is the current review scope for Tern's tracked checkout, not a certificate of stable-release acceptance. Application version remains **1.0.4**. Historical changelog counts describe earlier reviews and must not be reused as results for a new source/package snapshot.
+This is the current review scope for Tern's tracked checkout, not a certificate of stable-release acceptance. Application version remains **1.0.5**. Historical changelog counts describe earlier reviews and must not be reused as results for a new source/package snapshot.
 
 ## Source understanding
 
@@ -19,18 +19,15 @@ That is broad source coverage plus targeted detailed review, **not** a claim tha
 
 ## Automated gate and external cases
 
-The unfiltered solution contains tests that need material or OS interaction absent from a clean hosted checkout. The reproducible workflow reads `tools/automated-test-filter.txt` and excludes **eight cases**, while retaining the original tests/assertions for separate acceptance:
+On 2026-11-21, the user approved removing the eight cases tied to unavailable original corpus/sample files and then explicitly confirmed removing the one skipped external-payload remote-image acceptance case. These nine removed cases are not passing acceptance evidence. Generalized rendering/image coverage and the synthetic scrollbar case remain. The reproducible workflow reads `tools/automated-test-filter.txt`; its single clause excludes only the interactive Windows Shell case:
 
 | Excluded group | Cases | Required environment/input |
 | --- | --- | --- |
-| `Tern.Desktop.Tests.RenderingCorpusModeTests` | 1 | Original untracked rendering corpus/inventory |
-| `Tern.Desktop.Tests.Question35SampleTests` | 2 | Exact supplied external Markdown sample |
 | `Tern.Desktop.Tests.NativeRecycleRestoreTests` | 1 | Interactive Windows Shell/recycle-bin restore |
-| `CorpusValidationTests.Every_inventoried_document_preserves_semantic_blocks_and_realizes_native_preview` | 1 | Original rendering corpus inventory |
-| `CorpusLocalAssetTests.Every_corpus_image_records_actual_native_load_or_explicit_policy_block` | 1 | Original corpus images |
-| `ScrollbarDragTests.Held_left_mouse_thumb_drag_moves_down_and_back_up_without_snapback`, `suppliedSample: True` | 2 | Supplied sample at widths 400 and 760 |
 
-The synthetic scrollbar cases (`suppliedSample: False`) remain in the gate. A pre-existing remote-asset skip must be reported if present in a run. Exclusion is not a pass, and the filtered gate is not the full unfiltered suite.
+The synthetic scrollbar case remains in the gate without an external-file parameter. The external-payload remote-asset skip was removed with explicit approval; general remote-image tests remain. Exclusion or removal is not a pass, and the filtered gate is not the full unfiltered suite.
+
+The native Windows recycle/restore case passed on 2026-11-21 using only its GUID-named synthetic file, including in the complete unfiltered run before the eight original-input cases were removed. The missing original corpus/sample inputs remain unverified, but their eight tests are no longer part of the agreed automated suite. A previous offline disposable Windows Sandbox also passed actual MSI installation, installed-payload hashes, native edit/save/forward/restart for installed/portable/standalone forms, and uninstall while preserving unrelated synthetic Markdown registrations. These results do not establish current-package acceptance or unexecuted DPI, physical input, screen-reader, clipboard or printer acceptance.
 
 This page does not assert that a pending run succeeded. Use the [workflow run](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml), its TRX/evidence artifacts and package manifest for the exact source commit, test totals, exclusions and smoke results. Record genuine failures and fixes rather than changing a valid assertion solely to obtain a green result.
 

@@ -31,8 +31,8 @@ public sealed class EntityHeadingEvidenceTests
         var preview = fixture.Window.PreviewControl.Document!;
         fixture.Window.UpdateLayout();
         Dispatcher.UIThread.RunJobs();
-        var root = Directory.GetParent(Screenshots.Folder)!.Parent!.FullName;
-        var output = Path.Combine(root, "artifacts", "rendering-validation", "regressions", "entity-heading");
+        
+        var output = Tern.Tests.Shared.TestOutput.Folder("rendering-validation", "regressions", "entity-heading");
         Directory.CreateDirectory(output);
         var phase = Environment.GetEnvironmentVariable("TERN_ENTITY_CAPTURE_PHASE") == "after" ? "after" : "before";
         using (var frame = fixture.Window.CaptureRenderedFrame())

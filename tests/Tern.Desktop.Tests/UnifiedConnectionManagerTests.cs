@@ -62,7 +62,7 @@ public sealed class UnifiedConnectionManagerTests
                 Assert.Empty(window.OwnedWindows);
                 Assert.StartsWith("Step 1", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
                 Assert.True(Find<Button>(window, "Delete AI connection").IsEnabled);
-                var configure = Find<Button>(window, "AI setup next"); Assert.Equal("Configure connection", configure.Content);
+                var configure = Find<Button>(window, "Next step"); Assert.Equal("Configure connection", configure.Content);
                 Assert.Equal(original, File.ReadAllText(store.FilePath)); Assert.Equal(0, transport.Calls);
                 Click(configure); await Settle(window);
                 var editor = Assert.Single(window.OwnedWindows);
@@ -90,6 +90,7 @@ public sealed class UnifiedConnectionManagerTests
     [InlineData("openai")]
     [InlineData("anthropic")]
     [InlineData("ollama")]
+    [InlineData("deepseek")]
     [InlineData("compatible")]
     public void Selecting_a_saved_API_stays_on_selection_until_configure_is_clicked(string serviceId)
     {
@@ -108,7 +109,7 @@ public sealed class UnifiedConnectionManagerTests
             Assert.Empty(window.OwnedWindows);
             Assert.Equal(service.Name, Find<ComboBox>(window, "AI service preset").SelectedItem);
             Assert.True(Find<Button>(window, "Delete AI connection").IsEnabled);
-            Click(Find<Button>(window, "AI setup next")); Pump(window);
+            Click(Find<Button>(window, "Next step")); Pump(window);
             Assert.StartsWith("Step 2", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
             Assert.Equal("saved-model", Find<TextBox>(window, "Model name").Text);
             Assert.Equal(original, File.ReadAllText(store.FilePath)); Assert.Equal(0, transport.Calls);
@@ -132,7 +133,7 @@ public sealed class UnifiedConnectionManagerTests
             {
                 menu.SelectedIndex = Array.IndexOf(services, name); Pump(window);
                 Assert.False(Find<TextBox>(window, "API key (saved only when you choose Save connection)").IsEnabled);
-                Assert.True(Find<Button>(window, "AI setup next").IsEnabled);
+                Assert.True(Find<Button>(window, "Next step").IsEnabled);
                 var guide = Find<Button>(window, "AI service setup guide");
                 Assert.True(guide.IsEffectivelyVisible); Assert.True(guide.IsEnabled);
                 Assert.Equal(name == "GitHub Copilot" ? "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli" : "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http", ToolTip.GetTip(guide));
@@ -140,7 +141,7 @@ public sealed class UnifiedConnectionManagerTests
             }
             menu.SelectedIndex = 0; Pump(window);
             Assert.Equal(AIServices.Get("openai").Documentation, ToolTip.GetTip(Find<Button>(window, "AI service setup guide")));
-            Click(Find<Button>(window, "AI setup next")); Pump(window);
+            Click(Find<Button>(window, "Next step")); Pump(window);
             Assert.True(Find<TextBox>(window, "Model name").IsEnabled);
             Assert.True(Find<TextBox>(window, "API key (saved only when you choose Save connection)").IsEnabled);
         }

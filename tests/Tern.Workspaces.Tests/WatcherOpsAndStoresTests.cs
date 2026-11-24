@@ -465,6 +465,39 @@ public sealed class RecentItemsStoreTests : IDisposable
         Assert.Equal("19.md", Path.GetFileName(store.Files[0].Path));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Rename_notifies_exact_spelling_without_activity_or_filesystem_evidence(bool persistenceFailure)
+    {
+        var now = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc);
+        var store = new RecentItemsStore(_dir.Path, clock: () => now = now.AddMinutes(1));
+        var original = Path.Combine(_dir.Path, "absent", "README.md");
+        var renamed = Path.Combine(_dir.Path, "absent", "readme.md");
+        var notifications = new List<RecentRename>();
+        store.Renamed += (_, change) => notifications.Add(change);
+        store.AddFile(original);
+        store.AddFile(original.ToUpperInvariant());
+        Assert.Empty(notifications);
+        var before = Assert.Single(store.Files);
+        using var blocker = persistenceFailure
+            ? new FileStream(Path.Combine(_dir.Path, RecentItemsStore.FileName), FileMode.Open, FileAccess.Read, FileShare.Read)
+            : null;
+
+        store.Rename(RecentKind.File, original, renamed);
+
+        var change = Assert.Single(notifications);
+        Assert.Equal(RecentKind.File, change.Kind);
+        Assert.Equal(WorkspacePaths.Normalize(original), change.OldPath);
+        Assert.Equal(WorkspacePaths.Normalize(renamed), change.NewPath);
+        Assert.Equal(before.LastOpenedUtc, Assert.Single(store.Files).LastOpenedUtc);
+        Assert.Equal(renamed, Assert.Single(store.Files).Path);
+        Assert.False(Directory.Exists(Path.GetDirectoryName(original)));
+        Assert.Equal(persistenceFailure, store.LastSaveError is not null);
+        Assert.Equal(persistenceFailure ? before.Path : renamed,
+            Assert.Single(new RecentItemsStore(_dir.Path).Files).Path);
+    }
+
     [Fact]
     public void Remove_and_rename_update_the_list()
     {
@@ -600,6 +633,23 @@ public sealed class SessionStoreTests : IDisposable
         Assert.Null(loaded.ActiveTab);
         Assert.Null(loaded.Window?.Width);
         Assert.Single(loaded.FileViews);
+    }
+
+    [Fact]
+    public void Thousand_open_documents_keep_every_saved_view_and_active_index()
+    {
+        var tabs = Enumerable.Range(0, 1000)
+            .Select(index => new TabState(_dir.Combine($"note{index:0000}.md"), index, index * 12.5)
+            { DiskSha256 = new string('a', 64) }).ToArray();
+        var store = new SessionStore(_dir.Path);
+        Assert.True(store.Save(new SessionSnapshot(null, tabs, tabs[^1].Path, null, new Dictionary<string, FileViewState>())
+        { ActiveTabIndex = 999 }));
+
+        var loaded = new SessionStore(_dir.Path).Load();
+
+        Assert.Equal(tabs, loaded.Tabs);
+        Assert.Equal(tabs[^1].Path, loaded.ActiveTab);
+        Assert.Equal(999, loaded.ActiveTabIndex);
     }
 
     [Fact]

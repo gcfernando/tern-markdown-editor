@@ -30,8 +30,8 @@ public sealed class WorkspaceScanOptions
     /// <summary>Maximum directory depth below the root (0 = root only). Null means unlimited.</summary>
     public int? MaxDepth { get; init; }
 
-    /// <summary>Files larger than this are skipped. Null disables the cap.</summary>
-    public long? MaxFileSizeBytes { get; init; } = 16L * 1024 * 1024;
+    /// <summary>Files larger than this are skipped. The default matches the editor’s eager-load limit. Null disables the scan cap.</summary>
+    public long? MaxFileSizeBytes { get; init; } = Tern.Filesystem.DocumentFileService.MaximumEagerLoadBytes;
 
     /// <summary>
     /// Follow directory symlinks/junctions. Even when enabled, a link is only followed if its target lies inside
@@ -55,7 +55,7 @@ public sealed class WorkspaceScanOptions
 }
 
 /// <summary>A document found by a scan.</summary>
-public sealed record WorkspaceFile(string FullPath, string RelativePath, long Length, DateTime LastWriteUtc, bool ViaLink = false);
+public sealed record WorkspaceFile(string FullPath, string RelativePath, long Length, DateTime LastWriteUtc, bool ViaLink = false, bool IsOnlineOnly = false);
 
 /// <summary>A node of the explorer tree. Directories list their children with folders first, then files, each sorted by name.</summary>
 public sealed class FileTreeNode
@@ -87,6 +87,7 @@ public sealed class FileTreeNode
     public DateTime LastWriteUtc { get; }
 
     public bool IsLink { get; }
+    public bool IsOnlineOnly { get; internal set; }
     public bool IsWorkspaceRoot { get; internal set; }
 
     public IReadOnlyList<FileTreeNode> Children => _children;
@@ -130,6 +131,7 @@ public enum ScanWarningKind
     FileTooLarge,
     SkippedLink,
     InvalidWorkspaceDefinition,
+    OnlineOnly,
 }
 
 public sealed record ScanWarning(ScanWarningKind Kind, string Path, string Message);

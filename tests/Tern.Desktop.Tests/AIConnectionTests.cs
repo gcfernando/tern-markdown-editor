@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using Tern.App;
 using Tern.Desktop.Services;
 using Xunit;
 
@@ -29,9 +30,7 @@ public class AIConnectionTests
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             Assert.Equal("local-model", body.RootElement.GetProperty("model").GetString());
             Assert.False(body.RootElement.GetProperty("stream").GetBoolean());
-            var messages = body.RootElement.GetProperty("messages");
-            Assert.Equal(1, messages.GetArrayLength());
-            Assert.Equal("Reviewed Unicode: café 😀", messages[0].GetProperty("content").GetString());
+            AIWire.AssertIndependent(body.RootElement, AIRequest.ConnectionTest("Reviewed Unicode: café 😀"));
             return Json("{\"choices\":[{\"message\":{\"content\":\"Answer\"}}]}");
         });
         using var client = new AIConnectionClient(handler);

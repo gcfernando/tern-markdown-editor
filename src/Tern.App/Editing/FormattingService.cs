@@ -13,12 +13,14 @@ public static class FormattingService
         CommandIds.HeadingUp, CommandIds.HeadingDown, CommandIds.ToggleQuote, CommandIds.ToggleBullet,
         CommandIds.ToggleNumbered, CommandIds.ToggleTask, CommandIds.InsertTable, CommandIds.ToggleTaskAtCaret,
         CommandIds.InsertCodeBlock, CommandIds.InsertRule, CommandIds.Heading1, CommandIds.Heading2, CommandIds.Heading3,
+        CommandIds.Indent, CommandIds.Outdent,
     ];
 
     public static bool IsFormattingCommand(string commandId) => Handled.Contains(commandId);
 
     /// <summary>Returns the edits for a formatting command, or null when it does not apply (unknown command, no task on the line).</summary>
-    public static EditResult? Execute(string commandId, string text, int selectionStart, int selectionLength, MarkdownAnalysis? analysis, string newline = "\n")
+    public static EditResult? Execute(string commandId, string text, int selectionStart, int selectionLength, MarkdownAnalysis? analysis, string newline = "\n",
+        int indentationSize = 2, bool insertSpaces = true)
     {
         var start = Math.Clamp(selectionStart, 0, text.Length);
         var length = Math.Clamp(selectionLength, 0, text.Length - start);
@@ -42,6 +44,8 @@ public static class FormattingService
             CommandIds.InsertRule => InsertBlock(text, start, 0, newline, code: false),
             CommandIds.InsertTable => InsertTable(text, start, length, newline),
             CommandIds.ToggleTaskAtCaret => ToggleTask(text, start, analysis),
+            CommandIds.Indent => Formatting.IndentLines(text, start, length, insertSpaces ? new string(' ', indentationSize) : "\t"),
+            CommandIds.Outdent => Formatting.OutdentLines(text, start, length, indentationSize),
             _ => null,
         };
     }
@@ -74,6 +78,11 @@ public static class FormattingService
             table.Rows.Add([.. Enumerable.Repeat(string.Empty, columns)]);
         }
 
+        return InsertTable(text, start, length, newline, table);
+    }
+
+    public static EditResult InsertTable(string text, int start, int length, string newline, MarkdownTable table)
+    {
         var rendered = table.Render(newline);
         var lines = new LineIndex(text);
         var line = lines.LineOf(start);
@@ -81,10 +90,11 @@ public static class FormattingService
         var restOfLine = text[(start + length)..lines.LineEnd(text, lines.LineOf(start + length))];
 
         // A table must begin on its own line and be separated from a preceding paragraph by a blank line.
-        var prefix = atLineStart ? string.Empty : newline + newline;
+        var previousHasText = line > 1 && text[lines.LineStart(line - 1)..lines.LineEnd(text, line - 1)].Trim().Length > 0;
+        var prefix = atLineStart ? previousHasText ? newline : string.Empty : newline + newline;
         var suffix = restOfLine.Trim().Length == 0 ? newline : newline + newline;
         var insertion = prefix + rendered.TrimEnd('\r', '\n') + suffix;
-        return new EditResult([new TextEdit(start, length, insertion)], start + prefix.Length + 2, "Column 1".Length);
+        return new EditResult([new TextEdit(start, length, insertion)], start + prefix.Length + 2, table.Header[0].Length);
     }
 
     public static EditResult InsertBlock(string text, int start, int length, string newline, bool code)

@@ -68,6 +68,9 @@ public sealed class DocumentSession
 
     public event EventHandler? StateChanged;
 
+    /// <summary>Raised when a <see cref="StateChanged"/> subscriber threw. The exception is reported, not rethrown.</summary>
+    public event EventHandler<Exception>? ListenerFailed;
+
     public IDocumentBuffer Buffer => _buffer;
 
     /// <summary>Swaps the in-memory buffer for the editor's buffer, carrying the current text across.</summary>
@@ -187,5 +190,21 @@ public sealed class DocumentSession
         RaiseStateChanged();
     }
 
-    private void RaiseStateChanged() => StateChanged?.Invoke(this, EventArgs.Empty);
+    /// <summary>
+    /// Raises <see cref="StateChanged"/> to each subscriber separately. A failing listener is reported through
+    /// <see cref="ListenerFailed"/> and never prevents the others, or the operation that changed state, from completing.
+    /// </summary>
+    private void RaiseStateChanged()
+    {
+        if (StateChanged is not { } handlers) return;
+        foreach (var handler in handlers.GetInvocationList().Cast<EventHandler>())
+        {
+            try { handler(this, EventArgs.Empty); }
+            catch (Exception ex)
+            {
+                if (ListenerFailed is { } report) report.Invoke(this, ex);
+                else System.Diagnostics.Trace.TraceError("DocumentSession listener failed: " + ex.GetType().Name);
+            }
+        }
+    }
 }

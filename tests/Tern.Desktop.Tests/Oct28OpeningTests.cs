@@ -88,7 +88,7 @@ public sealed class Oct28OpeningTests
         var online = Assert.Single(list.Items.OfType<SideRow>(), r => r.IsOnline);
         var container = Assert.IsType<ListBoxItem>(list.ContainerFromItem(online));
         var row = Assert.Single(container.GetVisualDescendants().OfType<Grid>(), g => g.ContextMenu is not null);
-        var download = Assert.Single(f.Window.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Download online file");
+        var download = Assert.Single(f.Window.GetVisualDescendants().OfType<Button>(), b => b.IsEffectivelyVisible && AutomationProperties.GetName(b) == "Save portable copy");
         Assert.Same(online, download.DataContext);
         var point = row.TranslatePoint(new Point(12, 12), f.Window)!.Value;
         f.Window.MouseDown(point, MouseButton.Right); f.Window.MouseUp(point, MouseButton.Right); Pump(f);

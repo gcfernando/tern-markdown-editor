@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Tern.App.Commands;
+using Tern.App.Shell;
 using Tern.App.Editing;
 using Tern.App.Palette;
 using Tern.App.Settings;
@@ -36,9 +37,19 @@ public partial class MainWindow
             return;
         }
 
-        if (e.Key == Key.Escape && IsOverlayOpen && OverlayLayer.Children.OfType<AIEditReview>().Any())
+        if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && IsOverlayOpen)
         {
-            HideOverlay();
+            if (OverlayLayer.Children.FirstOrDefault() is not IDismissibleOverlay { DismissWithEscape: false })
+            {
+                HideOverlay();
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (IsOverlayOpen && (e.Key == Key.F10 || e.KeyModifiers == KeyModifiers.Alt || e.Key is Key.LeftAlt or Key.RightAlt && e.KeyModifiers is KeyModifiers.None or KeyModifiers.Alt)
+            && !OverlayLayer.Children.OfType<AIPromptPanel>().Any())
+        {
             e.Handled = true;
             return;
         }
@@ -56,16 +67,26 @@ public partial class MainWindow
             modifiers.HasFlag(KeyModifiers.Meta),
             e.Key.ToString());
         var parsed = Gesture.TryParse(gesture.ToString(), out var normalized);
+        if (parsed && AltGrGuard.ShouldIgnore(normalized))
+        {
+            // AltGr character input: leave the key to the editor / text box instead of running a command.
+            return;
+        }
         var commandId = parsed ? _shell.Registry.FindCommandFor(normalized) : null;
+        if (commandId is CommandIds.Cut or CommandIds.Copy or CommandIds.Paste or CommandIds.SelectAll
+            && e.Source is Control clipboardSource && (clipboardSource is SelectableTextBlock
+                || clipboardSource.GetVisualAncestors().OfType<SelectableTextBlock>().Any()))
+            return;
         var textBoxInput = e.Source is Control source && (source is TextBox || source.GetVisualAncestors().OfType<TextBox>().Any());
         if ((textBoxInput || ReferenceEditor.IsKeyboardFocusWithin) && commandId is { } editingCommand
-            && (editingCommand is CommandIds.Undo or CommandIds.Redo or CommandIds.ChangeEncoding or CommandIds.ChangeLineEnding
+            && (editingCommand is CommandIds.Undo or CommandIds.Redo or CommandIds.Cut or CommandIds.Copy or CommandIds.Paste or CommandIds.PastePlain or CommandIds.PasteTable or CommandIds.SelectAll or CommandIds.ChangeEncoding or CommandIds.ChangeLineEnding
                 or CommandIds.InsertImage or CommandIds.PasteImage or CommandIds.ToggleTaskAtCaret
                 || editingCommand.StartsWith("format.", StringComparison.Ordinal) || editingCommand.StartsWith("insert.", StringComparison.Ordinal)))
             return;
-        if (IsOverlayOpen && OverlayLayer.Children.OfType<AIPromptPanel>().Any())
+        if (IsOverlayOpen)
         {
-            if (commandId == CommandIds.AskAI) { HideOverlay(); e.Handled = true; }
+            // SB-03: registry shortcuts are suspended while an overlay is open; only the prompt panel's own toggle stays live.
+            if (commandId == CommandIds.AskAI && OverlayLayer.Children.OfType<AIPromptPanel>().Any()) { HideOverlay(); e.Handled = true; }
             return;
         }
         // Avalonia can name Enter as Return. Use the same alias normalization
@@ -135,13 +156,28 @@ public partial class MainWindow
             return;
         }
 
-        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        if ((ctrl && e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control)
-            || (e.Key == Key.Insert && e.KeyModifiers == KeyModifiers.Shift))
+        if (e.Key == Key.Insert && e.KeyModifiers == KeyModifiers.Shift)
         {
             e.Handled = true;
             _ = PasteEditorAsync();
             return;
+        }
+        if (e.Key == Key.Tab && e.KeyModifiers is KeyModifiers.None or KeyModifiers.Shift
+            && !_shown.IsReadOnly && !_shell.IsBusy && !IsOverlayOpen)
+        {
+            var line = Editor.TextArea.Caret.Line;
+            if (_shown.Analysis?.Tables.Any(table => line >= table.Line && line <= table.Line + table.Rows) == true)
+            {
+                e.Handled = true;
+                _ = NavigateTableAsync(e.KeyModifiers == KeyModifiers.Shift);
+                return;
+            }
+            if (IsListSelection())
+            {
+                e.Handled = true;
+                RunFormatting(e.KeyModifiers == KeyModifiers.Shift ? CommandIds.Outdent : CommandIds.Indent);
+                return;
+            }
         }
         if (e.KeyModifiers is KeyModifiers.Control or (KeyModifiers.Control | KeyModifiers.Shift)
             && e.Key is Key.Z or Key.Y)
@@ -152,11 +188,12 @@ public partial class MainWindow
             return;
         }
 
-        if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None && !_shown.IsReadOnly && Editor.TextArea.Selection.IsEmpty)
+        if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None && !_shown.IsReadOnly)
         {
             var text = Editor.Document.Text;
             var newline = _shown.Session.Format.NewLineText;
-            var result = ListContinuation.OnEnter(text, Editor.CaretOffset, newline, _shown.Analysis?.CodeBlocks);
+            var result = Editor.TextArea.Selection.IsEmpty
+                ? ListContinuation.OnEnter(text, Editor.CaretOffset, newline, _shown.Analysis?.CodeBlocks) : null;
             if (result is not null)
             {
                 ApplyEdit(result);
@@ -164,9 +201,10 @@ public partial class MainWindow
             }
             else if (!text.Contains('\r') && !text.Contains('\n'))
             {
-                var indent = new string([.. text.Take(Editor.CaretOffset).TakeWhile(c => c is ' ' or '\t')]);
+                var start = Editor.SelectionStart;
+                var indent = new string([.. text.Take(start).TakeWhile(c => c is ' ' or '\t')]);
                 var insertion = newline + indent;
-                ApplyEdit(new EditResult([Tern.Domain.Text.TextEdit.Insert(Editor.CaretOffset, insertion)], Editor.CaretOffset + insertion.Length, 0));
+                ApplyEdit(new EditResult([new Tern.Domain.Text.TextEdit(start, Editor.SelectionLength, insertion)], start + insertion.Length, 0));
                 e.Handled = true;
             }
         }
@@ -187,7 +225,32 @@ public partial class MainWindow
     /// <summary>Runs a command by id. Exposed so the palette, menus, and tests share one path with the key bindings.</summary>
     internal async Task RunCommandAsync(string id)
     {
-        if (_windowClosed || !CanRunCommand(id)) return;
+        try
+        {
+            if (CommandExecutorOverride is { } executor) await executor(id);
+            else await RunCommandCoreAsync(id);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            var title = _shell.Registry.TryGet(id, out var command) ? command.Title : id;
+            _shell.ReportUnexpectedError(title, ex);
+        }
+    }
+
+    /// <summary>Test seam: replaces command execution so error handling can be exercised with a throwing command.</summary>
+    internal Func<string, Task>? CommandExecutorOverride { get; set; }
+
+    private async Task RunCommandCoreAsync(string id)
+    {
+        if (_windowClosed) return;
+        if (!CanRunCommand(id))
+        {
+            _shell.SetStatus(CommandDisabledReason(id) ?? "This action is unavailable in the current context.", Tern.App.Shell.StatusSeverity.Info);
+            return;
+        }
+        if (TableEditingService.Handles(id)) { await EditTableAsync(id); return; }
+        if (id is CommandIds.OpenUrl or CommandIds.AskAI && !RequireNetwork()) return;
         if (id is CommandIds.NewFile or CommandIds.OpenFile or CommandIds.OpenFolder or CommandIds.OpenUrl) _welcomeIsOpen = false;
         if (id is CommandIds.CloseWorkspace or CommandIds.CloseAllWorkspaces) RememberCurrentDocumentView();
         if (id == CommandIds.InsertTable)
@@ -205,6 +268,7 @@ public partial class MainWindow
         switch (id)
         {
             case CommandIds.CreateWorkspace: await CreateWorkspaceFromPickerAsync(); break;
+            case CommandIds.PromoteFolder: await PromoteFolderFromUiAsync(null); break;
             case CommandIds.CloseAllWorkspaces: await _shell.CloseAllWorkspacesAsync(); break;
             case CommandIds.LibraryFiles: await ShowNavAsync("Files"); break;
             case CommandIds.LibraryRecent: await ShowNavAsync("Recent"); break;
@@ -212,18 +276,33 @@ public partial class MainWindow
             case CommandIds.LibraryBacklinks: await ShowNavAsync("Backlinks"); break;
             case CommandIds.LibraryBrokenLinks: await ShowNavAsync("Broken"); break;
             case CommandIds.LibraryTasks: await ShowNavAsync("Tasks"); break;
+            case CommandIds.LibraryTags: await ShowNavAsync("Tags"); break;
+            case CommandIds.LibraryMentions: await ShowNavAsync("Mentions"); break;
+            case CommandIds.LibraryGraph: await ShowNavAsync("Graph"); break;
             case CommandIds.Help:
-                if (OwnedWindows.OfType<HelpWindow>().FirstOrDefault() is { } guide) guide.Activate();
-                else CreateHelpWindow().Show(this);
+                HelpWindow.ShowFor(this, () => CreateHelpWindow());
                 break;
             case CommandIds.AIConnections: await ShowSettingsAsync("AI connections"); break;
             case CommandIds.AskAI: ShowAIWritingPrompt(); break;
+            case CommandIds.AskKnowledge: ShowKnowledgeAssistant(); break;
             case CommandIds.Reset: await new ResetWindow(_shell).ShowDialog(this); ApplySettings(); ApplyTheme(); RefreshWorkspace(); break;
-            case CommandIds.ClearRecent: _shell.ClearRecentHistory(); break;
+            case CommandIds.ClearRecent:
+                if (await PromptWindow.AskAsync(this, "Clear recent history?",
+                    "Clear unpinned recent files, workspaces, URLs and the Reopen Closed Tab list? Pinned references are kept. "
+                    + "Documents, open tabs and workspace contents stay unchanged.\n\n"
+                    + "To remove pinned references too, use Reset Tern and explicitly reset Recent history (including pinned references).",
+                    ["Clear recent history", "Cancel"], 1, 1, destructiveIndex: 0) == 0)
+                    _shell.ClearRecentHistory();
+                break;
             case CommandIds.Rename: await RenameActiveDocumentAsync(); break;
+            case CommandIds.MoveDocument when _shell.ActiveTab?.FilePath is { } movePath: await MoveWithPickerAsync(movePath); break;
+            case CommandIds.DuplicateDocument when _shell.ActiveTab?.FilePath is { } copyPath:
+                await RunRelocationAsync(() => _shell.DuplicatePathAsync(copyPath), "Cannot duplicate"); break;
             case CommandIds.NewFile: _shell.NewDocument(); break;
+            case CommandIds.NewFromTemplate: await ShowStarterTemplatesAsync(); break;
+            case CommandIds.OpenTodaysNote: await _shell.OpenTodaysNoteAsync(); break;
             case CommandIds.OpenUrl:
-                var urlWindow = new OpenUrlWindow(new MarkdownUrlLoader(), cacheRoot: MarkdownUrlCache.Root(_shell.Paths.StateDirectory), activities: _shell.Activities);
+                var urlWindow = new OpenUrlWindow(CreateOnlineLoader(), cacheRoot: MarkdownUrlCache.Root(_shell.Paths.StateDirectory), activities: _shell.Activities);
                 if (await urlWindow.ShowDialog<MarkdownUrlDocument?>(this) is { } downloaded)
                 {
                     if (urlWindow.DownloadRequested) await DownloadUrlDocumentAsync(downloaded);
@@ -237,6 +316,12 @@ public partial class MainWindow
             case CommandIds.PasteImage: await PasteImageAsync(); break;
             case CommandIds.Undo: if (_shown is { IsReadOnly: false } undoTab) ContextFor(undoTab).Buffer.Undo(); break;
             case CommandIds.Redo: if (_shown is { IsReadOnly: false } redoTab) ContextFor(redoTab).Buffer.Redo(); break;
+            case CommandIds.Cut: await CopyEditorAsync(cut: true); break;
+            case CommandIds.Copy: await CopyEditorAsync(cut: false); break;
+            case CommandIds.Paste: Editor.TextArea.Focus(); await PasteEditorAsync(); break;
+            case CommandIds.PastePlain: Editor.TextArea.Focus(); await PasteEditorAsync(EditorPasteMode.Plain); break;
+            case CommandIds.PasteTable: Editor.TextArea.Focus(); await PasteEditorAsync(EditorPasteMode.Table); break;
+            case CommandIds.SelectAll: Editor.TextArea.Focus(); Editor.Select(0, Editor.Document.TextLength); break;
             case CommandIds.OpenFile:
                 if (_dialogs is not null)
                 {
@@ -260,14 +345,27 @@ public partial class MainWindow
             case CommandIds.ReopenClosedTab: await _shell.ReopenClosedTabAsync(); break;
             case CommandIds.QuickOpen: ShowQuickOpen(string.Empty); break;
             case CommandIds.GoToHeading: ShowQuickOpen("#"); break;
+            case CommandIds.FoldSection:
+            case CommandIds.MoveSectionUp:
+            case CommandIds.MoveSectionDown:
+            case CommandIds.PromoteSection:
+            case CommandIds.DemoteSection: ApplyOutlineCommand(id); break;
             case CommandIds.CommandPalette: ShowPalette(); break;
             case CommandIds.GoToLine: ShowGoToLine(); break;
             case CommandIds.FindInWorkspace: ShowWorkspaceSearch(); break;
+            case CommandIds.ReplaceInWorkspace: await ReplaceInWorkspaceAsync(); break;
+            case CommandIds.WorkspacePrivacy: await ChangeWorkspacePrivacyAsync(); break;
+            case CommandIds.ClearFileHistory: await ClearSavedHistoryAsync(false); break;
+            case CommandIds.ClearWorkspaceHistory: await ClearSavedHistoryAsync(true); break;
+            case CommandIds.RecentlyDiscarded: ShowDiscardedDrafts(); break;
+            case CommandIds.GitDiff: await ShowGitDiffAsync(); break;
             case CommandIds.Find: ShowFindBar(false); break;
             case CommandIds.Replace: ShowFindBar(true); break;
             case CommandIds.ViewSource: SetMode(ViewMode.Source); break;
             case CommandIds.ViewSplit: SetMode(ViewMode.Split); break;
             case CommandIds.ViewReading: SetMode(ViewMode.Reading); break;
+            case CommandIds.ReadCurrentLine: AnnounceDocumentInformation(currentLine: true); break;
+            case CommandIds.ReadDocumentStatus: AnnounceDocumentInformation(currentLine: false); break;
             case CommandIds.ToggleSidebar: ToggleSidebar(); break;
             case CommandIds.ShowHistory: await ShowHistoryAsync(); break;
             case CommandIds.ToggleReference: ToggleReferencePane(); break;
@@ -286,10 +384,10 @@ public partial class MainWindow
             case CommandIds.Shortcuts: await ShowShortcutsAsync(); break;
             case CommandIds.About: await new AboutWindow().ShowDialog(this); break;
             case CommandIds.ReloadFromDisk when _shell.ActiveTab is { FilePath: not null } tab:
-                await tab.CheckDiskAsync(_shell.Settings.AutoReloadCleanDocuments);
-                await _shell.ResolveConflictAsync(tab);
+                await _shell.ReloadFromDiskAsync(tab);
                 break;
             case CommandIds.RevealInExplorer when _shell.ActiveTab?.FilePath is { } path: _launcher.RevealInFileManager(path); break;
+            case CommandIds.ReviewSaveFragments: await ShowSaveFragmentsAsync(); break;
             case CommandIds.ChangeEncoding: ShowEncodingPicker(false); break;
             case CommandIds.ReopenWithEncoding: ShowEncodingPicker(true); break;
             case CommandIds.ChangeLineEnding: OnLineEndingClick(this, new RoutedEventArgs()); break;
@@ -305,7 +403,8 @@ public partial class MainWindow
         }
 
         var text = Editor.Document.Text;
-        var result = FormattingService.Execute(id, text, Editor.SelectionStart, Editor.SelectionLength, _shown.Analysis, _shown.Session.Format.NewLineText);
+        var result = FormattingService.Execute(id, text, Editor.SelectionStart, Editor.SelectionLength, _shown.Analysis, _shown.Session.Format.NewLineText,
+            _shell.Settings.TabSize, _shell.Settings.InsertSpacesForTab);
         if (result is not null)
         {
             ApplyEdit(result);
@@ -325,13 +424,14 @@ public partial class MainWindow
     private void ToggleSidebar()
     {
         if (_focusMode) ToggleFocusMode();
-        _shell.Settings.SidebarVisible = !_shell.Settings.SidebarVisible;
+        if (_libraryAutoCollapsed) _libraryForcedOpen = !_libraryForcedOpen;
+        else _shell.Settings.SidebarVisible = !_shell.Settings.SidebarVisible;
         ApplySettings();
     }
 
     private void ToggleTheme()
     {
-        _shell.Settings.Theme = _shell.Settings.Theme == ThemeChoice.Paper ? ThemeChoice.Midnight : ThemeChoice.Paper;
+        _shell.Settings.Theme = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? ThemeChoice.Paper : ThemeChoice.Midnight;
         ApplyTheme();
         RebuildPreview();
     }
@@ -345,11 +445,12 @@ public partial class MainWindow
     // ---- Overlays -----------------------------------------------------------------------------------------------
 
     private void ShowPicker(string watermark, string initialText, Func<string, IReadOnlyList<PickerItem>> provider, Action<PickerItem> accept, string emptyText = "No matches", Func<string, string>? emptyTextProvider = null,
-        Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? asyncProvider = null, Func<bool>? isCurrent = null, Func<string?>? errorProvider = null)
+        Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? asyncProvider = null, Func<bool>? isCurrent = null, Func<string?>? errorProvider = null,
+        Func<string?>? scopeStatusProvider = null)
     {
         _picker ??= new QuickPicker();
         ShowOverlay(_picker);
-        _picker.Open(watermark, initialText, provider, accept, HideOverlay, emptyText, emptyTextProvider, asyncProvider, isCurrent, errorProvider);
+        _picker.Open(watermark, initialText, provider, accept, HideOverlay, emptyText, emptyTextProvider, asyncProvider, isCurrent, errorProvider, scopeStatusProvider);
     }
 
     private void ShowOverlay(Control panel)
@@ -358,6 +459,8 @@ public partial class MainWindow
         OverlayLayer.Children.Clear();
         OverlayLayer.IsVisible = true;
         OverlayLayer.Children.Add(panel);
+        Tern.Desktop.Services.MotionPolicy.Enter(OverlayLayer);
+        Tern.Desktop.Services.MotionPolicy.Enter(panel);
     }
 
     internal void HideOverlay()
@@ -384,10 +487,21 @@ public partial class MainWindow
     }
 
     internal void ShowPalette() =>
-        ShowPicker("Type a command…", string.Empty,
-            query => [.. CommandPaletteModel.Filter(_shell.Registry, query).Where(c => CanRunCommand(c.CommandId)).Take(100).Select(c => new PickerItem(c.Title, c.Category, c.Shortcut, c.CommandId))],
+        ShowPicker("Command palette: type a command…", string.Empty,
+            query => [.. CommandPaletteModel.Filter(_shell.Registry, query).Select(c =>
+            {
+                var reason = CommandDisabledReason(c.CommandId);
+                return new PickerItem(c.Title, reason ?? c.Category, c.Shortcut, c.CommandId,
+                    IsEnabled: CanRunCommand(c.CommandId), DisabledReason: reason);
+            })],
             item =>
             {
+                if (!item.IsEnabled || item.Payload is string unavailable && !CanRunCommand(unavailable))
+                {
+                    if (item.Payload is string disabledId)
+                        _shell.SetStatus(CommandDisabledReason(disabledId) ?? item.DisabledReason ?? "This command is unavailable.", Tern.App.Shell.StatusSeverity.Info);
+                    return;
+                }
                 HideOverlay();
                 if (item.Payload is string id)
                 {
@@ -462,102 +576,154 @@ public partial class MainWindow
     {
         if (!_shell.RemoveRecent(RecentKind.File, path)) return;
         _shell.StatusMessage = _shell.Recent.LastSaveError is { } error
-            ? "Removed for this session; the file list could not be saved: " + error.Message
+            ? "Removed for this session; the file list could not be saved: " + _shell.PlainProblem(error)
             : "Reference removed. The file and any open edits are kept.";
     }
 
+    private (string Url, BannerState? Banner)? _onlineOpenFailure;
+
     private async Task OpenStoredUrlAsync(string url)
     {
+        if (!RequireNetwork()) return;
         string canonical;
         try { canonical = MarkdownUrlLoader.GetFetchAddress(url).AbsoluteUri; }
-        catch (ArgumentException ex) { _shell.StatusMessage = ex.Message; return; }
-        if (_shell.FindOpenSource(canonical, online: true) is { } existing)
+        catch (ArgumentException ex) { ShowOnlineOpenFailure(url, _shell.PlainProblem(ex)); return; }
+        if (await _shell.FindOpenSourceAsync(canonical, online: true) is { } existing)
         { _shell.ActiveTab = existing; return; }
         if (_onlineRequests.ContainsKey(canonical)) return;
         using var operation = new CancellationTokenSource();
         _onlineRequests.Add(canonical, operation);
-        using var loader = OnlineLoaderFactory();
-        using var statusOperation = _shell.BeginStatusOperation();
+        using var loader = CreateOnlineLoader();
+        using var statusOperation = _shell.BeginStatusOperation("Fetching online document", new Uri(canonical).IdnHost, operation.Cancel);
         try
         {
             _shell.StatusMessage = "Opening online file…";
-            var document = await MarkdownUrlCache.ReadAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), canonical, operation.Token, includeAssets: false)
-                ?? await loader.LoadBundleAsync(canonical, operation.Token);
-            if (!_windowClosed && !operation.IsCancellationRequested) await OpenUrlDocumentAsync(document);
+            statusOperation.Report("Checking the local URL cache");
+            var document = await MarkdownUrlCache.ReadAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), canonical, operation.Token, includeAssets: false);
+            if (document is null)
+            {
+                statusOperation.Report("Fetching the permitted online document");
+                document = await loader.LoadBundleAsync(canonical, operation.Token);
+            }
+            if (!_windowClosed && !operation.IsCancellationRequested)
+            {
+                statusOperation.Complete(outcome: "Online source ready; opening cached document");
+                await OpenUrlDocumentAsync(document);
+                if (await _shell.FindOpenSourceAsync(canonical, online: true) is not null && _onlineOpenFailure is { } failure && failure.Url == canonical)
+                {
+                    if (ReferenceEquals(_shell.Banner, failure.Banner)) _shell.DismissBanner();
+                    _onlineOpenFailure = null;
+                }
+            }
+            else statusOperation.Cancel();
         }
-        catch (OperationCanceledException) { if (!_windowClosed) _shell.StatusMessage = "Online open canceled."; }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        { if (!_windowClosed) _shell.StatusMessage = ex.Message; }
+        catch (OperationCanceledException) { statusOperation.Cancel(); if (!_windowClosed) _shell.StatusMessage = "Online open canceled."; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        { statusOperation.Fail(ex.Message); if (!_windowClosed) ShowOnlineOpenFailure(canonical, Tern.App.Shell.UserProblem.Plain(ex)); }
         finally { _onlineRequests.Remove(canonical); }
+    }
+
+    private void ShowOnlineOpenFailure(string url, string message)
+    {
+        _shell.SetStatus("Online file could not be opened: " + message, StatusSeverity.Error);
+        _shell.ShowBanner("Online file could not be opened: " + message, StatusSeverity.Error,
+            new BannerAction("Retry", async () => { if (!_windowClosed) await OpenStoredUrlAsync(url); }),
+            new BannerAction("Open from URL", async () => { if (!_windowClosed) await RunCommandAsync(CommandIds.OpenUrl); }));
+        _onlineOpenFailure = (url, _shell.Banner);
     }
 
     internal async Task OpenUrlDocumentAsync(MarkdownUrlDocument downloaded, Tern.App.Shell.DuplicateOpenBehavior behavior = Tern.App.Shell.DuplicateOpenBehavior.Activate)
     {
-        using var statusOperation = _shell.BeginStatusOperation();
-        var source = downloaded.SourceUrl.IdnHost.Equals("github.com", StringComparison.OrdinalIgnoreCase)
-            ? MarkdownUrlLoader.GetFetchAddress(downloaded.SourceUrl.AbsoluteUri).AbsoluteUri
-            : new UriBuilder(downloaded.SourceUrl) { Fragment = string.Empty }.Uri.AbsoluteUri;
-        var existing = _shell.FindOpenSource(source, online: true);
-        if (existing is not null && behavior == Tern.App.Shell.DuplicateOpenBehavior.Activate)
-        { _shell.ActiveTab = existing; return; }
-        var choice = existing is not null && behavior == Tern.App.Shell.DuplicateOpenBehavior.Ask
-            ? await _shell.AskDuplicateOpenAsync(existing) : Tern.App.Shell.DuplicateOpenChoice.NewTab;
-        if (choice == Tern.App.Shell.DuplicateOpenChoice.Cancel) return;
+        using var statusOperation = _shell.BeginStatusOperation("Opening cached online document", downloaded.SuggestedFileName);
         try
         {
-            if (downloaded.CachedPath is null)
-                downloaded = await MarkdownUrlCache.WriteAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), downloaded.RequestedUrl ?? source, downloaded);
+            statusOperation.Report("Preparing the downloaded Markdown and cache identity");
+            var source = downloaded.SourceUrl.IdnHost.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+                ? MarkdownUrlLoader.GetFetchAddress(downloaded.SourceUrl.AbsoluteUri).AbsoluteUri
+                : new UriBuilder(downloaded.SourceUrl) { Fragment = string.Empty }.Uri.AbsoluteUri;
+            var existing = await _shell.FindOpenSourceAsync(source, online: true);
+            if (existing is not null && behavior == Tern.App.Shell.DuplicateOpenBehavior.Activate)
+            { _shell.ActiveTab = existing; statusOperation.Complete(outcome: "Existing online document activated"); return; }
+            if (existing is not null && behavior == Tern.App.Shell.DuplicateOpenBehavior.Ask)
+                statusOperation.WaitForUser("Choose how to handle the already-open online document");
+            var choice = existing is not null && behavior == Tern.App.Shell.DuplicateOpenBehavior.Ask
+                ? await _shell.AskDuplicateOpenAsync(existing) : Tern.App.Shell.DuplicateOpenChoice.NewTab;
+            if (choice == Tern.App.Shell.DuplicateOpenChoice.Cancel) { statusOperation.Cancel(); return; }
+            statusOperation.Report("Writing the local immutable URL cache");
+            try
+            {
+                if (downloaded.CachedPath is null)
+                    downloaded = await MarkdownUrlCache.WriteAsync(MarkdownUrlCache.Root(_shell.Paths.StateDirectory), downloaded.RequestedUrl ?? source, downloaded);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                statusOperation.Fail(ex.Message);
+                _shell.StatusMessage = "Online document was not opened: its local cache could not be written.";
+                _dialogs?.ShowMessage("Cannot cache online document", _shell.PlainProblem(ex) + " Choose Download and Open to use another folder."); return;
+            }
+            Tern.App.Documents.DocumentTab? opened;
+            if (choice == Tern.App.Shell.DuplicateOpenChoice.Replace && existing is not null)
+            {
+                statusOperation.WaitForUser("Review unsaved changes before replacing the online tab");
+                opened = await _shell.ReplaceOnlineDocumentAsync(existing, source, downloaded.SuggestedFileName, downloaded.Text, downloaded.Format);
+                if (opened is null) { statusOperation.Cancel(); return; }
+            }
+            else opened = _shell.OpenOnlineDocument(source, downloaded.SuggestedFileName, downloaded.Text, downloaded.Format);
+            statusOperation.Report("Online document opened; attaching cached resources and preparing preview");
+            opened.ResourceDocumentPath = downloaded.CachedPath;
+            opened.IsCachedSource = downloaded.WasCached;
+            opened.SourceWarnings = downloaded.Warnings;
+            if (downloaded.CachedPath is { } cachePath)
+            {
+                if (_cacheLeases.Remove(opened, out var oldLease)) oldLease.Dispose();
+                _cacheLeases[opened] = MarkdownUrlCache.AcquireLease(cachePath);
+            }
+            // The immutable cache is the resource backing store. Keep compressed asset
+            // bytes only until publication, rather than for the lifetime of every tab.
+            opened.ResourceFiles = new Dictionary<string, byte[]>();
+            UpdateChrome();
+            await RebuildPreviewAsync();
+            try { _shell.Recent.AddUrl(downloaded.SourceUrl.AbsoluteUri); }
+            catch (ArgumentException)
+            {
+                statusOperation.Complete("The online document is open, but its address is too long to store in Recent.", true, "Online document opened with Recent warning");
+                _shell.StatusMessage = "Opened the online file, but its address is too long to keep in Recent. Use Save As to keep the document.";
+                return;
+            }
+            _shell.StatusMessage = _shell.Recent.LastSaveError is { } error
+                ? "Opened the online file, but Recent could not be saved: " + _shell.PlainProblem(error)
+                : "Online file opened from a local cache. Use Download or Save As to keep a portable copy.";
+            if (downloaded.Warnings.Count > 0)
+            {
+                _shell.StatusMessage = $"Opened with {downloaded.Warnings.Count} missing asset(s). Retry Open from URL to fetch them again.";
+                _dialogs?.ShowMessage("Download partly completed", "The Markdown was opened, but these assets remain online. Retry Open from URL after correcting access or connection problems.\n\n" + string.Join("\n\n", downloaded.Warnings));
+            }
+            var warning = downloaded.Warnings.Count > 0 || _shell.Recent.LastSaveError is not null;
+            statusOperation.Complete(downloaded.Warnings.Count > 0 ? $"{downloaded.Warnings.Count} assets remain online; retry after fixing access." : _shell.Recent.LastSaveError?.Message,
+                warning, warning ? "Online document opened with warning" : "Online document opened from local cache");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _shell.StatusMessage = "Online document was not opened: its local cache could not be written.";
-            _dialogs?.ShowMessage("Cannot cache online document", ex.Message + " Choose Download and Open to use another folder."); return;
-        }
-        Tern.App.Documents.DocumentTab? opened;
-        if (choice == Tern.App.Shell.DuplicateOpenChoice.Replace && existing is not null)
-        {
-            opened = await _shell.ReplaceOnlineDocumentAsync(existing, source, downloaded.SuggestedFileName, downloaded.Text, downloaded.Format);
-            if (opened is null) return;
-        }
-        else opened = _shell.OpenOnlineDocument(source, downloaded.SuggestedFileName, downloaded.Text, downloaded.Format);
-        opened.ResourceDocumentPath = downloaded.CachedPath;
-        opened.IsCachedSource = downloaded.WasCached;
-        opened.SourceWarnings = downloaded.Warnings;
-        if (downloaded.CachedPath is { } cachePath)
-        {
-            if (_cacheLeases.Remove(opened, out var oldLease)) oldLease.Dispose();
-            _cacheLeases[opened] = MarkdownUrlCache.AcquireLease(cachePath);
-        }
-        // The immutable cache is the resource backing store. Keep compressed asset
-        // bytes only until publication, rather than for the lifetime of every tab.
-        opened.ResourceFiles = new Dictionary<string, byte[]>();
-        UpdateChrome();
-        await RebuildPreviewAsync();
-        try { _shell.Recent.AddUrl(downloaded.SourceUrl.AbsoluteUri); }
-        catch (ArgumentException)
-        {
-            _shell.StatusMessage = "Opened the online file, but its address is too long to keep in Recent. Use Save As to keep the document.";
-            return;
-        }
-        _shell.StatusMessage = _shell.Recent.LastSaveError is { } error
-            ? "Opened the online file, but Recent could not be saved: " + error.Message
-            : "Online file opened from a local cache. Use Download or Save As to keep a portable copy.";
-        if (downloaded.Warnings.Count > 0)
-        {
-            _shell.StatusMessage = $"Opened with {downloaded.Warnings.Count} missing asset(s). Retry Open from URL to fetch them again.";
-            _dialogs?.ShowMessage("Download partly completed", "The Markdown was opened, but these assets remain online. Retry Open from URL after correcting access or connection problems.\n\n" + string.Join("\n\n", downloaded.Warnings));
-        }
+        catch (OperationCanceledException) { statusOperation.Cancel(); throw; }
+        catch (Exception ex) { statusOperation.Fail(ex.Message); throw; }
     }
 
     internal async Task DownloadUrlDocumentAsync(MarkdownUrlDocument document)
     {
-        using var statusOperation = _shell.BeginStatusOperation();
         var saved = await _shell.DownloadOnlineDocumentAsync(document.SourceUrl.AbsoluteUri, document.SuggestedFileName, document.Text, document.Format, document.Assets);
-        if (saved is null) _shell.StatusMessage = "Download canceled or not saved. Your documents were kept.";
-        if (saved is not null && document.Warnings.Count > 0)
-            _dialogs?.ShowMessage("Download partly completed", "The Markdown was saved; these assets could not be downloaded and retain their online addresses. Retry the download to a new folder.\n\n" + string.Join("\n\n", document.Warnings));
-        UpdateChrome();
-        await RebuildPreviewAsync();
+        if (saved is null)
+        { _shell.StatusMessage = "Download canceled or not saved. Your documents were kept."; UpdateChrome(); await RebuildPreviewAsync(); return; }
+        using var statusOperation = _shell.BeginStatusOperation("Preparing downloaded document preview", saved.DisplayName);
+        try
+        {
+            statusOperation.Report("Preparing the saved local document preview");
+            if (saved is not null && document.Warnings.Count > 0)
+                _dialogs?.ShowMessage("Download partly completed", "The Markdown was saved; these assets could not be downloaded and retain their online addresses. Retry the download to a new folder.\n\n" + string.Join("\n\n", document.Warnings));
+            UpdateChrome();
+            await RebuildPreviewAsync();
+            statusOperation.Complete(document.Warnings.Count > 0 ? $"{document.Warnings.Count} assets remain online; retry to a new folder." : null,
+                document.Warnings.Count > 0, document.Warnings.Count > 0 ? "Downloaded document ready with missing assets" : "Downloaded document ready");
+        }
+        catch (OperationCanceledException) { statusOperation.Cancel(); throw; }
+        catch (Exception ex) { statusOperation.Fail("The downloaded file was saved, but preview preparation failed: " + ex.Message); throw; }
     }
 
     private void ShowGoToLine() =>
@@ -600,10 +766,19 @@ public partial class MainWindow
         async Task<IReadOnlyList<PickerItem>> Matches(string query, CancellationToken token)
         {
             if (!CurrentWorkspace() || string.IsNullOrWhiteSpace(query)) return [];
-            var page = await Task.Run(() => searchWorkspace.Search(query, 40, cancellationToken: token), token);
-            token.ThrowIfCancellationRequested();
-            if (!CurrentWorkspace()) throw new OperationCanceledException(token);
-            return PresentSearch(page);
+            using var operation = _shell.Activities.Begin("Searching workspace content", searchWorkspace.Root);
+            try
+            {
+                operation.Report("Searching indexed text and unsaved buffers");
+                var page = await Task.Run(() => searchWorkspace.Search(query, 40, cancellationToken: token), token);
+                token.ThrowIfCancellationRequested();
+                if (!CurrentWorkspace()) throw new OperationCanceledException(token);
+                if (page.Error is { } error) operation.Fail(error);
+                else operation.Complete(outcome: page.Hits.Count == 0 ? "Search complete; no matches" : "Search results ready");
+                return PresentSearch(page);
+            }
+            catch (OperationCanceledException) { operation.Cancel("Search superseded or closed; documents were not changed."); throw; }
+            catch (Exception ex) { operation.Fail(ex.Message); throw; }
         }
         ShowPicker("Search document content in " + _shell.Workspace!.Name + "…", _lastSearch, MatchesSmall,
             item =>
@@ -616,12 +791,17 @@ public partial class MainWindow
                     _ = OpenDocumentPathAsync(hit.Path, Math.Max(1, hit.Line));
                 }
             },
-            "Type to search", query => searchError ?? (string.IsNullOrWhiteSpace(query)
+            "Type to search", query => searchError ?? (!searchWorkspace.IsContentReady
+                ? searchWorkspace.ContentStatus : string.IsNullOrWhiteSpace(query)
                 ? "Type a word or phrase to search this workspace's documents."
                 : "No matching documents. Search checks document text and paths; browse folder and workspace names in the Library tree."),
                 asyncProvider: searchWorkspace.Snapshot.Files.Count > 500 || searchWorkspace.HasUnsavedSearchBuffers ? Matches : null,
-                isCurrent: CurrentWorkspace, errorProvider: () => searchError);
-        _picker!.SetRecoveryAction("Rebuild this workspace's search index", async () =>
+                isCurrent: CurrentWorkspace, errorProvider: () => searchError,
+                scopeStatusProvider: () => searchWorkspace.IsContentReady ? null : searchWorkspace.ContentStatus);
+        _picker!.ShowSearchSyntax();
+        _picker.AddAction("Save search", () => { if (CurrentWorkspace()) SaveWorkspaceSearch(_picker?.Input.Text ?? ""); });
+        _picker.AddAction("Replace in workspace", () => { if (CurrentWorkspace()) { HideOverlay(); _ = RunCommandAsync(CommandIds.ReplaceInWorkspace); } });
+        _picker.SetRecoveryAction("Rebuild this workspace's search index", async () =>
         {
             if (!CurrentWorkspace()) return;
             using var operation = _shell.BeginStatusOperation("Rebuilding search index", searchWorkspace.Root);
@@ -629,13 +809,15 @@ public partial class MainWindow
             {
                 var progress = new Progress<Tern.Search.IndexProgress>(p => operation.Report("Indexing workspace", p.Processed, p.Total));
                 await Task.Run(() => searchWorkspace.RebuildSearchAsync(progress));
-                if (!CurrentWorkspace() || _windowClosed) return;
+                if (!CurrentWorkspace() || _windowClosed) { operation.Cancel(); return; }
                 searchError = null;
                 _shell.StatusMessage = "This workspace's search index was rebuilt. Documents and other indexes were kept.";
                 _picker.RefreshResults();
+                operation.Complete(outcome: "Workspace search index rebuilt");
             }
+            catch (OperationCanceledException) { operation.Cancel(); throw; }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
-            { operation.Fail(ex.Message); if (CurrentWorkspace()) { searchError = "Rebuild failed: " + ex.Message; _picker.RefreshResults(); } }
+            { operation.Fail(ex.Message); if (CurrentWorkspace()) { searchError = "Rebuild failed: " + Tern.App.Shell.UserProblem.Plain(ex); _picker.RefreshResults(); } }
         });
     }
 
@@ -667,8 +849,10 @@ public partial class MainWindow
         FindBox.Width = compact ? 160 : 200;
         FindOptionsButton.IsVisible = compact;
         FindOptionsPanel.Margin = compact ? new Avalonia.Thickness(12) : default;
-        FindResultsToggle.Content = compact ? "☷" : "Results";
-        FindReplaceToggle.Content = compact ? "⇄" : "Replace";
+        FindResultsToggle.Content = compact ? new VectorIcon { Kind = "List" } : "Results";
+        FindReplaceToggle.Content = compact ? new VectorIcon { Kind = "Swap" } : "Replace";
+        FindResultsToggle.Classes.Set("icon-button", compact);
+        FindReplaceToggle.Classes.Set("icon-button", compact);
         if (compact && FindControls.Children.Contains(FindOptionsPanel))
         {
             FindControls.Children.Remove(FindOptionsPanel);
@@ -762,7 +946,25 @@ public partial class MainWindow
         _ = RunFindAsync(true);
     }
 
-    private void OnFindOptionClick(object? sender, RoutedEventArgs e) => _ = RunFindAsync(true);
+    private void ApplyFindPreferences()
+    {
+        var settings = _shell.Settings;
+        var changed = CaseToggle.IsChecked != settings.FindMatchCase || WordToggle.IsChecked != settings.FindWholeWord
+            || RegexToggle.IsChecked != settings.FindUseRegex;
+        CaseToggle.IsChecked = settings.FindMatchCase;
+        WordToggle.IsChecked = settings.FindWholeWord;
+        RegexToggle.IsChecked = settings.FindUseRegex;
+        if (changed && FindBar.IsVisible) InvalidateFind();
+    }
+
+    private void OnFindOptionClick(object? sender, RoutedEventArgs e)
+    {
+        _shell.Settings.FindMatchCase = CaseToggle.IsChecked == true;
+        _shell.Settings.FindWholeWord = WordToggle.IsChecked == true;
+        _shell.Settings.FindUseRegex = RegexToggle.IsChecked == true;
+        _shell.SaveSettings();
+        _ = RunFindAsync(true);
+    }
 
     private async Task RunFindAsync(bool select)
     {
@@ -788,34 +990,42 @@ public partial class MainWindow
         _requestedFindTab = tab;
         _requestedFindRevision = snapshot.Revision;
         InFileFindResult result;
+        using var activity = _shell.Activities.Begin("Finding document text", tab.DisplayName,
+            cancel: () => { if (!cancellation.IsCancellationRequested) cancellation.Cancel(); }, queued: true);
         try
         {
             await Task.Delay(80, cancellation.Token);
+            activity.Report("Searching the current document snapshot");
             result = await InFileFinder.FindAsync(snapshot.Text, options, cancellation.Token);
-        }
-        catch (OperationCanceledException) { return; }
-        finally { if (ReferenceEquals(_findCancellation, cancellation)) _findCancellation = null; }
-        if (generation != _findGeneration || !ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(snapshot.Revision))
-        {
-            return;
-        }
+            if (generation != _findGeneration || !ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(snapshot.Revision))
+            {
+                activity.Cancel("Find results superseded; document unchanged.");
+                return;
+            }
 
-        _found = result;
-        _findTab = tab;
-        _findRevision = snapshot.Revision;
-        _findOptions = options;
-        _foundIndex = _found.IndexAtOrAfter(anchor);
-        _updatingFindResults = true;
-        FindResults.ItemsSource = _found.Matches.Select((m, i) => new FindResultRow(i,
-            $"Line {m.Line}, column {m.Column}   {ResultSnippet(snapshot.Text, m)}")).ToArray();
-        FindResults.SelectedIndex = _foundIndex;
-        _updatingFindResults = false;
-        SetFindHighlight(_foundIndex >= 0 ? _found.Matches[_foundIndex] : null);
-        ShowFindStatus();
-        if (select && _foundIndex >= 0)
-        {
-            SelectMatch(_foundIndex);
+            _found = result;
+            _findTab = tab;
+            _findRevision = snapshot.Revision;
+            _findOptions = options;
+            _foundIndex = _found.IndexAtOrAfter(anchor);
+            _updatingFindResults = true;
+            FindResults.ItemsSource = _found.Matches.Select((m, i) => new FindResultRow(i,
+                $"Line {m.Line}, column {m.Column}   {ResultSnippet(snapshot.Text, m)}")).ToArray();
+            FindResults.SelectedIndex = _foundIndex;
+            _updatingFindResults = false;
+            SetFindHighlight(_foundIndex >= 0 ? _found.Matches[_foundIndex] : null);
+            ShowFindStatus();
+            if (select && _foundIndex >= 0)
+            {
+                SelectMatch(_foundIndex);
+            }
+            if (result.Error is { } error) activity.Fail(error);
+            else activity.Complete(result.Truncated ? "Search reached its result limit; narrow the query." : null, result.Truncated,
+                result.Truncated ? "Find results limited" : result.Matches.Count == 0 ? "Find complete; no matches" : "Find results ready");
         }
+        catch (OperationCanceledException) { activity.Cancel("Find canceled or superseded; document unchanged."); }
+        catch (Exception ex) { activity.Fail(ex.Message); throw; }
+        finally { if (ReferenceEquals(_findCancellation, cancellation)) _findCancellation = null; }
     }
 
     internal async Task SearchAsync(string text)
@@ -843,6 +1053,7 @@ public partial class MainWindow
         FindPreviousButton.IsEnabled = FindNextButton.IsEnabled = ready;
         ReplaceCurrentButton.IsEnabled = ready && !_replaceAllRunning && _shown?.IsReadOnly == false;
         ReplaceAllButton.IsEnabled = ReplaceCurrentButton.IsEnabled && !_found.Truncated;
+        UpdateReplaceAllHint();
         FindSourceButton.IsVisible = _findSourceOnly && _shell.ViewMode != ViewMode.Source;
         FindStatus.Text = _found.Error is { } error ? error
             : string.IsNullOrEmpty(FindBox.Text) ? string.Empty
@@ -873,6 +1084,7 @@ public partial class MainWindow
         FindPreviousButton.IsEnabled = FindNextButton.IsEnabled = match is not null && HasCurrentFind;
         ReplaceCurrentButton.IsEnabled = match is not null && HasCurrentFind && !_replaceAllRunning && _found.Error is null && _shown?.IsReadOnly == false;
         ReplaceAllButton.IsEnabled = ReplaceCurrentButton.IsEnabled && !_found.Truncated && _found.Error is null;
+        UpdateReplaceAllHint();
         Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
         RefreshPreviewFindHighlight();
     }
@@ -947,6 +1159,21 @@ public partial class MainWindow
     private void OnFindNextClick(object? sender, RoutedEventArgs e) => FindNext(true);
 
     private void OnFindPreviousClick(object? sender, RoutedEventArgs e) => FindNext(false);
+
+    private void UpdateReplaceAllHint()
+    {
+        ToolTip.SetShowOnDisabled(ReplaceAllButton, true);
+        ToolTip.SetTip(ReplaceAllButton, HasCurrentFind && _found.Truncated
+            ? "Replace all is unavailable because the results are limited. Narrow the search to include every match."
+            : "Replace all matches (Ctrl+Alt+Enter while focus is in Find or Replace)");
+    }
+
+    private async void OnFindBarKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || e.KeyModifiers != (KeyModifiers.Control | KeyModifiers.Alt)) return;
+        e.Handled = true;
+        if (ReplaceAllButton.IsEnabled) await ReplaceAllAsync();
+    }
 
     private void OnFindKeyDown(object? sender, KeyEventArgs e)
     {
@@ -1037,9 +1264,9 @@ public partial class MainWindow
             return;
         }
 
-                await new ExportWindow(_shown.DisplayName, _shown.FilePath ?? _shown.ResourceDocumentPath, Editor.Document.Text, _shown.Profile, WorkspaceRootFor(_shown), format,
-            _shell.Tabs.Select(t => t.FilePath).OfType<string>().ToArray(), _remoteImages is null ? null : _remoteImages.FetchForExport, _shown.LinkedImageFiles,
-            _shell.Activities, _shell.Settings.ReduceMotion).ShowDialog(this);
+        await new ExportWindow(_shown.DisplayName, _shown.FilePath ?? _shown.ResourceDocumentPath, Editor.Document.Text, _shown.Profile, WorkspaceRootFor(_shown), format,
+    _shell.Tabs.Select(t => t.FilePath).OfType<string>().ToArray(), ExportImageLoader(_shown), _shown.LinkedImageFiles,
+    _shell.Activities, Tern.Desktop.Services.MotionPolicy.IsReduced, _shell.Settings.ExportPreferences, _shell.SaveSettings).ShowDialog(this);
     }
 
     private async Task ShowSettingsAsync(string? initialCategory = null)
@@ -1047,7 +1274,11 @@ public partial class MainWindow
         await new SettingsWindow(_shell.Settings, _shell.Registry, RunCommandAsync, AskGuideAIAsync,
             configureAI: ShowAIConnectionsAsync, aiProfiles: () => _aiWorkspace.Profiles, initialCategory: initialCategory,
             answerAI: AnswerGuideQuestionAsync, workspaceConnections: () => _aiWorkspace.Connections,
-            commit: () => { _shell.SaveSettings(); ApplyTheme(); ApplySettings(); RefreshCommandHints(); RebuildPreview(); }).ShowDialog(this);
+            commit: () =>
+            {
+                if (!_shell.SaveSettings()) throw new IOException("Settings could not be persisted. Earlier settings remain active.");
+                ApplyTheme(); ApplySettings(); RefreshCommandHints(); RebuildPreview();
+            }).ShowDialog(this);
         ReloadAIConnections();
         ApplyTheme();
         ApplySettings();
@@ -1056,9 +1287,17 @@ public partial class MainWindow
 
     private async Task ShowShortcutsAsync()
     {
-        await new ShortcutsWindow(_shell.Registry, RunCommandAsync, AskGuideAIAsync, AnswerGuideQuestionAsync).ShowDialog(this);
-        _shell.SaveSettings();
-        SearchHint.Text = Gesture.Describe(_shell.Registry.GetGesture(CommandIds.QuickOpen));
-        RefreshCommandHints();
+        await new ShortcutsWindow(_shell.Registry, RunCommandAsync, AskGuideAIAsync, AnswerGuideQuestionAsync,
+            commit: () =>
+            {
+                var previous = _shell.Settings.KeyBindings;
+                if (!_shell.SaveSettings())
+                {
+                    _shell.Settings.KeyBindings = previous;
+                    throw new IOException("Shortcut settings could not be persisted. Earlier assignments remain active.");
+                }
+                SearchHint.Text = Gesture.Describe(_shell.Registry.GetGesture(CommandIds.QuickOpen));
+                RefreshCommandHints();
+            }).ShowDialog(this);
     }
 }

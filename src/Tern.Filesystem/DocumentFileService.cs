@@ -16,6 +16,9 @@ public sealed record LoadedFile(
     public bool ShouldOpenReadOnly => DecodeFailure != DecodeFailure.None;
 }
 
+/// <summary>Exact bytes just created by Tern. A changed file falls back to ordinary format detection.</summary>
+public sealed record CreatedFileReceipt(string Path, TextFileFormat Format, string Sha256);
+
 public enum ConflictKind
 {
     /// <summary>The file on disk no longer matches what was loaded.</summary>
@@ -52,16 +55,28 @@ public sealed class DocumentFileService
     // Deterministic post-read interleaving for document lifecycle tests; null in the application.
     internal Func<string, Task>? AfterReadForLoadAsync { get; set; }
 
-    public async Task<LoadedFile> LoadAsync(string path, TextEncodingKind? forcedEncoding = null, CancellationToken cancellationToken = default)
+    public async Task<LoadedFile> LoadAsync(string path, TextEncodingKind? forcedEncoding = null, CancellationToken cancellationToken = default, CreatedFileReceipt? createdFile = null)
     {
         var fullPath = System.IO.Path.GetFullPath(path);
         var info = new FileInfo(fullPath);
         var bytes = await ReadAllBytesSharedAsync(fullPath, cancellationToken).ConfigureAwait(false);
         if (AfterReadForLoadAsync is { } afterRead) await afterRead(fullPath).ConfigureAwait(false);
-        var decoded = TextFileCodec.Decode(bytes, forcedEncoding);
-        var baseline = new DiskBaseline(bytes.LongLength, info.LastWriteTimeUtc, Convert.ToHexString(SHA256.HashData(bytes)));
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        var matchesCreation = forcedEncoding is null && createdFile is not null && PathsEqual(fullPath, Path.GetFullPath(createdFile.Path))
+            && hash == createdFile.Sha256;
+        var decoded = TextFileCodec.Decode(bytes, forcedEncoding ?? (matchesCreation ? createdFile!.Format.Encoding : null));
+        if (matchesCreation && decoded.Text.Length == 0)
+            decoded = decoded with { Format = decoded.Format with { DominantLineEnding = createdFile!.Format.DominantLineEnding } };
+        var baseline = new DiskBaseline(bytes.LongLength, info.LastWriteTimeUtc, hash);
         return new LoadedFile(fullPath, decoded.Text, decoded.Format, baseline, decoded.Failure);
     }
+
+    public const string UnavailableMessage = "The file's drive or network location is unavailable (disconnected share, sleeping device or lost connection). Nothing was written and your text is still open. Try again when the location is back.";
+
+    /// <summary>Replaceable so tests can simulate a share that drops and returns; the application uses the real probe.</summary>
+    public Func<string, FileAvailability> AvailabilityProbe { get; set; } = FileAvailabilityProbe.Probe;
+
+    public FileAvailability GetAvailability(string path) => AvailabilityProbe(path);
 
     /// <summary>Hashes the file as it currently is on disk; null when it does not exist.</summary>
     public async Task<DiskBaseline?> ReadBaselineAsync(string path, CancellationToken cancellationToken = default)
@@ -243,6 +258,7 @@ public sealed class DocumentFileService
 
         if (current is null)
         {
+            if (GetAvailability(path) == FileAvailability.Unreachable) return new SaveFailed(UnavailableMessage);
             return new SaveConflict(ConflictKind.DeletedOnDisk, null);
         }
 

@@ -17,6 +17,110 @@ namespace Tern.Desktop.Tests;
 
 public sealed class GuiWorkspaceFeaturesTests
 {
+    [AvaloniaFact]
+    public async Task Capture_latest_application_gui_samples_with_synthetic_documents()
+    {
+        using var f = new DesktopFixture();
+        const string markdown = """
+            ---
+            title: Project overview
+            tags: [planning, writing]
+            ---
+            # Project overview
+
+            A calm place to write, organize, and review your ideas.
+
+            > Keep the source readable. Let the preview tell the story.
+
+            ## Today's focus
+
+            - [x] Draft the project outline
+            - [ ] Review the meeting notes
+            - [ ] Prepare a shareable copy
+
+            ## Workspace essentials
+
+            | Area | Purpose |
+            | --- | --- |
+            | Library | Find files and recent documents |
+            | Editor | Work directly with Markdown |
+            | Inspector | Explore headings and document details |
+
+            ## Next steps
+
+            1. Capture the important decisions.
+            2. Link supporting documents.
+            3. Review the formatted result before sharing.
+
+            ```csharp
+            var idea = "Start with a clear thought.";
+            Console.WriteLine(idea);
+            ```
+            """;
+        var overview = await f.WriteAsync("Project overview.md", markdown.ReplaceLineEndings("\r\n"));
+        await f.WriteAsync("Meeting notes.md", "# Meeting notes\r\n\r\n## Decisions\r\n\r\n- Keep the first draft focused.\r\n");
+        await f.WriteAsync("Release checklist.md", "# Release checklist\r\n\r\n- [ ] Review the draft\r\n- [ ] Check the exported copy\r\n");
+        Assert.True(await f.Shell.OpenWorkspaceAsync(f.Docs));
+        var tab = await f.Shell.OpenFileAsync(overview);
+        Assert.NotNull(tab);
+        f.Shell.Settings.UiScale = 1;
+        f.Shell.Settings.SidebarVisible = f.Shell.Settings.InspectorVisible = true;
+        f.Shell.Settings.Theme = ThemeChoice.Paper;
+        f.Window.ApplyTheme(); f.Window.ApplySettings();
+        await f.Window.RunCommandAsync(CommandIds.ViewSplit);
+        await f.Window.RebuildPreviewAsync();
+        for (var attempt = 0; attempt < 100 && tab.Analysis is null; attempt++)
+        { await Task.Delay(20); Dispatcher.UIThread.RunJobs(); }
+        Assert.NotNull(tab.Analysis);
+        var output = Path.Combine(Screenshots.Folder, "latest-gui");
+        Directory.CreateDirectory(output);
+        async Task Capture(Window window, string name)
+        {
+            await Task.Delay(150);
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+            using var frame = window.CaptureRenderedFrame();
+            Assert.NotNull(frame);
+            using var stream = File.Create(Path.Combine(output, name + ".png"));
+            frame.Save(stream, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        }
+        await Capture(f.Window, "01-paper-workspace");
+        f.Shell.Settings.Theme = ThemeChoice.Midnight;
+        f.Window.ApplyTheme();
+        await Capture(f.Window, "01b-midnight-workspace");
+        await f.Window.RunCommandAsync(CommandIds.ViewReading);
+        await f.Window.RebuildPreviewAsync();
+        await Capture(f.Window, "02-midnight-reading");
+        f.Shell.Settings.UiScale = 2;
+        f.Window.Width = 900; f.Window.Height = 560;
+        f.Window.ApplySettings();
+        await f.Window.RunCommandAsync(CommandIds.ViewSplit);
+        await f.Window.RebuildPreviewAsync();
+        await Capture(f.Window, "05-compact-midnight");
+        f.Shell.Settings.UiScale = 1;
+        f.Window.Width = 1440; f.Window.Height = 900;
+        f.Window.ApplySettings();
+        f.Shell.Settings.Theme = ThemeChoice.Paper;
+        f.Window.ApplyTheme();
+        var settings = new SettingsWindow(f.Shell.Settings, f.Shell.Registry, initialCategory: "Editor");
+        settings.Show(f.Window);
+        await Capture(settings, "03-settings");
+        settings.Close();
+        f.Shell.Settings.Theme = ThemeChoice.Midnight;
+        f.Window.ApplyTheme();
+        var learn = new HelpWindow(f.Shell.Registry);
+        learn.Show(f.Window);
+        await Capture(learn, "04-learn-tern");
+        learn.Close();
+        File.WriteAllText(Path.Combine(output, "capture-metadata.json"), System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Version = typeof(MainWindow).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion,
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            Evidence = "Actual Release-build Avalonia controls; headless, synthetic data; not native Windows acceptance",
+        }));
+        Assert.Equal(markdown.ReplaceLineEndings("\r\n"), await File.ReadAllTextAsync(overview));
+    }
+
     public static IEnumerable<object[]> Viewports => from size in new[] { (900, 560), (1280, 720), (1440, 900) }
         from scale in new[] { 1d, 1.5, 2d } from theme in new[] { ThemeChoice.Midnight, ThemeChoice.Paper }
         select new object[] { size.Item1, size.Item2, scale, theme };
@@ -35,6 +139,8 @@ public sealed class GuiWorkspaceFeaturesTests
         await f.Window.RebuildPreviewAsync();
         for (var i = 0; i < 100 && tab.Analysis is null; i++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
         Assert.NotNull(tab.Analysis);
+        Pump(f);
+        if (f.Window.LibraryAutoCollapsed) f.Window.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.B, KeyModifiers = Avalonia.Input.KeyModifiers.Control | Avalonia.Input.KeyModifiers.Shift });
         Pump(f);
         var controls = new[] { "SourceButton", "SplitButton", "ReadingButton", "AIEntryButton", "SearchBox", "WorkspaceAddButton", "OpenDocumentsButton", "ActivityButton" }
             .Select(name => f.Window.FindControl<Control>(name)!).ToArray();
@@ -79,7 +185,7 @@ public sealed class GuiWorkspaceFeaturesTests
         using var f = new DesktopFixture();
         var original = f.Shell.NewDocument("Original text");
         await f.Window.RunCommandAsync(CommandIds.Welcome);
-        var sample = f.Window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Try a sample note") && b.IsEffectivelyVisible);
+        var sample = f.Window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Try a sample document") && b.IsEffectivelyVisible);
         sample.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Pump(f);
         var practice = f.Shell.ActiveTab!;

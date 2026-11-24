@@ -114,13 +114,16 @@ public static partial class MarkdownTextExtractor
 
     private static string CleanProse(string line, HashSet<string> tags)
     {
-        if (line.Length == 0 || RuleOrTableDelimiterRegex().IsMatch(line))
+        // Blank lines need no pattern matching; very long whitespace runs can
+        // otherwise exhaust a regex deadline before the existing fallback applies.
+        if (string.IsNullOrWhiteSpace(line))
         {
             return string.Empty;
         }
 
         try
         {
+            if (RuleOrTableDelimiterRegex().IsMatch(line)) return string.Empty;
             if (ReferenceDefinitionRegex().IsMatch(line))
             {
                 return string.Empty;

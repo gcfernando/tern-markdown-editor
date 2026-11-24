@@ -10,23 +10,41 @@ public interface IDocumentTextProvider
 }
 
 /// <summary>Reads documents from disk through <see cref="TextFileCodec"/>, so the text matches what the editor would show.</summary>
-public sealed class DiskDocumentTextProvider(long maximumBytes = 16L * 1024 * 1024) : IDocumentTextProvider
+public sealed class DiskDocumentTextProvider(long maximumBytes = DocumentFileService.MaximumEagerLoadBytes) : IDocumentTextProvider
 {
-    public async ValueTask<string?> ReadTextAsync(string path, CancellationToken cancellationToken)
+    /// <summary>Set while a workspace is prepared so another reader can reuse these bytes.</summary>
+    public SharedFileReads? SharedReads { get; set; }
+
+    public ValueTask<string?> ReadTextAsync(string path, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
-            // Recheck on the opened handle: a file can grow after the directory scan.
-            if (stream.Length > maximumBytes) return null;
-            var bytes = new byte[stream.Length];
-            await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
-            return TextFileCodec.Decode(bytes).Text;
+            if (CloudFiles.IsOnlineOnly(path)) return ValueTask.FromResult<string?>(null);
+            var bytes = SharedReads is { } shared ? shared.Read(path, () => ReadBytes(path)) : ReadBytes(path);
+            return ValueTask.FromResult<string?>(bytes is null || bytes.Length > maximumBytes ? null : TextFileCodec.Decode(bytes).Text);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return null;
+            return ValueTask.FromResult<string?>(null);
         }
+    }
+
+    // Small notes read much faster synchronously than through overlapped I/O, and callers are already on worker threads.
+    private byte[]? ReadBytes(string path)
+    {
+        using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        // Recheck on the opened handle: a file can grow after the directory scan.
+        var length = RandomAccess.GetLength(handle);
+        if (length > maximumBytes) return null;
+        var bytes = new byte[length];
+        for (var total = 0; total < bytes.Length;)
+        {
+            var read = RandomAccess.Read(handle, bytes.AsSpan(total), total);
+            if (read == 0) throw new EndOfStreamException();
+            total += read;
+        }
+        return bytes;
     }
 }
 
@@ -58,7 +76,10 @@ public sealed class OverlayTextProvider : IDocumentTextProvider
         }
     }
 
-    public ValueTask<string?> ReadTextAsync(string path, CancellationToken cancellationToken)
+    public ValueTask<string?> ReadTextAsync(string path, CancellationToken cancellationToken) =>
+        ReadTextAsync(path, _fallback, cancellationToken);
+
+    public ValueTask<string?> ReadTextAsync(string path, IDocumentTextProvider fallback, CancellationToken cancellationToken)
     {
         lock (_gate)
         {
@@ -68,6 +89,6 @@ public sealed class OverlayTextProvider : IDocumentTextProvider
             }
         }
 
-        return _fallback.ReadTextAsync(path, cancellationToken);
+        return fallback.ReadTextAsync(path, cancellationToken);
     }
 }

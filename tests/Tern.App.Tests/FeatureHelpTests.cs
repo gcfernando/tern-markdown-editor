@@ -21,7 +21,7 @@ public class FeatureHelpTests
     public void Image_output_and_format_reference_match_the_implemented_workflow()
     {
         var help = FeatureCatalog.Search(CommandRegistry.CreateDefault(), null);
-        Assert.Equal("Format → Heading → Heading 1 (title)", help.Single(f => f.Id == CommandIds.Heading1).MenuPath);
+        Assert.Equal("Format → Heading → Heading 1 (Title)", help.Single(f => f.Id == CommandIds.Heading1).MenuPath);
         Assert.Equal("Format → Insert Code Block", help.Single(f => f.Id == CommandIds.InsertCodeBlock).MenuPath);
         Assert.Equal("Format → Checklist", help.Single(f => f.Id == CommandIds.ToggleTask).MenuPath);
         var imagePrerequisite = help.Single(f => f.Id == CommandIds.InsertImage).Prerequisite;
@@ -186,7 +186,7 @@ public class FeatureHelpTests
         Assert.Contains(setup.Steps, s => s.Contains("AI service menu", StringComparison.Ordinal)
             && s.Contains("Create connection", StringComparison.Ordinal));
         var copilot = Assert.Single(help, f => f.Id == "ai.copilot");
-        Assert.Contains(copilot.Steps, s => s.Contains("8,192", StringComparison.Ordinal)
+        Assert.Contains(copilot.Steps, s => s.Contains("Characters to send at one time", StringComparison.Ordinal)
             && s.Contains("active note", StringComparison.Ordinal) && s.Contains("Undo", StringComparison.Ordinal));
         var mcp = Assert.Single(help, f => f.Id == "ai.mcp");
         Assert.Contains(mcp.Steps, s => s.Contains("AI entry", StringComparison.Ordinal)

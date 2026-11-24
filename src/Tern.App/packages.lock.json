@@ -64,54 +64,54 @@
         "dependencies": {
           "PDFsharp": "[6.2.4, )",
           "System.Security.Cryptography.Pkcs": "[10.0.14, )",
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )",
-          "Tern.Rendering": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )",
+          "Tern.Filesystem": "[1.0.6, )",
+          "Tern.Markdown": "[1.0.6, )",
+          "Tern.Rendering": "[1.0.6, )"
         }
       },
       "tern.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )"
         }
       },
       "tern.markdown": {
         "type": "Project",
         "dependencies": {
           "Markdig": "[1.5.0, )",
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )"
         }
       },
       "tern.recovery": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )",
+          "Tern.Filesystem": "[1.0.6, )"
         }
       },
       "tern.rendering": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )",
+          "Tern.Markdown": "[1.0.6, )"
         }
       },
       "tern.search": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.14, )",
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )",
-          "Tern.Workspaces": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )",
+          "Tern.Markdown": "[1.0.6, )",
+          "Tern.Workspaces": "[1.0.6, )"
         }
       },
       "tern.workspaces": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )",
+          "Tern.Filesystem": "[1.0.6, )",
+          "Tern.Markdown": "[1.0.6, )"
         }
       },
       "Markdig": {

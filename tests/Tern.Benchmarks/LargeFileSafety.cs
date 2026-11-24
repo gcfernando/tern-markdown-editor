@@ -63,8 +63,9 @@ internal static class LargeFileSafety
                     File.Delete(path);
                 }
             }
-            Directory.CreateDirectory("artifacts/benchmarks");
-            await File.WriteAllTextAsync("artifacts/benchmarks/issues-large-file.json", JsonSerializer.Serialize(new
+            var reports = Path.Combine(Path.GetTempPath(), "tern-benchmarks");
+            Directory.CreateDirectory(reports);
+            await File.WriteAllTextAsync(Path.Combine(reports, "issues-large-file.json"), JsonSerializer.Serialize(new
             { measuredAtUtc = DateTime.UtcNow, os = RuntimeInformation.OSDescription, framework = RuntimeInformation.FrameworkDescription,
                 logicalProcessors = Environment.ProcessorCount, memoryAvailableBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes,
                 method = "Release filesystem admission/decode and no-op save only; no editor, navigation, search, rendering or input-to-paint measured; oversized file bodies zero-filled",

@@ -63,8 +63,6 @@ public static class QuickOpen
             .Take(limit)];
     }
 
-    public static bool TryMatch(string? query, string candidate, out double score, out IReadOnlyList<int> matchedIndices) =>
-        TryMatchTerms(SplitTerms(query), candidate, out score, out matchedIndices);
 
     public static IReadOnlyList<QuickOpenMatch<HeadingCandidate>> MatchHeadings(string? query, IEnumerable<HeadingCandidate> headings, int limit = 50) =>
         Match(query, headings, static h => h.Text, limit);

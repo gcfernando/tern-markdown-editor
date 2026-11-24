@@ -1,6 +1,6 @@
 # Downloads and releases
 
-Tern's distribution target is **Windows x64**. Application version metadata is **1.0.5**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
+Tern's distribution target is **Windows x64**. Application version metadata is **1.0.6**. A preview label, passing subset of checks or release publication does not establish stable native acceptance.
 
 See the [1.0.5 release notes](release-notes-1.0.5.md) and [current workflow guide](workflows-1.0.5.md) for the updated controls and Windows distributions.
 
@@ -23,7 +23,7 @@ The current packaging route is **unsigned**. No trusted signing identity or comp
 A certificate-based signing route is now available, but it does not create or purchase a publisher identity. Install a trusted code-signing certificate with an accessible private key in the current user's Personal store, and install Windows SDK SignTool. Use the timestamp URL specified by your signing provider:
 
 ```powershell
-./tools/BuildRelease.ps1 -BuildRoot artifacts/signed-build -OutputDirectory artifacts/signed-release -SigningCertificateThumbprint YOUR_CERTIFICATE_THUMBPRINT -TimestampServer https://YOUR_PROVIDER_TIMESTAMP_URL -SignToolPath 'C:/path/to/signtool.exe'
+./tools/BuildRelease.ps1 -BuildRoot ../tern-build-output/signed-build -OutputDirectory ../tern-build-output/signed-release -SigningCertificateThumbprint YOUR_CERTIFICATE_THUMBPRINT -TimestampServer https://YOUR_PROVIDER_TIMESTAMP_URL -SignToolPath 'C:/path/to/signtool.exe'
 ```
 
 The wrapper signs first-party `Tern.exe` and `Tern*.dll` files before packaging. It requires valid, timestamped Authenticode signatures with one signing identity and records binary hashes and publisher evidence in the manifest. `-RequireSigned` requires the fresh publish to carry valid signatures, for example from a custom signing build target. For an externally signed publish, run `python tools/package_release.py --publish SIGNED_FOLDER --output FRESH_OUTPUT_FOLDER --require-signed`. Both routes fail if signature verification is unsuccessful. The extracted-package smoke step verifies signatures again. Unsigned builds retain their explicit unsigned label. The automated workflow remains unsigned until a signing identity is supplied and configured.
@@ -38,13 +38,15 @@ Use the pinned SDK and prerequisites in [development](development.md). From the 
 ./tools/BuildRelease.ps1
 ```
 
-`BuildRelease.ps1` requires fresh build/output directories, prepares a self-contained publish under `artifacts/release-build/publish`, invokes `tools/package_release.py` with explicit publish/output arguments, and runs `tools/TestRelease.ps1` against the extracted package. The helper stages all three downloads and the checksum manifest under `artifacts/release/`:
+`BuildRelease.ps1` requires fresh build/output directories, prepares a self-contained publish under `../tern-build-output/release-build/publish`, invokes `tools/package_release.py` with explicit publish/output arguments, and runs `tools/TestRelease.ps1` against the extracted package. The helper stages all three downloads and the checksum manifest under `../tern-build-output/release/`:
+
+Before publishing it runs `tools\UpdateDocumentationScreenshots.ps1`: current Release-build synthetic UI captures replace all 20 maintained documentation images. The step rejects failed captures, stale files or screenshot captions that do not match the assembly's informational version, and records image hashes/version under its fresh `artifacts\test-results\docs-capture-*` directory. These are actual headless renders, not native Windows/DPI acceptance. Run that script separately when updating illustrated documentation.
 
 ```text
-artifacts/release/Tern.exe
-artifacts/release/Tern-1.0.5.msi
-artifacts/release/Tern-win-x64.zip
-artifacts/release/SHA256SUMS.txt
+../tern-build-output/release/Tern.exe
+../tern-build-output/release/Tern-1.0.6.msi
+../tern-build-output/release/Tern-win-x64.zip
+../tern-build-output/release/SHA256SUMS.txt
 ```
 
 Review the helper's validation output and actual build/test reports. The package command does not convert a failed test run into release acceptance. It includes the maintained guides and licensing materials, so missing documentation links must be repaired before packaging.
@@ -52,7 +54,7 @@ Review the helper's validation output and actual build/test reports. The package
 To repeat the archive's structural/integrity check separately:
 
 ```powershell
-python ./tools/package_release.py --verify artifacts/release/Tern-win-x64.zip
+python ./tools/package_release.py --verify ../tern-build-output/release/Tern-win-x64.zip
 ```
 
 This checks the archive; it does not rerun the application or test suite.
@@ -61,7 +63,7 @@ The existing local-publish script remains separate:
 
 ```powershell
 ./scripts/publish.ps1
-# Output: artifacts/publish/win-x64/Tern.exe and companion files
+# Output: ../tern-build-output/publish/win-x64/Tern.exe and companion files
 ```
 
 That output is not the final release ZIP. An executable under `src/Tern.Desktop/bin/Release/net10.0/` is also a development output, not a self-contained package guarantee.
@@ -70,7 +72,7 @@ That output is not the final release ZIP. An executable under `src/Tern.Desktop/
 
 The [release workflow](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml) restores locked dependencies, builds, runs the reproducible automated gate and packages Windows x64. Successful main-branch publication uses a unique preview identity including the source commit and run. Review the actual workflow and release evidence for a particular candidate; configured automation is not evidence that an uncompleted run succeeded.
 
-The gate intentionally excludes **eight external-input or interactive-native cases**, recorded in [the validation guide](BEGINNER_REVIEW_VALIDATION.md#automated-gate-and-external-cases) and `tools/automated-test-filter.txt`. Tests remain present; passing the gate does not claim the excluded cases passed. See the [acceptance ledger](V1_RELEASE_LEDGER.md) for required native follow-up.
+Following the user's approved removal of eight unavailable-original-input cases and the one skipped external-payload remote-image acceptance case on 2026-11-21, the gate has one clause excluding only the interactive Windows Shell recycle/restore case. Details are recorded in [the validation guide](BEGINNER_REVIEW_VALIDATION.md#automated-gate-and-external-cases) and `tools/automated-test-filter.txt`. The native case has passed on Windows. The nine removed cases are not PASS evidence for unavailable external inputs; general functional regression tests remain. See the [acceptance ledger](V1_RELEASE_LEDGER.md) for required native follow-up.
 
 ## Update, rollback and removal
 

@@ -24,11 +24,15 @@ public sealed class DuplicateTaskOverlayTests
         await fixture.Window.ShowNavAsync("Tasks");
         Pump(fixture);
 
-        Assert.Equal("Second task", Assert.Single(fixture.Window.FindControl<ListBox>("SideList")!.Items.OfType<SideRow>()).Title);
+        var rows = fixture.Window.FindControl<ListBox>("SideList")!.Items.OfType<SideRow>().ToArray();
+        Assert.Equal("source.md", Assert.Single(rows, row => row.IsGroup).Title);
+        Assert.Equal("Second task", Assert.Single(rows, row => row.IsTask).Title);
         fixture.Shell.ActiveTab = first;
         Pump(fixture);
         await fixture.Window.ShowNavAsync("Tasks");
-        Assert.Equal("First task", Assert.Single(fixture.Window.FindControl<ListBox>("SideList")!.Items.OfType<SideRow>()).Title);
+        rows = fixture.Window.FindControl<ListBox>("SideList")!.Items.OfType<SideRow>().ToArray();
+        Assert.Equal("source.md", Assert.Single(rows, row => row.IsGroup).Title);
+        Assert.Equal("First task", Assert.Single(rows, row => row.IsTask).Title);
         await fixture.Shell.Workspace!.GraphIdle;
         Assert.Equal("First buffer", Assert.Single(fixture.Shell.Workspace.Graph.GetHeadings()).Heading.Text);
         Assert.Equal(original, await File.ReadAllTextAsync(path));

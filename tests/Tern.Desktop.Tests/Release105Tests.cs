@@ -21,6 +21,30 @@ namespace Tern.Desktop.Tests;
 public sealed class Release105Tests
 {
     [AvaloniaFact]
+    public async Task Print_preview_opens_on_All_without_a_focus_ring_and_enables_ranges_only_for_Pages()
+    {
+        using var f = new DesktopFixture();
+        var window = new PrintPreviewWindow("focus.md", "# Focus\n\nPrintable text.", ExportDefaults.PreviewOptions);
+        window.OpenPdf = _ => null; window.Show(f.Window); await window.Preparation; Pump(window);
+        try
+        {
+            var radios = window.GetVisualDescendants().OfType<RadioButton>().ToArray();
+            var all = radios.Single(b => Equals(b.Content, "All"));
+            Assert.True(all.IsChecked);
+            Assert.True(all.IsFocused);
+            Assert.DoesNotContain(":focus-visible", all.Classes);
+            Assert.False(window.PageRanges.IsEnabled);
+            radios.Single(b => Equals(b.Content, "Current page")).IsChecked = true; Pump(window);
+            Assert.False(window.PageRanges.IsEnabled);
+            radios.Single(b => Equals(b.Content, "Pages")).IsChecked = true; Pump(window);
+            Assert.True(window.PageRanges.IsEnabled);
+            all.IsChecked = true; Pump(window);
+            Assert.False(window.PageRanges.IsEnabled);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
     public async Task Range_changes_replace_stale_status_and_preview_only_the_selected_original_pages()
     {
         using var f = new DesktopFixture();
@@ -122,7 +146,7 @@ public sealed class Release105Tests
         cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await flow.Pending;
         Assert.Equal("original image bytes", await File.ReadAllTextAsync(target)); Assert.Equal("Keep", tab.CurrentText);
         flow = await Start();
-        flow.Prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Replace file")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        flow.Prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Replace (old image goes to Recycle Bin)")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await flow.Pending;
         Assert.Equal(bytes, await File.ReadAllBytesAsync(target)); Assert.Contains("assets/diagram%20image.png", tab.CurrentText);
     }
@@ -154,9 +178,9 @@ public sealed class Release105Tests
         async Task<Window> Open()
         {
             f.Window.EditTagsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            for (var attempt = 0; attempt < 100 && !f.Window.OwnedWindows.Any(w => w.Title == "Edit note metadata"); attempt++)
+            for (var attempt = 0; attempt < 100 && !f.Window.OwnedWindows.Any(w => w.Title == "Edit tags"); attempt++)
             { await Task.Delay(10); Pump(f.Window); }
-            return Assert.Single(f.Window.OwnedWindows, w => w.Title == "Edit note metadata");
+            return Assert.Single(f.Window.OwnedWindows, w => w.Title == "Edit tags");
         }
         var dialog = await Open(); Assert.False(dialog.CanResize);
         var input = Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>());
@@ -286,11 +310,38 @@ public sealed class Release105Tests
         await Assert.ThrowsAsync<IOException>(() => ImageAttachmentImporter.InsertAsync(tab, bytes, f.Docs, "existing image.png", 0, tab.Session.Revision,
             confirmReplace: file => { Assert.Equal(target, file); return Task.FromResult(false); }));
         Assert.Equal("original bytes", await File.ReadAllTextAsync(target)); Assert.Equal("# Review", tab.CurrentText);
+        var recycle = new ImageRecycle(Path.Combine(f.Docs, "image-recycle"));
         await Assert.ThrowsAsync<IOException>(() => ImageAttachmentImporter.InsertAsync(tab, bytes, f.Docs, "existing image.png", 0, tab.Session.Revision,
-            confirmReplace: async _ => { await File.WriteAllTextAsync(target, "changed by another writer"); return true; }));
+            confirmReplace: async _ => { await File.WriteAllTextAsync(target, "changed by another writer"); return true; }, recycleBin: recycle));
         Assert.Equal("changed by another writer", await File.ReadAllTextAsync(target));
-        await ImageAttachmentImporter.InsertAsync(tab, bytes, f.Docs, "existing image.png", 0, tab.Session.Revision, confirmReplace: _ => Task.FromResult(true));
+        Assert.Null(recycle.Moved);
+        await Assert.ThrowsAsync<IOException>(() => ImageAttachmentImporter.InsertAsync(tab, bytes, f.Docs, "existing image.png", 0, tab.Session.Revision, confirmReplace: _ => Task.FromResult(true)));
+        Assert.Equal("changed by another writer", await File.ReadAllTextAsync(target));
+        await ImageAttachmentImporter.InsertAsync(tab, bytes, f.Docs, "existing image.png", 0, tab.Session.Revision, confirmReplace: _ => Task.FromResult(true), recycleBin: recycle);
         Assert.Equal(bytes, await File.ReadAllBytesAsync(target)); Assert.Contains("existing%20image.png", tab.CurrentText);
+        Assert.Equal("changed by another writer", await File.ReadAllTextAsync(recycle.Moved!));
+    }
+
+    private sealed class ImageRecycle(string directory) : Tern.App.Shell.ILocalFileDeletion
+    {
+        public string? Moved { get; private set; }
+        public Task MoveToRecycleBinAsync(string path)
+        {
+            Directory.CreateDirectory(directory);
+            Moved = Path.Combine(directory, Path.GetFileName(path));
+            File.Move(path, Moved);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public void Replace_confirmation_lists_referencing_notes_and_states_the_recycle_bin_outcome()
+    {
+        var text = ImageAttachmentImporter.BuildReplaceMessage(@"C:\n\pic.png", ["a.md", "b.md"]);
+        Assert.Contains("Recycle Bin", text);
+        Assert.Contains("2 other note(s)", text);
+        Assert.Contains("• a.md", text);
+        Assert.Contains("No other note", ImageAttachmentImporter.BuildReplaceMessage(@"C:\n\pic.png", []));
     }
 
     [AvaloniaFact]
@@ -312,7 +363,7 @@ public sealed class Release105Tests
         Assert.False(f.Window.EmptyText.IsVisible);
         Assert.True(await f.Shell.CloseTabAsync(f.Shell.ActiveTab!)); Pump(f.Window);
         Assert.True(f.Window.EmptyText.IsVisible);
-        foreach (var label in new[] { "New note", "Open files…", "Open folder…", "Try a sample note", "Starter templates", "Open guide", "Tern Quick Start…" })
+        foreach (var label in new[] { "New Document", "Open Files…", "Open Folder…", "Try a sample document", "New from Template…", "Learn Tern…", "Tern Quick Start…" })
             Assert.Contains(f.Window.EmptyText.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, label) && button.IsEffectivelyVisible);
         Assert.DoesNotContain(f.Window.EmptyText.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Hide Quick Start tips") && button.IsEffectivelyVisible);
         Capture(f.Window, "empty-workspace-dismissed");
@@ -328,9 +379,13 @@ public sealed class Release105Tests
         var window = new StarterTemplatesWindow(); window.Show(f.Window); Pump(window);
         try
         {
-            Assert.Equal(10, window.Catalog.ItemCount);
+            Assert.Equal(19, window.Catalog.ItemCount);
             Assert.Contains(StarterTemplates.All, t => t.Name == "Architecture Decision Record");
-            Assert.All(StarterTemplates.All, t => Assert.StartsWith("# ", t.Markdown));
+            // Agent skills must begin with YAML frontmatter; every other template begins with a heading.
+            Assert.All(StarterTemplates.All, t => Assert.StartsWith(t.FileName == "SKILL.md" ? "---" : "# ", t.Markdown));
+            Assert.Equal(3, StarterTemplates.All.Count(t => t.FileName == "SKILL.md"));
+            foreach (var skill in new[] { "code-review", "debugging", "testing" })
+                Assert.Contains(StarterTemplates.All, t => t.FileName == "SKILL.md" && t.Markdown.Contains("name: " + skill, StringComparison.Ordinal));
             Assert.True(window.UseTemplate.IsEnabled);
             Capture(window, "starter-templates");
         }
@@ -345,16 +400,25 @@ public sealed class Release105Tests
         {
             if (i > 0) await f.Window.RunCommandAsync(CommandIds.Welcome);
             var surface = i == 0 ? (Control)f.Window.EmptyText : f.Window.OverlayLayer;
-            surface.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Starter templates")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            surface.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "New from Template…")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Pump(f.Window);
+            for (var attempt = 0; attempt < 200 && !f.Window.OwnedWindows.OfType<StarterTemplatesWindow>().Any(); attempt++)
+            { await Task.Delay(10); Pump(f.Window); }
             var catalog = Assert.Single(f.Window.OwnedWindows.OfType<StarterTemplatesWindow>());
             catalog.Catalog.SelectedIndex = i; Pump(catalog);
+            var previousTab = f.Shell.ActiveTab;
+            var before = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
             catalog.UseTemplate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f.Window);
-            Assert.Equal(StarterTemplates.All[i].Markdown.ReplaceLineEndings("\r\n"), f.Shell.ActiveTab!.CurrentText);
+            for (var attempt = 0; attempt < 200 && ReferenceEquals(previousTab, f.Shell.ActiveTab); attempt++)
+            { await Task.Delay(10); Pump(f.Window); }
+            Assert.NotSame(previousTab, f.Shell.ActiveTab);
+            var after = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            Assert.Contains(f.Shell.ActiveTab!.CurrentText, new[] { before, after }.Select(date =>
+                StarterTemplates.All[i].Markdown.Replace("YYYY-MM-DD", date, StringComparison.Ordinal).ReplaceLineEndings("\r\n")));
             Assert.Equal(Tern.Domain.Text.LineEnding.CrLf, f.Shell.ActiveTab.Session.Format.DominantLineEnding);
         }
         await f.Window.RunCommandAsync(CommandIds.Welcome);
-        f.Window.OverlayLayer.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Try a sample note")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        f.Window.OverlayLayer.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Try a sample document")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Pump(f.Window);
         Assert.Equal(Tern.Domain.Text.LineEnding.CrLf, f.Shell.ActiveTab!.Session.Format.DominantLineEnding);
         Assert.DoesNotContain("\n", f.Shell.ActiveTab.CurrentText.Replace("\r\n", ""));
@@ -374,7 +438,7 @@ public sealed class Release105Tests
         await pending; Assert.Equal(0, picks);
         pending = f.Window.RunCommandAsync(CommandIds.InsertImage); Pump(f.Window);
         prompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
-        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save note")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save document")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await pending; Assert.Equal(0, picks); Assert.Null(f.Shell.ActiveTab!.FilePath);
     }
 
@@ -390,7 +454,7 @@ public sealed class Release105Tests
             window.GetVisualDescendants().OfType<RadioButton>().Single(b => Equals(b.Content, "Local file")).IsChecked = true;
             Assert.False(window.InsertButton.IsEnabled);
             Capture(window, "insert-link-save-required");
-            window.GetVisualDescendants().OfType<RadioButton>().Single(b => Equals(b.Content, "Heading in this note")).IsChecked = true;
+            window.GetVisualDescendants().OfType<RadioButton>().Single(b => Equals(b.Content, "Heading in this document")).IsChecked = true;
             Assert.False(window.InsertButton.IsEnabled);
         }
         finally { window.Close(); }

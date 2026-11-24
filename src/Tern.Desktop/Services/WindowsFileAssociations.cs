@@ -42,6 +42,52 @@ internal static partial class WindowsFileAssociations
         }
         SHChangeNotify(0x08000000, 0, 0, 0);
     }
+
+    internal static void UnregisterCurrentUser()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.ProcessPath is not { } path) throw new PlatformNotSupportedException();
+        RemoveRegistration(path, (keyPath, name) =>
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(keyPath, writable: true);
+            key?.DeleteValue(name, throwOnMissingValue: false);
+        }, keyPath =>
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(keyPath))
+                if (key is null || key.SubKeyCount != 0 || key.ValueCount != 0) return;
+            Registry.CurrentUser.DeleteSubKey(keyPath, throwOnMissingSubKey: false);
+        });
+        SHChangeNotify(0x08000000, 0, 0, 0);
+    }
+
+    internal static void RemoveRegistration(string executable, Action<string, string> removeValue, Action<string> removeIfEmpty)
+    {
+        string[] ownedRoots =
+        [
+            @"Software\Classes\Applications\Tern.exe",
+            @"Software\Classes\Tern.Markdown",
+            @"Software\Classes\SystemFileAssociations\.md\shell\Tern.Open",
+            @"Software\Tern\Capabilities",
+        ];
+        var emptyCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in Registration(executable).Keys)
+        {
+            var parts = entry.Split('|');
+            removeValue(parts[0], parts[1]);
+            var key = parts[0];
+            // Shared OpenWithProgids and RegisteredApplications keep their other values.
+            if (!ownedRoots.Any(root => key.Equals(root, StringComparison.OrdinalIgnoreCase)
+                    || key.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))) continue;
+            while (true)
+            {
+                emptyCandidates.Add(key);
+                if (ownedRoots.Contains(key, StringComparer.OrdinalIgnoreCase)) break;
+                key = key[..key.LastIndexOf('\\')];
+            }
+        }
+        foreach (var key in emptyCandidates.OrderByDescending(key => key.Length))
+            removeIfEmpty(key);
+    }
+
     internal static string CurrentRegistration()
     {
         if (!OperatingSystem.IsWindows()) return "Windows Explorer integration is available on Windows.";

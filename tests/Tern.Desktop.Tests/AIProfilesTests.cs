@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Tern.App;
 using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Tests;
@@ -10,10 +11,10 @@ public sealed class AIProfilesTests
     {
         foreach (var provider in AIProviders.All)
         {
-            using var request = JsonDocument.Parse(provider.CreateRequest("test-model", "reviewed café 😀"));
+            var invocation = AIRequest.CurrentText("reviewed café 😀");
+            using var request = JsonDocument.Parse(provider.CreateRequest("test-model", invocation));
             Assert.False(request.RootElement.GetProperty("stream").GetBoolean());
-            Assert.Single(request.RootElement.GetProperty("messages").EnumerateArray());
-            Assert.Equal("reviewed café 😀", request.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+            AIWire.AssertIndependent(request.RootElement, invocation);
             using var response = JsonDocument.Parse(provider.Id switch
             {
                 "chat-completions" => "{\"choices\":[{\"message\":{\"content\":\"response\"}}]}",

@@ -54,22 +54,22 @@
       "tern.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )"
         }
       },
       "tern.markdown": {
         "type": "Project",
         "dependencies": {
           "Markdig": "[1.5.0, )",
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )"
         }
       },
       "tern.workspaces": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )",
-          "Tern.Filesystem": "[1.0.0-rc.2, )",
-          "Tern.Markdown": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )",
+          "Tern.Filesystem": "[1.0.6, )",
+          "Tern.Markdown": "[1.0.6, )"
         }
       },
       "Markdig": {

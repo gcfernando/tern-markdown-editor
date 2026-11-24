@@ -104,6 +104,10 @@ public class DialogTests
         size.Value = 5000;
         Assert.InRange(settings.EditorFontSize, 8, 48);
         window.Close();
+        var prompt = Assert.Single(window.OwnedWindows.OfType<PromptWindow>());
+        Find<Button>(prompt, "Discard changes").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Settle();
+        Assert.False(window.IsVisible);
     }
 
     [AvaloniaFact]
@@ -401,7 +405,8 @@ public class DialogTests
         var frame = f.Window.CaptureRenderedFrame()!;
         var pixel = ReadPixel(frame, (int)origin.X, (int)origin.Y);
 
-        var panel = (SolidColorBrush)Application.Current!.FindResource("Tern.Panel")!;
+        Assert.True(input.TryFindResource("Tern.Panel", input.ActualThemeVariant, out var panelValue));
+        var panel = Assert.IsAssignableFrom<ISolidColorBrush>(panelValue);
         Assert.InRange(pixel.R, panel.Color.R - 3, panel.Color.R + 3);
         Assert.InRange(pixel.G, panel.Color.G - 3, panel.Color.G + 3);
         Assert.InRange(pixel.B, panel.Color.B - 3, panel.Color.B + 3);

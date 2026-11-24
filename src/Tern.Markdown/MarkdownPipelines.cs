@@ -18,6 +18,7 @@ public enum MarkdownProfile
 
 public static class MarkdownPipelines
 {
+    private static readonly object CancellationContextKey = new();
     private static readonly Lazy<MarkdownPipeline> CommonMark = new(() => Build(MarkdownProfile.CommonMark));
     private static readonly Lazy<MarkdownPipeline> Gfm = new(() => Build(MarkdownProfile.Gfm));
     private static readonly Lazy<MarkdownPipeline> Extended = new(() => Build(MarkdownProfile.Extended));
@@ -29,6 +30,21 @@ public static class MarkdownPipelines
         MarkdownProfile.Extended => Extended.Value,
         _ => throw new ArgumentOutOfRangeException(nameof(profile)),
     };
+
+    public static Markdig.Syntax.MarkdownDocument Parse(string text, MarkdownProfile profile, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!cancellationToken.CanBeCanceled) return Markdig.Markdown.Parse(text, For(profile));
+        var context = new MarkdownParserContext();
+        context.Properties[CancellationContextKey] = cancellationToken;
+        return Markdig.Markdown.Parse(text, For(profile), context);
+    }
+
+    private static void ObserveCancellation(MarkdownParserContext? context)
+    {
+        if (context?.Properties.TryGetValue(CancellationContextKey, out var value) == true && value is CancellationToken cancellationToken)
+            cancellationToken.ThrowIfCancellationRequested();
+    }
 
     private static MarkdownPipeline Build(MarkdownProfile profile)
     {
@@ -51,6 +67,9 @@ public static class MarkdownPipelines
                 .UseAlertBlocks();
         }
 
-        return builder.Build();
+        var pipeline = builder.Build();
+        foreach (var parser in builder.BlockParsers)
+            parser.Closed += static (processor, _) => ObserveCancellation(processor.Context);
+        return pipeline;
     }
 }

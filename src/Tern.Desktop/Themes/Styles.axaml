@@ -1,15 +1,40 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:scroll="using:Tern.PreviewView"
+        xmlns:edit="using:AvaloniaEdit">
   <Styles.Resources>
+    <x:Boolean x:Key="Tern.Scroll.SharedAppearance">True</x:Boolean>
     <StreamGeometry x:Key="Tern.Icon.Close">M2,2 L14,14 M2,14 L14,2</StreamGeometry>
     <StreamGeometry x:Key="Tern.Icon.Trash">M2,4 H14 M6,2 H10 M4,4 L5,14 H11 L12,4 M7,6 V12 M9,6 V12</StreamGeometry>
     <StreamGeometry x:Key="Tern.Icon.NewDocument">M3,1 H10 L14,5 V15 H3 Z M10,1 V5 H14 M6,10 H12 M9,7 V13</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.ChevronLeft">M10,2 L4,8 L10,14</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.ChevronRight">M6,2 L12,8 L6,14</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.ChevronDown">M2,5 L8,11 L14,5</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Plus">M8,2 V14 M2,8 H14</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.More">M2,8 H2.1 M8,8 H8.1 M14,8 H14.1</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Checkbox">M2,2 H14 V14 H2 Z M4,8 L7,11 L12,5</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.ArrowUp">M8,14 V2 M2,8 L8,2 L14,8</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.ArrowDown">M8,2 V14 M2,8 L8,14 L14,8</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.List">M2,3 H3 M6,3 H14 M2,8 H3 M6,8 H14 M2,13 H3 M6,13 H14</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Swap">M2,5 H14 L11,2 M14,11 H2 L5,14</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Minimize">M2,8 H14</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Maximize">M2,2 H14 V14 H2 Z</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Restore">M5,2 H14 V11 M2,5 H11 V14 H2 Z</StreamGeometry>
+    <StreamGeometry x:Key="Tern.Icon.Help">M8,1 A7,7 0 1 1 7.99,1 Z M6,6 A2,2 0 1 1 9,7.7 L8,8.5 V10 M8,12 V12.1</StreamGeometry>
   </Styles.Resources>
+
+  <Style Selector=":is(Button).icon-button">
+    <Setter Property="MinWidth" Value="30" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="6" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
 
   <Style Selector="Window">
     <Setter Property="Background" Value="{DynamicResource Tern.Bg}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
-    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Body}" />
     <Setter Property="FontFamily" Value="Segoe UI, Inter, Noto Sans, Arial, sans-serif" />
   </Style>
 
@@ -18,14 +43,21 @@
   </Style>
   <Style Selector="GridSplitter">
     <Setter Property="Focusable" Value="True" />
+    <Setter Property="IsTabStop" Value="True" />
+    <Setter Property="MinWidth" Value="6" />
     <Setter Property="Template">
       <ControlTemplate>
-        <Border Background="Transparent"><Border Width="1" HorizontalAlignment="Center" Background="{DynamicResource Tern.Border}" /></Border>
+        <Border Background="Transparent"><Border x:Name="TernSplitterGrip" Width="1" Height="48" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="2" Background="{DynamicResource Tern.Border}" /></Border>
       </ControlTemplate>
     </Setter>
   </Style>
-  <Style Selector="GridSplitter:focus-visible /template/ Border">
-    <Setter Property="Background" Value="{DynamicResource Tern.Accent}" />
+  <Style Selector="GridSplitter:pointerover /template/ Border#TernSplitterGrip">
+    <Setter Property="Width" Value="3" />
+    <Setter Property="Background" Value="{DynamicResource Tern.ControlBorder}" />
+  </Style>
+  <Style Selector="GridSplitter:focus-visible /template/ Border#TernSplitterGrip">
+    <Setter Property="Width" Value="3" />
+    <Setter Property="Background" Value="{DynamicResource Tern.ControlBorder}" />
   </Style>
   <Style Selector="Expander.ai-advanced /template/ ToggleButton">
     <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
@@ -52,7 +84,7 @@
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
   </Style>
   <Style Selector="TextBlock.caps">
-    <Setter Property="FontSize" Value="{DynamicResource Tern.SmallFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Caption}" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="LetterSpacing" Value="0.6" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Muted}" />
@@ -62,17 +94,17 @@
     <Setter Property="Background" Value="{DynamicResource Tern.Panel}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Card}" />
   </Style>
 
   <Style Selector="FlyoutPresenter.tern-popup">
-    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Body}" />
     <Setter Property="FontFamily" Value="Segoe UI, Inter, Noto Sans, Arial, sans-serif" />
     <Setter Property="Background" Value="{DynamicResource Tern.Panel}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Popup}" />
     <Setter Property="Padding" Value="0" />
     <Setter Property="Template">
       <ControlTemplate>
@@ -87,6 +119,12 @@
     </Setter>
   </Style>
 
+  <Style Selector=":is(Button) /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Transitions" Value="{DynamicResource Tern.Motion.ControlTransitions}" />
+  </Style>
+  <Style Selector="ListBox#TabStrip ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Transitions" Value="{DynamicResource Tern.Motion.TabTransitions}" />
+  </Style>
   <Style Selector="Button">
     <Setter Property="MinHeight" Value="32" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -95,7 +133,7 @@
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Control}" />
     <Setter Property="Padding" Value="10,5" />
   </Style>
   <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -116,6 +154,30 @@
     <Setter Property="Background" Value="{DynamicResource Tern.Accent}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.OnAccent}" />
     <Setter Property="Opacity" Value="0.9" />
+  </Style>
+  <Style Selector="Button.danger">
+    <Setter Property="Background" Value="{DynamicResource Tern.Danger}" />
+    <Setter Property="Foreground" Value="{DynamicResource Tern.OnDanger}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Danger}" />
+  </Style>
+  <Style Selector="Button.danger /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Tern.Danger}" />
+    <Setter Property="Foreground" Value="{DynamicResource Tern.OnDanger}" />
+  </Style>
+  <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Tern.Danger}" />
+    <Setter Property="Foreground" Value="{DynamicResource Tern.OnDanger}" />
+    <Setter Property="Opacity" Value="0.9" />
+  </Style>
+  <Style Selector="Button.danger:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Opacity" Value="0.8" />
+  </Style>
+  <Style Selector="Button.danger:disabled">
+    <Setter Property="Opacity" Value="0.5" />
+  </Style>
+  <Style Selector="Button.danger:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Text}" />
+    <Setter Property="BorderThickness" Value="2" />
   </Style>
   <Style Selector="Button.flat">
     <Setter Property="Background" Value="Transparent" />
@@ -149,7 +211,7 @@
     <Setter Property="Template">
       <ControlTemplate>
         <Border Background="{DynamicResource Tern.Surface}" BorderBrush="{DynamicResource Tern.Border}"
-                BorderThickness="1" CornerRadius="8" Padding="6">
+                BorderThickness="1" CornerRadius="{DynamicResource Tern.Radius.Card}" Padding="6">
           <StackPanel>
             <ToggleButton x:Name="ExpanderHeader" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
                           IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
@@ -169,7 +231,7 @@
     <Setter Property="Template">
       <ControlTemplate>
         <Border x:Name="ShortcutsHeaderSurface" Background="{TemplateBinding Background}"
-                Padding="{TemplateBinding Padding}" CornerRadius="6">
+                Padding="{TemplateBinding Padding}" CornerRadius="{DynamicResource Tern.Radius.Control}">
           <Grid ColumnDefinitions="*,Auto">
             <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
                               Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" />
@@ -202,7 +264,7 @@
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Muted}" />
     <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Control}" />
     <Setter Property="Padding" Value="12,5" />
   </Style>
   <Style Selector="ToggleButton.seg:checked /template/ ContentPresenter#PART_ContentPresenter">
@@ -217,7 +279,7 @@
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Muted}" />
     <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Control}" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="Padding" Value="10,6" />
@@ -235,7 +297,7 @@
     <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Control}" />
   </Style>
   <!-- Fluent paints hover/focus backgrounds from its own brushes, which made a focused box render black. -->
   <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
@@ -248,6 +310,65 @@
   <Style Selector="TextBox.onPanel /template/ Border#PART_BorderElement">
     <Setter Property="Background" Value="{DynamicResource Tern.Panel}" />
   </Style>
+  <Style Selector="TextBox.rename-error /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Danger}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+
+  <Style Selector="TextBox.tern-warn /template/ Border#PART_BorderElement">
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Warning}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+
+  <Style Selector="Button.tern-tile">
+    <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="12,9" />
+  </Style>
+  <Style Selector="Button.tern-tile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Tern.AccentSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" />
+  </Style>
+
+  <Style Selector="RadioButton.tern-choice">
+    <Setter Property="Margin" Value="0,0,8,8" />
+    <Setter Property="Padding" Value="14,12" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="{DynamicResource Tern.Panel}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_Card" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+          <Grid ColumnDefinitions="*,Auto">
+            <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" />
+            <Border Name="PART_Tick" Grid.Column="1" Width="20" Height="20" CornerRadius="10" VerticalAlignment="Top" IsVisible="False"
+                    Background="{DynamicResource Tern.Accent}">
+              <TextBlock Text="✓" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Tern.OnAccent}" />
+            </Border>
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="RadioButton.tern-choice:pointerover /template/ Border#PART_Card">
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" />
+  </Style>
+  <Style Selector="RadioButton.tern-choice:checked /template/ Border#PART_Card">
+    <Setter Property="Background" Value="{DynamicResource Tern.AccentSoft}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="RadioButton.tern-choice:checked /template/ Border#PART_Tick">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+  <Style Selector="RadioButton.tern-choice:disabled /template/ Border#PART_Card">
+    <Setter Property="Opacity" Value="0.55" />
+  </Style>
 
   <Style Selector="CheckBox">
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
@@ -255,7 +376,7 @@
   <Style Selector="ComboBox">
     <Setter Property="Background" Value="{DynamicResource Tern.Surface}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Tern.ControlBorder}" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Control}" />
   </Style>
 
   <Style Selector="ListBox">
@@ -263,7 +384,7 @@
     <Setter Property="BorderThickness" Value="0" />
   </Style>
   <Style Selector="ListBoxItem">
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Control}" />
     <Setter Property="Padding" Value="8,5" />
     <Setter Property="Foreground" Value="{DynamicResource Tern.Text}" />
   </Style>
@@ -292,32 +413,60 @@
     <Setter Property="Background" Value="{DynamicResource Tern.Hover}" />
   </Style>
 
-  <Style Selector="GridSplitter">
-    <Setter Property="Background" Value="{DynamicResource Tern.Border}" />
-    <Setter Property="Focusable" Value="True" />
-    <Setter Property="IsTabStop" Value="True" />
-  </Style>
-  <Style Selector="GridSplitter:focus-visible">
-    <Setter Property="Background" Value="{DynamicResource Tern.Accent}" />
-  </Style>
   <Style Selector="ScrollViewer">
     <Setter Property="AllowAutoHide" Value="False" />
+    <Setter Property="scroll:SmoothScrolling.IsEnabled" Value="True" />
+    <Setter Property="scroll:SmoothScrolling.Duration" Value="{DynamicResource Tern.Motion.Scroll}" />
+  </Style>
+  <Style Selector="ListBox, TreeView, TextBox">
+    <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+  </Style>
+  <Style Selector="edit|TextEditor /template/ ScrollViewer">
+    <Setter Property="scroll:SmoothScrolling.PixelUnits" Value="True" />
+  </Style>
+  <Style Selector="ScrollBar">
+    <Setter Property="Background" Value="{DynamicResource Tern.Preview.CodeBackground}" />
   </Style>
   <Style Selector="ScrollBar:vertical">
     <Setter Property="Width" Value="20" />
     <Setter Property="MinWidth" Value="20" />
+    <!-- Reserve a real gap before the track, including for outlined form cards.
+         The native Auto column disappears with a hidden bar; no content wrapper
+         is introduced, so virtualized/logical scrolling keeps its own units. -->
+    <Setter Property="Margin" Value="12,0,0,0" />
   </Style>
   <Style Selector="ScrollBar:horizontal">
     <Setter Property="Height" Value="20" />
     <Setter Property="MinHeight" Value="20" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+  </Style>
+  <!-- TextBox already insets its template inside the field border. Keep a
+       compact internal text/track gap without taking a form-sized gutter. -->
+  <Style Selector="TextBox /template/ ScrollViewer /template/ ScrollBar:vertical">
+    <Setter Property="Margin" Value="4,0,0,0" />
+  </Style>
+  <Style Selector="TextBox /template/ ScrollViewer /template/ ScrollBar:horizontal">
+    <Setter Property="Margin" Value="0,4,0,0" />
   </Style>
   <Style Selector="ScrollBar:vertical /template/ Thumb">
     <Setter Property="MinHeight" Value="40" />
     <Setter Property="MinWidth" Value="20" />
+    <Setter Property="CornerRadius" Value="5" />
   </Style>
   <Style Selector="ScrollBar:horizontal /template/ Thumb">
     <Setter Property="MinWidth" Value="40" />
     <Setter Property="MinHeight" Value="20" />
+    <Setter Property="CornerRadius" Value="5" />
+  </Style>
+  <Style Selector="ScrollBar:vertical /template/ Thumb /template/ Border">
+    <Setter Property="Margin" Value="3,0" />
+  </Style>
+  <Style Selector="ScrollBar:horizontal /template/ Thumb /template/ Border">
+    <Setter Property="Margin" Value="0,3" />
+  </Style>
+  <!-- Document surfaces and compact popups have no form fields beside their bars. -->
+  <Style Selector="edit|TextEditor /template/ ScrollViewer /template/ ScrollBar, scroll|PreviewView ScrollViewer /template/ ScrollBar, ComboBox /template/ ScrollViewer /template/ ScrollBar, MenuItem /template/ ScrollViewer /template/ ScrollBar, MenuFlyoutPresenter /template/ ScrollViewer /template/ ScrollBar">
+    <Setter Property="Margin" Value="0" />
   </Style>
   <Style Selector="Window.studio Button.icon">
     <Setter Property="Width" Value="30" />
@@ -334,23 +483,24 @@
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
   <Style Selector="Window.studio ListBox#TabStrip ListBoxItem">
+    <Setter Property="Margin" Value="{DynamicResource Tern.Inset.TabGap}" />
     <Setter Property="Padding" Value="12,5" />
     <Setter Property="MinHeight" Value="40" />
-    <Setter Property="CornerRadius" Value="5,5,0,0" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Tern.Radius.Tab}" />
   </Style>
   <Style Selector="Window.studio Menu#ApplicationMenu > MenuItem">
     <Setter Property="Padding" Value="10,6" />
-    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Body}" />
   </Style>
   <Style Selector="Window.studio ToggleButton.nav">
     <Setter Property="Padding" Value="12,7" />
-    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Body}" />
   </Style>
   <Style Selector="Window.studio TreeViewItem">
-    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Body}" />
   </Style>
   <Style Selector="TabControl#InspectorContent TabItem">
-    <Setter Property="FontSize" Value="{DynamicResource Tern.UiFontSize}" />
+    <Setter Property="FontSize" Value="{DynamicResource Tern.FontSize.Body}" />
     <Setter Property="Padding" Value="7,8" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="MinHeight" Value="36" />

@@ -8,6 +8,9 @@ namespace Tern.PreviewView;
 /// <summary>Resource keys the preview looks up. Define them in the host's theme to restyle the preview.</summary>
 public static class PreviewKeys
 {
+    public const string FindMatch = "Tern.FindMatch";
+    public const string FindMatchOther = "Tern.FindMatchOther";
+    public const string FindMatchOutline = "Tern.FindMatchOutline";
     /// <summary>Body text.</summary>
     public const string Foreground = "Tern.Preview.Foreground";
 
@@ -97,7 +100,8 @@ public static class PreviewTheme
         note: "#38BDF8", tip: "#34D399", important: "#A78BFA", warning: "#FBBF24", caution: "#F87171",
         accent: "#2DD4BF", selection: "#663880FF", mark: "#6B5A12", error: "#E58A8A",
         keyword: "#FF7B72", codeString: "#A5D6FF", function: "#D2A8FF", type: "#FFA657", constant: "#79C0FF", comment: "#9198A1",
-        warningForeground: "#1F2328", focusBackground: "#2DD4BF", focusForeground: "#0D1117", markLink: "#B6DEFF", markLinkBroken: "#FFD1D1");
+        warningForeground: "#1F2328", focusBackground: "#2DD4BF", focusForeground: "#0D1117", markLink: "#B6DEFF", markLinkBroken: "#FFD1D1",
+        find: "#66FBBF24", findOther: "#33FBBF24", findOutline: "#FBBF24");
 
     /// <summary>A dark navy theme with teal accents.</summary>
     public static ResourceDictionary Midnight() => ToDictionary(Defaults);
@@ -109,13 +113,14 @@ public static class PreviewTheme
         note: "#0969DA", tip: "#1A7F37", important: "#8250DF", warning: "#9A6700", caution: "#CF222E",
         accent: "#0F766E", selection: "#553880FF", mark: "#FFE58A", error: "#B42318",
         keyword: "#CF222E", codeString: "#0A3069", function: "#8250DF", type: "#953800", constant: "#0550AE", comment: "#59636E",
-        warningForeground: "#FFFFFF", focusBackground: "#0F766E", focusForeground: "#FFFFFF", markLink: "#0550AE", markLinkBroken: "#9C2118"));
+        warningForeground: "#FFFFFF", focusBackground: "#0F766E", focusForeground: "#FFFFFF", markLink: "#0550AE", markLinkBroken: "#9C2118",
+        find: "#55FFB300", findOther: "#40FFD54F", findOutline: "#92400E"));
 
     /// <summary>The brush for <paramref name="key"/> in the Midnight set, used until the host defines the key.</summary>
     internal static IBrush Fallback(string key) => Defaults.TryGetValue(key, out var brush) ? brush : Brushes.Gray;
 
     /// <summary>Looks a theme brush up from <paramref name="host"/>'s resource scope, falling back to Midnight.</summary>
-    internal static IBrush Resolve(Control host, string key) =>
+    public static IBrush Resolve(Control host, string key) =>
         host.TryFindResource(key, host.ActualThemeVariant, out var value) && value is IBrush brush ? brush : Fallback(key);
 
     /// <summary>Keeps <paramref name="property"/> of <paramref name="host"/> in sync with a theme brush, including theme swaps.</summary>
@@ -138,8 +143,12 @@ public static class PreviewTheme
         string codeForeground, string border, string tableHeader, string quoteBar, string note, string tip, string important,
         string warning, string caution, string accent, string selection, string mark, string error,
         string keyword, string codeString, string function, string type, string constant, string comment,
-        string warningForeground, string focusBackground, string focusForeground, string markLink, string markLinkBroken) => new()
+        string warningForeground, string focusBackground, string focusForeground, string markLink, string markLinkBroken,
+        string find, string findOther, string findOutline) => new()
         {
+            [PreviewKeys.FindMatch] = Solid(find),
+            [PreviewKeys.FindMatchOther] = Solid(findOther),
+            [PreviewKeys.FindMatchOutline] = Solid(findOutline),
             [PreviewKeys.Background] = Solid(background),
             [PreviewKeys.Foreground] = Solid(foreground),
             [PreviewKeys.Muted] = Solid(muted),
@@ -174,4 +183,7 @@ public static class PreviewTheme
         };
 
     private static ImmutableSolidColorBrush Solid(string hex) => new(Color.Parse(hex));
+
+    /// <summary>Parses explicit document colours (SVG and chart content), not application chrome.</summary>
+    public static Color ParseDocumentColor(string value) => Color.Parse(value);
 }

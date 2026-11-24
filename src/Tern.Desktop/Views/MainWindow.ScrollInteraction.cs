@@ -23,12 +23,17 @@ public partial class MainWindow
     private bool _sourceScrollSyncQueued;
     private DocumentTab? _sourceScrollTab;
     private long _sourceScrollRevision;
+    private long _scrollInputGeneration, _sourceScrollInputGeneration;
+    private ScrollDragOwner _wheelScrollOwner;
+    private bool WheelOwns(ScrollDragOwner owner) => _wheelScrollOwner == owner
+        && Tern.PreviewView.SmoothScrolling.IsActiveWithin(owner == ScrollDragOwner.Source ? Editor : Preview);
 
     private void QueueSourceToPreviewScroll()
     {
         if (_shown is not { } sourceTab) return;
         _sourceScrollTab = sourceTab;
         _sourceScrollRevision = sourceTab.Session.Revision;
+        _sourceScrollInputGeneration = _scrollInputGeneration;
         if (_sourceScrollSyncQueued) return;
         _sourceScrollSyncQueued = true;
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -36,11 +41,13 @@ public partial class MainWindow
             _sourceScrollSyncQueued = false;
             var tab = _sourceScrollTab;
             var revision = _sourceScrollRevision;
+            var inputGeneration = _sourceScrollInputGeneration;
             _sourceScrollTab = null;
             if (tab is null || _windowClosed || _switchingDocument || _syncingScroll || !ReferenceEquals(tab, _shown)
                 || !tab.Session.IsCurrent(revision) || !ReferenceEquals(_renderedPreviewTab, tab)
                 || _renderedPreviewRevision != revision || !_shell.Settings.SyncScroll
-                || _shell.ViewMode != Tern.App.Settings.ViewMode.Split || _scrollDragOwner == ScrollDragOwner.Preview) return;
+                || _shell.ViewMode != Tern.App.Settings.ViewMode.Split || _scrollDragOwner == ScrollDragOwner.Preview
+                || WheelOwns(ScrollDragOwner.Preview) || inputGeneration != _scrollInputGeneration) return;
             // Preview anchor realization can run layout. Do it after the native
             // Thumb/Track drag handler has finished recording its drag delta.
             ScrollPreviewTo(EditorTopLine());
@@ -49,6 +56,9 @@ public partial class MainWindow
 
     private void WireScrollInteraction()
     {
+        AddHandler(PointerWheelChangedEvent, OnWheelIntent, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(ScrollGestureEvent, OnWheelIntent, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(KeyDownEvent, (_, _) => ResetScrollIntent(), RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerPressedEvent, OnScrollbarPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, OnScrollbarPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerCaptureLostEvent, OnScrollbarCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
@@ -56,6 +66,7 @@ public partial class MainWindow
 
     private void OnScrollbarPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        ResetScrollIntent();
         if (e.Source is not Visual visual || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
             || visual.GetSelfAndVisualAncestors().OfType<ScrollBar>().FirstOrDefault() is not { } bar) return;
         var ancestors = bar.GetVisualAncestors().ToArray();
@@ -65,6 +76,16 @@ public partial class MainWindow
         ++_scrollDragGeneration;
         _scrollDragPointer = e.Pointer;
         _scrollDragOwner = owner;
+    }
+
+    private void ResetScrollIntent() { ++_scrollInputGeneration; _wheelScrollOwner = ScrollDragOwner.None; }
+    private void OnWheelIntent(object? sender, RoutedEventArgs e)
+    {
+        ++_scrollInputGeneration;
+        var ancestors = (e.Source as Visual)?.GetSelfAndVisualAncestors().ToArray() ?? [];
+        _wheelScrollOwner = ancestors.Contains(Editor) ? ScrollDragOwner.Source
+            : ancestors.Contains(Preview) ? ScrollDragOwner.Preview : ScrollDragOwner.None;
+        if (_wheelScrollOwner != ScrollDragOwner.None) { _syncingScroll = false; Preview.SuppressNotifications = false; }
     }
 
     private void OnScrollbarPointerReleased(object? sender, PointerReleasedEventArgs e) => EndScrollbarDrag(e.Pointer);

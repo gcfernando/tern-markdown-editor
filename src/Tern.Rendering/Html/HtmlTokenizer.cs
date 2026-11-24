@@ -27,7 +27,7 @@ internal static class HtmlTokenizer
         "script", "style", "xmp", "iframe", "noembed", "noframes", "textarea", "title",
     };
 
-    public static List<HtmlToken> Tokenize(string input)
+    public static List<HtmlToken> Tokenize(string input, bool rejectTruncation = false)
     {
         var tokens = new List<HtmlToken>();
         var text = new StringBuilder();
@@ -130,6 +130,8 @@ internal static class HtmlTokenizer
             }
         }
 
+        if (rejectTruncation && i < n)
+            throw new InvalidDataException("The HTML contains too many elements. Use Paste Plain Text instead.");
         FlushText();
         return tokens;
     }

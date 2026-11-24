@@ -16,10 +16,11 @@ public sealed class OpenUrlWindow : Window
     public OpenUrlWindow(string? initialUrl, bool openImmediately = false) : this(new MarkdownUrlLoader(), initialUrl, openImmediately, MarkdownUrlCache.Root(Tern.App.Shell.AppPaths.Default().StateDirectory)) { }
     internal OpenUrlWindow(MarkdownUrlLoader loader, string? initialUrl = null, bool openImmediately = false, string? cacheRoot = null, Tern.App.Shell.ActivityFeed? activities = null)
     {
-        DialogParts.Setup(this, "Open Markdown URL", 660, 440);
+        DialogParts.Setup(this, "Open Markdown URL", 660, 440, DialogGuidance.OpenUrl);
         MinWidth = 500; MinHeight = 240;
-        FontSize = GuideParts.Scaled(14);
-        var url = new TextBox { PlaceholderText = "Paste an HTTP or HTTPS Markdown URL", MaxLength = 8192, FontSize = GuideParts.Scaled(14) };
+        this[!FontSizeProperty] = GuideParts.Font("Body").ToBinding();
+        var url = new TextBox { PlaceholderText = "Paste an HTTP or HTTPS Markdown URL", MaxLength = 8192,
+            [!TextBox.FontSizeProperty] = GuideParts.Font("Body").ToBinding() };
         AutomationProperties.SetName(url, "Markdown URL");
         var open = new Button { Content = "Open working copy", IsDefault = true };
         var download = new Button { Content = "Save portable copy…" };
@@ -27,14 +28,14 @@ public sealed class OpenUrlWindow : Window
         AutomationProperties.SetName(download, "Save portable copy");
         var cancel = new Button { Content = "Cancel request", IsEnabled = false };
         var close = new Button { Content = "Close", IsCancel = true };
-        var status = GuideParts.Body("No request has been made."); AutomationProperties.SetName(status, "Markdown URL status");
+        var status = MessageTones.Follow(GuideParts.Body("No request has been made.")); AutomationProperties.SetName(status, "Markdown URL status");
         var fetchAddress = GuideParts.Body("Paste a URL to preview the file address. No request starts yet.");
         AutomationProperties.SetName(fetchAddress, "Markdown fetch address");
         CancellationTokenSource? request = null; var closed = false;
-        void SetStatus(string message, bool error = false)
+        void SetStatus(string message, bool error = false, MessageTone? tone = null)
         {
             status.Text = message;
-            status[!TextBlock.ForegroundProperty] = status.GetResourceObservable(error ? ThemeManager.Danger : ThemeManager.Text).ToBinding();
+            status[!TextBlock.ForegroundProperty] = status.GetResourceObservable(MessageTones.Foreground(error ? MessageTone.Error : tone ?? MessageTones.Classify(message))).ToBinding();
             if (error) Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 if (!closed) status.BringIntoView();
@@ -53,8 +54,8 @@ public sealed class OpenUrlWindow : Window
             {
                 fetchAddress.Text = "Use a public Markdown file link or an explicit localhost server address.";
                 if (updateStatus) SetStatus(string.IsNullOrWhiteSpace(url.Text)
-                    ? "Enter a Markdown file URL to enable Open or Download and Open." : ex.Message,
-                    error: !string.IsNullOrWhiteSpace(url.Text));
+                    ? "Enter a Markdown file URL to enable Open working copy, Fetch latest or Save portable copy." : Tern.App.Shell.UserProblem.Plain(ex),
+                    error: !string.IsNullOrWhiteSpace(url.Text), tone: MessageTone.Info);
             }
             open.IsEnabled = download.IsEnabled = latest.IsEnabled = valid && request is null && !closed;
             return valid;
@@ -90,7 +91,7 @@ public sealed class OpenUrlWindow : Window
                 if (!closed && !operation.IsCancellationRequested) { SetStatus("Markdown loaded. Opening a cached copy…"); Close(document); }
             }
             catch (OperationCanceledException) { activity?.Cancel(); if (!closed) SetStatus("Canceled. No document was opened or saved."); }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { activity?.Fail(ex.Message); if (!closed) SetStatus(ex.Message, error: true); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { activity?.Fail(ex.Message); if (!closed) SetStatus(Tern.App.Shell.UserProblem.Plain(ex), error: true); }
             finally { request = null; cancel.IsEnabled = false; url.IsReadOnly = false; ValidateInput(updateStatus: false); }
         }
         open.Click += async (_, _) => await FetchAsync();
@@ -115,8 +116,8 @@ public sealed class OpenUrlWindow : Window
             new TextBlock { Text = "Markdown URL", FontWeight = Avalonia.Media.FontWeight.SemiBold, TextWrapping = Avalonia.Media.TextWrapping.Wrap }, url,
             GuideParts.Caption("Open working copy uses a cached copy when available. Fetch latest explicitly requests a new copy. Save portable copy lets you choose where to save the file and its assets. Editing never updates the source website."),
             details, status);
-        var actions = GuideParts.Actions(download, latest, open, cancel, close);
-        var frame = new Grid { Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 16 };
+        var actions = GuideParts.Actions(open, close, download, latest, cancel);
+        var frame = new Grid { Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(16).ToBinding() };
         frame.Children.Add(new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
         frame.Children.Add(actions); Grid.SetRow(actions, 1);
         Content = frame;

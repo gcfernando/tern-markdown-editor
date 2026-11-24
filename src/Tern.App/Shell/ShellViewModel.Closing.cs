@@ -17,7 +17,7 @@ public sealed partial class ShellViewModel
         if (Tabs.Any(t => !tabs.Contains(t) && t.FilePath is { } path && ReferenceEquals(WorkspaceForPath(path), workspace)))
         { StatusMessage = "Another document opened in this workspace while closing. Review it and try again."; return false; }
         var reviewed = tabs.Select(tab => (Tab: tab, tab.Session.Revision, tab.FilePath)).ToArray();
-        if (!await SaveWorkspaceContextAsync(workspace, activePath).ConfigureAwait(true)) return false;
+        if (!await PersistMetadataAsync(async () => (await SaveWorkspaceContextAsync(workspace, activePath).ConfigureAwait(true)) is { } failure ? [failure] : [], exiting: false).ConfigureAwait(true)) return false;
         if (reviewed.Any(state => state.Tab.Session.Revision != state.Revision || state.Tab.FilePath != state.FilePath)
             || Tabs.Any(t => !tabs.Contains(t) && t.FilePath is { } path && ReferenceEquals(WorkspaceForPath(path), workspace)))
         { StatusMessage = "A workspace document changed while saving its context. No documents were closed; review it and try again."; return false; }
@@ -37,8 +37,7 @@ public sealed partial class ShellViewModel
         if (Tabs.Any(t => !tabs.Contains(t) && t.FilePath is { } path && workspaces.Any(w => w.IsInside(path))))
         { StatusMessage = "Another workspace document opened while closing. Review it and try again."; return false; }
         var reviewed = tabs.Select(tab => (Tab: tab, tab.Session.Revision, tab.FilePath)).ToArray();
-        foreach (var workspace in workspaces)
-            if (!await SaveWorkspaceContextAsync(workspace, activePaths[workspace]).ConfigureAwait(true)) return false;
+        if (!await PersistMetadataAsync(() => SaveWorkspaceContextsAsync(workspaces, activePaths), exiting: false).ConfigureAwait(true)) return false;
         if (reviewed.Any(state => state.Tab.Session.Revision != state.Revision || state.Tab.FilePath != state.FilePath)
             || Tabs.Any(t => !tabs.Contains(t) && t.FilePath is { } path && workspaces.Any(workspace => workspace.IsInside(path))))
         { StatusMessage = "A workspace document changed while saving its context. No documents were closed; review it and try again."; return false; }
@@ -72,22 +71,61 @@ public sealed partial class ShellViewModel
         var tabs = Tabs.ToList();
         if (!await ConfirmCloseAsync(tabs).ConfigureAwait(true)) return false;
         var reviewed = tabs.Select(tab => (Tab: tab, tab.Session.Revision, tab.FilePath)).ToArray();
-        foreach (var workspace in OpenWorkspaces.ToList())
-            if (!await SaveWorkspaceContextAsync(workspace, WorkspaceActivePath(workspace)).ConfigureAwait(true)) return false;
+        // Every document decision is final here; metadata failures can only warn and offer Exit anyway.
+        if (!await PersistMetadataAsync(async () =>
+        {
+            var failures = await SaveWorkspaceContextsAsync(OpenWorkspaces.ToList(), null).ConfigureAwait(true);
+            if (!SaveSession(layout)) failures.Add("The session could not be saved: " + _sessionStore.LastSaveError?.Message);
+            if (!SaveSettings()) failures.Add("Settings could not be saved.");
+            return failures;
+        }, exiting: true).ConfigureAwait(true)) return false;
         if (reviewed.Any(state => state.Tab.Session.Revision != state.Revision || state.Tab.FilePath != state.FilePath)
             || Tabs.Any(tab => !tabs.Contains(tab)))
         { StatusMessage = "A document changed while saving workspace state. The application remains open; review it and try again."; return false; }
-        if (!SaveSession(layout)) return false;
-        SaveSettings();
+        StopLiveSessionPersistence();
         foreach (var tab in tabs) RemoveTab(tab, retireRecovery: true);
         return true;
     }
 
+    private async Task<List<string>> SaveWorkspaceContextsAsync(IReadOnlyList<WorkspaceSession> workspaces, IReadOnlyDictionary<WorkspaceSession, string?>? activePaths)
+    {
+        var failures = new List<string>();
+        foreach (var workspace in workspaces)
+            if (await SaveWorkspaceContextAsync(workspace, activePaths is null ? WorkspaceActivePath(workspace) : activePaths[workspace]).ConfigureAwait(true) is { } failure)
+                failures.Add(failure);
+        return failures;
+    }
+
+    /// <summary>Runs non-critical metadata writes; on failure asks Retry / Exit anyway / Cancel. Returns false only when the user cancels.</summary>
+    private async Task<bool> PersistMetadataAsync(Func<Task<List<string>>> save, bool exiting)
+    {
+        while (true)
+        {
+            var failures = await save().ConfigureAwait(true);
+            if (failures.Count == 0) return true;
+            var details = string.Join(Environment.NewLine, failures);
+            var choice = await _dialogs.AskMetadataSaveFailureAsync(details, exiting).ConfigureAwait(true);
+            if (choice == MetadataFailureChoice.Retry) continue;
+            if (choice == MetadataFailureChoice.Continue)
+            {
+                SetStatus("Tern could not remember your open tabs and layout, so they may not come back next time. " + string.Join(" ", failures), StatusSeverity.Warning);
+                return true;
+            }
+            SetStatus(string.Join(" ", failures) + (exiting ? " The application remains open." : " No documents were closed."), StatusSeverity.Warning);
+            return false;
+        }
+    }
+
     private async Task<bool> ConfirmCloseAsync(IReadOnlyList<DocumentTab> tabs)
     {
-        if (_confirmingClose) return false;
+        if (_confirmingClose)
+        {
+            SetStatus("Finish the open save prompt first.", StatusSeverity.Info);
+            return false;
+        }
         _confirmingClose = true;
         var revisions = new Dictionary<DocumentTab, long>();
+        var discarded = new List<DocumentTab>();
         try
         {
             // Complete every decision before removing any tab, so Cancel preserves the group.
@@ -95,10 +133,11 @@ public sealed partial class ShellViewModel
             {
                 if (tab.IsDirty)
                 {
-                    ActiveTab = tab;
+                    SelectTab(tab, TabActivationReason.Programmatic);
                     var choice = await _dialogs.AskSaveChangesAsync(tab.DisplayName).ConfigureAwait(true);
                     if (choice == SaveChoice.Cancel) return false;
                     if (choice == SaveChoice.Save && (!await SaveTabAsync(tab).ConfigureAwait(true) || tab.IsDirty)) return false;
+                    if (choice == SaveChoice.Discard) discarded.Add(tab);
                 }
                 revisions[tab] = tab.Session.Revision;
             }
@@ -108,6 +147,10 @@ public sealed partial class ShellViewModel
                 StatusMessage = "A document changed while closing. Review it and try again.";
                 return false;
             }
+            foreach (var tab in discarded)
+                if (!await KeepDiscardedAsync(tab).ConfigureAwait(true)) return false;
+            if (revisions.Any(pair => pair.Key.Session.Revision != pair.Value))
+            { StatusMessage = "A document changed while keeping its discarded-draft copy. No documents were closed."; return false; }
             return true;
         }
         finally

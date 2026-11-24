@@ -11,7 +11,7 @@ public sealed class WorkspaceFilter
     private readonly bool _excludeHidden;
     private readonly IgnoreRules _rules;
 
-    public WorkspaceFilter(string root, WorkspaceScanOptions? options = null)
+    public WorkspaceFilter(string root, WorkspaceScanOptions? options = null, bool requireReadableIgnoreFile = false)
     {
         Options = options ?? new WorkspaceScanOptions();
         Root = WorkspacePaths.Normalize(root);
@@ -22,13 +22,15 @@ public sealed class WorkspaceFilter
         _rules = IgnoreRules.FromPatterns(Options.ExcludePatterns, WorkspacePaths.IsCaseInsensitive);
         if (Options.UseIgnoreFile)
         {
-            _rules.AddRange(LoadIgnoreFile(Root));
+            _rules.AddRange(LoadIgnoreFile(Root, out var onlineOnly, requireReadableIgnoreFile));
+            IgnoreFileIsOnlineOnly = onlineOnly;
         }
     }
 
     public string Root { get; }
 
     public WorkspaceScanOptions Options { get; }
+    public bool IgnoreFileIsOnlineOnly { get; }
 
     public IReadOnlySet<string> Extensions => _extensions;
 
@@ -87,20 +89,33 @@ public sealed class WorkspaceFilter
             && !IsDirectoryExcluded(last, relative, 0);
     }
 
-    private static IgnoreRules LoadIgnoreFile(string root)
+    private static IgnoreRules LoadIgnoreFile(string root, out bool onlineOnly, bool required)
     {
+        onlineOnly = false;
         var path = Path.Combine(root, WorkspaceScanOptions.IgnoreFileName);
         try
         {
-            return File.Exists(path)
-                ? IgnoreRules.Parse(File.ReadAllText(path), WorkspacePaths.IsCaseInsensitive)
-                : IgnoreRules.Empty;
+            if (required)
+            {
+                try { _ = File.GetAttributes(path); }
+                catch (FileNotFoundException) { return IgnoreRules.Empty; }
+                if (!WorkspacePaths.IsPhysicallyContained(root, path) || Tern.Filesystem.CloudFiles.IsOnlineOnly(path))
+                    throw new IOException("Workspace exclusions are unavailable or outside the workspace. Make .ternignore available locally.");
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                if (stream.Length > 1_048_576) throw new IOException("Workspace exclusions exceed the assistant's bounded reading limit.");
+                var bytes = new byte[stream.Length];
+                stream.ReadExactly(bytes);
+                return IgnoreRules.Parse(Tern.Filesystem.TextFileCodec.Decode(bytes).Text, WorkspacePaths.IsCaseInsensitive);
+            }
+            if (!File.Exists(path)) return IgnoreRules.Empty;
+            onlineOnly = Tern.Filesystem.CloudFiles.IsOnlineOnly(path);
+            return onlineOnly ? IgnoreRules.Empty : IgnoreRules.Parse(File.ReadAllText(path), WorkspacePaths.IsCaseInsensitive);
         }
-        catch (IOException)
+        catch (IOException) when (!required)
         {
             return IgnoreRules.Empty;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException) when (!required)
         {
             return IgnoreRules.Empty;
         }

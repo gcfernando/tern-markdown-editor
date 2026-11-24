@@ -57,7 +57,7 @@ internal sealed class LineBox
 }
 
 /// <summary>Font lookup, text measuring and line breaking.</summary>
-internal sealed class PdfTypography : IDisposable
+internal sealed class PdfTypography(CancellationToken cancellationToken = default) : IDisposable
 {
     public const double LineSpacing = 1.4;
     private const double BaselineFactor = 1.05;
@@ -178,6 +178,7 @@ internal sealed class PdfTypography : IDisposable
 
         foreach (var atom in atoms)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             switch (atom.Kind)
             {
                 case AtomKind.Space:
@@ -226,6 +227,7 @@ internal sealed class PdfTypography : IDisposable
             var text = word.Text;
             while (text.Length > 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var wordWidth = Width(text, font);
                 var gap = pendingSpace is null ? 0 : SpaceWidth(Font(pendingSpace.Style, size));
                 if (current.Items.Count > 0 && current.Width + gap + wordWidth > width + 0.01)

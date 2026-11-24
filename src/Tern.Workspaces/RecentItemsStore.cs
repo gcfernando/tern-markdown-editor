@@ -10,6 +10,7 @@ public enum RecentKind
 }
 
 public sealed record RecentEntry(string Path, DateTime LastOpenedUtc, bool Pinned);
+public sealed record RecentRename(RecentKind Kind, string OldPath, string NewPath);
 
 /// <summary>
 /// Recently opened files, workspaces and URL references with pinning. Stored as <c>recent.json</c> in the base directory
@@ -47,11 +48,16 @@ public sealed class RecentItemsStore
 
     public StoreLoadStatus LoadStatus { get; }
     public event EventHandler? Changed;
-    public void ClearAll()
+    public event EventHandler<RecentRename>? Renamed;
+    public void ClearAll(bool includePinned = true)
     {
         lock (_gate)
         {
-            foreach (var list in _items.Values) list.Clear();
+            foreach (var list in _items.Values)
+            {
+                if (includePinned) list.Clear();
+                else list.RemoveAll(entry => !entry.Pinned);
+            }
             Persist();
         }
     }
@@ -171,6 +177,7 @@ public sealed class RecentItemsStore
 
             list.Add(entry);
             Persist();
+            Renamed?.Invoke(this, new RecentRename(kind, from, to));
         }
     }
 

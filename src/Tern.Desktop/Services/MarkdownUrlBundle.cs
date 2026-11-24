@@ -145,6 +145,7 @@ public sealed partial class MarkdownUrlLoader
             {
                 await ResolveAllowedAsync(current.IdnHost, deadline.Token).ConfigureAwait(false);
                 using var request = new HttpRequestMessage(HttpMethod.Get, current);
+                EnsureNetworkAllowed();
                 using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
                 if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect)
                 {
@@ -299,7 +300,8 @@ public static class MarkdownUrlCache
             return new MarkdownUrlDocument(new Uri(metadata.Source), metadata.Name, await File.ReadAllTextAsync(documentPath, cancellationToken).ConfigureAwait(false))
             { OriginalText = await File.ReadAllTextAsync(originalPath, cancellationToken).ConfigureAwait(false), Assets = assets, CachedPath = documentPath, WasCached = true, Warnings = metadata.Warnings, RequestedUrl = MarkdownUrlLoader.GetFetchAddress(url).AbsoluteUri };
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return null; }
+        // UriFormatException is not an ArgumentException. A damaged cached address must fall back to a fresh download.
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or UriFormatException) { return null; }
     }
 
     public static async Task<MarkdownUrlDocument> WriteAsync(string root, string requestedUrl, MarkdownUrlDocument document, CancellationToken cancellationToken = default)

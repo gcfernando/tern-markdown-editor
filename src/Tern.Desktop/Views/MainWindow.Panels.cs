@@ -5,7 +5,10 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using System.Collections.ObjectModel;
 using Tern.App.Panels;
+using Tern.App.Presentation;
+using Tern.App.Shell;
 using Tern.Desktop.ViewModels;
 using Tern.Domain.Text;
 using Tern.Workspaces;
@@ -16,20 +19,35 @@ public partial class MainWindow
 {
     private string _nav = "Files";
     private string _lastSearch = string.Empty;
-    private IReadOnlyList<TreeRow> _treeRoots = [];
+    private readonly ObservableCollection<TreeRow> _treeRoots = [];
+    private readonly ObservableCollection<SideRow> _outsideLibraryRows = [];
+    private readonly HashSet<TreeRow> _observedTreeDirectories = [];
+    private bool _treePresentationPending;
     private IReadOnlyList<OutlineItem> _outline = [];
     private IReadOnlyList<LinkRowView> _documentLinks = [];
     private int _taskScanGeneration;
     private int _tasksOpen;
     private readonly HashSet<Tern.App.Shell.WorkspaceSession> _observedWorkspaces = [];
 
-    private void OnWorkspaceFilesChanged(object? sender, WorkspaceChangeSet e) => Dispatcher.UIThread.Post(async () => { if (!_windowClosed) { RefreshWorkspace(); await CheckExternalChangesAsync(); } });
+    private void OnWorkspaceFilesChanged(object? sender, WorkspaceChangeSet e) => Dispatcher.UIThread.Post(async () =>
+    {
+        if (_windowClosed) return;
+        try
+        {
+            RefreshWorkspace();
+            await _shell.OfferFollowForMovedFilesAsync(e);
+            if (!_windowClosed) await CheckExternalChangesAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        { if (!_windowClosed) _shell.ReportUnexpectedError("check moved workspace files", ex); }
+    });
     private void OnWorkspaceGraphChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
     {
         if (_windowClosed) return;
         RefreshPanels();
         UpdateBadges();
-        if (_nav is "Backlinks" or "Broken") ShowNav(_nav);
+        if (_nav is "Backlinks" or "Broken" or "Tags" or "Graph") ShowNav(_nav);
+        ScheduleTaskRefresh();
     });
 
     internal string ActiveNav => _nav;
@@ -38,7 +56,8 @@ public partial class MainWindow
     {
         e.Handled = true;
         if (_focusMode) ToggleFocusMode();
-        _shell.Settings.SidebarVisible = true;
+        if (_libraryAutoCollapsed) _libraryForcedOpen = true;
+        else _shell.Settings.SidebarVisible = true;
         ApplySettings();
         // Focusing a TreeView restores its selected descendant and expands collapsed ancestors.
         // Enter the restored panel at its visible header so every section keeps the user's expansion state.
@@ -53,6 +72,57 @@ public partial class MainWindow
         InspectorContent.Focus();
     }
 
+    private void OnWorkspaceProblemReported(object? sender, string reason) { if (!_windowClosed) RefreshWorkspace(); }
+
+    private void OnWorkspaceContentStatusChanged(object? sender, EventArgs e)
+    {
+        if (_windowClosed || sender is not WorkspaceSession workspace) return;
+        // Runs repeatedly during indexing, so follow the path to the section instead of walking every file.
+        foreach (var root in _treeRoots)
+            if (FindDirectoryRow(root, workspace.Root) is { IsSection: true } row) UpdateContentStatus(row, workspace);
+        if (_picker is not null && ReferenceEquals(workspace, _shell.Workspace)) _picker.RefreshResults();
+    }
+
+    private static TreeRow? FindDirectoryRow(TreeRow row, string path)
+    {
+        if (WorkspacePaths.PathsEqual(row.FullPath, path)) return row;
+        if (!WorkspacePaths.IsSameOrUnder(row.FullPath, path)) return null;
+        foreach (var child in row.Children)
+            if (child.IsDirectory && FindDirectoryRow(child, path) is { } found) return found;
+        return null;
+    }
+
+    /// <summary>Shows Files as soon as the tree is ready; indexing continues in the background and never pulls the user back.</summary>
+    private async Task<bool> OpenThenShowFilesAsync(Func<Action, Task<bool>> open)
+    {
+        var shown = false;
+        var opened = await open(() =>
+        {
+            shown = true;
+            Dispatcher.UIThread.Post(async () => { if (!_windowClosed) await ShowNavAsync("Files"); });
+        });
+        if (opened && !shown && !_windowClosed) await ShowNavAsync("Files");
+        return opened;
+    }
+
+    private static void UpdateContentStatus(TreeRow row, WorkspaceSession workspace)
+    {
+        row.IsPreparingContent = workspace.IsPreparingContent;
+        row.IsContentProgressIndeterminate = workspace.ContentProgress is not { Total: > 0 };
+        row.ContentProgressFraction = workspace.ContentProgress is { Total: > 0 } p ? Math.Clamp((double)p.Processed / p.Total, 0, 1) : 0;
+        if (workspace.IsPreparingContent || !workspace.IsContentReady) row.SectionNotice = workspace.ContentStatus;
+        else if (workspace.UpdatesPausedReason is null) row.SectionNotice = workspace.Snapshot.Warnings.Count > 0
+            ? $"{workspace.Snapshot.Warnings.Count} unavailable item(s). " + string.Join(" ", workspace.Notices)
+            : string.Empty;
+    }
+
+    private void OnCancelWorkspacePreparationClick(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Control { DataContext: TreeRow row })
+            _shell.OpenWorkspaces.FirstOrDefault(w => WorkspacePaths.PathsEqual(w.Root, row.FullPath))?.CancelContentPreparation();
+    }
+
     private void RefreshWorkspace()
     {
         var workspace = _shell.Workspace;
@@ -60,10 +130,12 @@ public partial class MainWindow
         {
             old.FilesChanged -= OnWorkspaceFilesChanged;
             old.GraphChanged -= OnWorkspaceGraphChanged;
+            old.ProblemReported -= OnWorkspaceProblemReported;
+            old.ContentStatusChanged -= OnWorkspaceContentStatusChanged;
             _observedWorkspaces.Remove(old);
         }
         foreach (var current in _shell.OpenWorkspaces)
-            if (_observedWorkspaces.Add(current)) { current.FilesChanged += OnWorkspaceFilesChanged; current.GraphChanged += OnWorkspaceGraphChanged; }
+            if (_observedWorkspaces.Add(current)) { current.FilesChanged += OnWorkspaceFilesChanged; current.GraphChanged += OnWorkspaceGraphChanged; current.ProblemReported += OnWorkspaceProblemReported; current.ContentStatusChanged += OnWorkspaceContentStatusChanged; }
         _syncingWorkspaces = true;
         WorkspaceSelector.ItemsSource = _shell.OpenWorkspaces.ToArray();
         WorkspaceSelector.SelectedItem = workspace;
@@ -73,7 +145,7 @@ public partial class MainWindow
         BuildTree();
         SidebarTitle.Text = "LIBRARY";
         WorkspaceCard.IsVisible = false;
-        WorkspaceTitle.Text = workspace is null ? string.Empty : (workspace.IsNamedWorkspace ? "Workspace · " : "Folder · ") + workspace.Name;
+        WorkspaceTitle.Text = workspace is null ? string.Empty : (workspace.IsNamedWorkspace ? "Workspace · " : "Folder · ") + workspace.Name + (workspace.IsPrivate ? " · Private" : "");
         WorkspaceLocation.Text = workspace?.Root ?? string.Empty;
         WorkspaceCount.Text = workspace is null ? string.Empty : $"{workspace.Snapshot.Files.Count:N0} documents · {_shell.OpenWorkspaces.Count(w => w.IsNamedWorkspace)} workspace(s) open";
         if (workspace?.Snapshot.Warnings.Count > 0) WorkspaceCount.Text += $" · {workspace.Snapshot.Warnings.Count} unavailable item(s)";
@@ -82,6 +154,7 @@ public partial class MainWindow
         ToolTip.SetTip(WorkspaceTitle, workspace?.Root);
         Avalonia.Controls.ToolTip.SetTip(SidebarTitle, workspace?.Root);
         UpdateBadges();
+        RefreshSavedSearches();
         ShowNav(_nav);
         UpdateChrome();
         RefreshDocumentWorkspaceContext();
@@ -91,7 +164,8 @@ public partial class MainWindow
     {
         if (_shell.OpenWorkspaces.Count == 0)
         {
-            _treeRoots = [];
+            _treeRoots.Clear();
+            RefreshTreePresentation();
             FileTree.ItemsSource = null;
             return;
         }
@@ -103,19 +177,67 @@ public partial class MainWindow
             || node.Children.Any(child => child.IsDirectory && ContainsDirectory(child, path));
         var top = _shell.OpenWorkspaces.Where(w => !_shell.OpenWorkspaces.Any(parent => parent != w && parent.IsInside(w.Root)
             && ContainsDirectory(parent.Snapshot.Tree, w.Root))).ToArray();
-        _treeRoots = top.OrderByDescending(w => w.IsNamedWorkspace)
-            .Select(w => TreeRow.From(w.Snapshot.Tree, workspaceRoot: w.IsNamedWorkspace, namedRoots, rootSection: true)).ToArray();
+        var previous = _treeRoots.ToDictionary(row => row.FullPath, WorkspacePaths.Comparer);
+        var roots = top.OrderByDescending(w => w.IsNamedWorkspace)
+            .Select(w => TreeRow.Reconcile(previous.GetValueOrDefault(w.Root), w.Snapshot.Tree,
+                workspaceRoot: w.IsNamedWorkspace, namedRoots, rootSection: true)).ToArray();
+        TreeRow.Synchronize(_treeRoots, roots);
         foreach (var row in _treeRoots.SelectMany(r => r.Flatten())) row.IsExpanded = expanded.TryGetValue(row.FullPath, out var value) ? value : row.IsWorkspace || top.Any(w => WorkspacePaths.PathsEqual(w.Root, row.FullPath));
         foreach (var row in _treeRoots.SelectMany(r => r.Flatten()).Where(r => r.IsSection))
         {
             var owner = _shell.OpenWorkspaces.FirstOrDefault(w => WorkspacePaths.PathsEqual(w.Root, row.FullPath));
             row.IsSectionOpen = owner is not null;
             row.IsSelected = ReferenceEquals(owner, _shell.Workspace);
-            if (owner?.Snapshot.Warnings.Count > 0) row.SectionNotice = $"{owner.Snapshot.Warnings.Count} unavailable item(s). " + string.Join(" ", owner.Notices);
+            if (owner?.UpdatesPausedReason is { } paused) row.SectionNotice = paused + " · Use Rescan in the banner to resume.";
+            else if (owner?.Snapshot.Warnings.Count > 0) row.SectionNotice = $"{owner.Snapshot.Warnings.Count} unavailable item(s). " + string.Join(" ", owner.Notices);
             else if (owner is null && row.IsWorkspace) row.SectionNotice = "Workspace not open. Select its name to open it.";
+            if (owner is not null) UpdateContentStatus(row, owner);
+            if (owner?.IsPrivate == true) row.SectionNotice = "Private · no History or recovery copies · search stays in memory" +
+                (row.SectionNotice.Length > 0 ? " · " + row.SectionNotice : "");
         }
+        static void MarkPromotable(TreeRow row, bool insideWorkspace)
+        {
+            insideWorkspace |= row.IsWorkspace;
+            row.CanPromote = row.IsDirectory && !insideWorkspace;
+            foreach (var child in row.Children) MarkPromotable(child, insideWorkspace);
+        }
+        foreach (var root in _treeRoots) MarkPromotable(root, false);
+        RefreshTreePresentation();
         FileTree.ItemsSource = _treeRoots;
         RefreshTreeDirtyState();
+        RefreshGitMarkers();
+    }
+
+    private void RefreshTreePresentation()
+    {
+        var directories = _treeRoots.SelectMany(row => row.Flatten()).Where(row => row.IsDirectory).ToHashSet();
+        foreach (var removed in _observedTreeDirectories.Except(directories).ToArray())
+        {
+            removed.PropertyChanged -= OnTreeDirectoryChanged;
+            _observedTreeDirectories.Remove(removed);
+        }
+        foreach (var directory in directories)
+            if (_observedTreeDirectories.Add(directory)) directory.PropertyChanged += OnTreeDirectoryChanged;
+        QueueTreePresentation();
+    }
+
+    private void OnTreeDirectoryChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TreeRow.IsExpanded)) QueueTreePresentation();
+    }
+
+    private void QueueTreePresentation()
+    {
+        if (_windowClosed || _treePresentationPending || !_observedTreeDirectories.Any(row => row.IsLoadingChildren)) return;
+        _treePresentationPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _treePresentationPending = false;
+            if (_windowClosed) return;
+            // One bounded realization batch per dispatcher turn lets input outrank large trees.
+            _observedTreeDirectories.FirstOrDefault(row => row.IsLoadingChildren)?.PresentNextChildren();
+            QueueTreePresentation();
+        }, DispatcherPriority.Background);
     }
 
     internal void RefreshLibraryContents()
@@ -158,9 +280,11 @@ public partial class MainWindow
     {
         var open = _shell.Tabs.Where(t => t.FilePath is not null).Select(t => t.FilePath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var dirty = _shell.Tabs.Where(t => t.IsDirty && t.FilePath is not null).Select(t => t.FilePath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var changed = _shell.Tabs.Where(t => t.IsChangedOnDisk && t.FilePath is not null).Select(t => t.FilePath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var row in _treeRoots.SelectMany(r => r.Flatten()))
         {
             row.IsDirty = !row.IsDirectory && dirty.Contains(row.FullPath);
+            row.IsChangedOnDisk = !row.IsDirectory && changed.Contains(row.FullPath);
             row.IsOpen = !row.IsDirectory && open.Contains(row.FullPath);
             row.IsActive = !row.IsDirectory && string.Equals(_shown?.FilePath, row.FullPath, StringComparison.OrdinalIgnoreCase);
         }
@@ -176,7 +300,7 @@ public partial class MainWindow
         TasksBadgeText.Text = _tasksOpen.ToString(System.Globalization.CultureInfo.CurrentCulture);
     }
 
-    private async Task ScanTasksAsync()
+    private async Task ScanTasksAsync(CancellationToken cancellationToken = default)
     {
         var generation = ++_taskScanGeneration;
         var workspace = _shell.Workspace;
@@ -191,7 +315,7 @@ public partial class MainWindow
             .ToDictionary(g => g.Key, g => g.OrderByDescending(t => ReferenceEquals(t, _shell.ActiveTab)).ThenByDescending(t => t.IsDirty).First().CurrentText, StringComparer.OrdinalIgnoreCase);
         var files = workspace.Snapshot.Files;
         var profile = _shell.Settings.DefaultProfile;
-        var entries = await Task.Run(() => TaskIndex.ScanAsync(files, profile, buffers));
+        var entries = await Task.Run(() => TaskIndex.ScanAsync(files, profile, buffers, cancellationToken), cancellationToken);
         if (generation == _taskScanGeneration && ReferenceEquals(workspace, _shell.Workspace) && _shell.OpenWorkspaces.Contains(workspace))
         {
             _tasks = entries;
@@ -213,17 +337,24 @@ public partial class MainWindow
         {
             await ScanTasksAsync();
         }
+        if (nav == "Mentions")
+        {
+            await ShowUnlinkedMentionsAsync();
+            return;
+        }
 
         ShowNav(nav);
     }
 
     private void ShowNav(string nav)
     {
+        if (nav != "Mentions") _mentionCancellation?.Cancel();
         _nav = nav;
         TaskFilterBar.IsVisible = nav == "Tasks";
         TaskScopeCount.Text = $"{_shell.Workspace?.Root ?? "No workspace"} · {_tasks.Count(t => !t.Checked)} open · {_tasks.Count(t => t.Checked)} completed";
         NavRecent.IsChecked = nav == "Recent";
         NavSearch.IsChecked = nav == "Search";
+        NavTags.IsChecked = nav == "Tags";
         NavFiles.IsChecked = nav == "Files";
         NavBacklinks.IsChecked = nav == "Backlinks";
         NavBroken.IsChecked = nav == "Broken";
@@ -276,7 +407,15 @@ public partial class MainWindow
                     ? []
                     : [.. _shell.GetBrokenLinks(workspace).Select(l => new SideRow(l.Link.Destination, $"{Path.GetFileName(l.SourcePath)}:{l.Line}", l.SourcePath, l.Line))];
             case "Tasks":
-                return [.. _tasks.Where(t => TaskFilter.SelectedIndex == 2 || t.Checked == (TaskFilter.SelectedIndex == 1)).Select(t => new SideRow(t.Text, $"{(t.Checked ? "Completed" : "Open")} · {t.RelativePath}:{t.Line}", t.Path, t.Line))];
+                return TaskRows();
+            case "Tags":
+                return workspace is null ? [] : KnowledgeNavigation.Tags(workspace.Graph)
+                    .Select(tag => new SideRow("#" + tag.Name, $"{tag.Documents} document(s)", null, 0)
+                    { SearchQuery = "tag:\"" + tag.Name.Replace('"', ' ') + "\"" }).ToArray();
+            case "Graph":
+                return GraphRows();
+            case "Mentions":
+                return _mentionRows;
             case "Files":
                 return workspace is null ? FileReferenceRows() : [];
             default:
@@ -312,13 +451,13 @@ public partial class MainWindow
         try { name = WorkspaceDefinition.Load(path)?.Name ?? name; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
         return new SideRow(name, "Workspace · " + path + (exists ? string.Empty : " · Missing or inaccessible; open to retry"),
-            path, 0, IsMissing: !exists, CanRemoveReference: true) { IsWorkspace = true };
+            path, 0, IsMissing: !exists, CanRemoveReference: true)
+        { IsWorkspace = true };
     }
 
     private async Task OpenRecentWorkspaceAsync(string path)
     {
-        if (await _shell.OpenWorkspaceAsync(path)) await ShowNavAsync("Files");
-        else
+        if (!await OpenThenShowFilesAsync(treeReady => _shell.OpenWorkspaceAsync(path, treeReady: treeReady)))
         {
             _shell.StatusMessage = "Could not open workspace: " + path + ". Check that the folder is available, then retry. Its Recent entry was kept.";
         }
@@ -327,9 +466,11 @@ public partial class MainWindow
     private IReadOnlyList<SideRow> OutsideLibraryRows()
     {
         var references = FileReferenceRows().Where(r => r.IsOnline || r.Path is { } path && _shell.WorkspaceForPath(path) is null).ToList();
+        var localPaths = references.Where(row => !row.IsOnline && row.Path is not null)
+            .Select(row => WorkspacePaths.Normalize(row.Path!)).ToHashSet(WorkspacePaths.Comparer);
         foreach (var tab in _shell.Tabs.Where(t => t.FilePath is { } path && _shell.WorkspaceForPath(path) is null))
         {
-            if (references.Any(r => r.Path is { } path && WorkspacePaths.PathsEqual(path, tab.FilePath!))) continue;
+            if (!localPaths.Add(WorkspacePaths.Normalize(tab.FilePath!))) continue;
             references.Add(new SideRow(tab.DisplayName, Path.GetDirectoryName(tab.FilePath!) ?? "Outside workspaces", tab.FilePath, 0, CanRemoveReference: true) { OpenTab = tab });
         }
         foreach (var tab in _shell.Tabs.Where(t => t.FilePath is null))
@@ -344,11 +485,56 @@ public partial class MainWindow
     private void RefreshOutsideLibrary()
     {
         var outside = OutsideLibraryRows();
+        static object Key(SideRow row) => row.Path is { } path
+            ? (row.IsOnline ? RecentKind.Url : RecentKind.File,
+                row.IsOnline ? RecentItemsStore.NormalizeUrl(path) : WorkspacePaths.Normalize(path).ToUpperInvariant())
+            : (object)row.OpenTab!;
+        var pending = outside.ToDictionary(Key);
+        var updated = new List<SideRow>(outside.Count);
+        // Library positions belong to the displayed references, not their changing Recent timestamps.
+        foreach (var previous in _outsideLibraryRows)
+        {
+            if (!pending.Remove(Key(previous), out var current)) continue;
+            if (current != previous && !current.IsOnline && current.Path is not null && previous.Path is not null)
+            {
+                current = current with
+                {
+                    Path = previous.Path,
+                    Title = string.Equals(current.Title, previous.Title, StringComparison.OrdinalIgnoreCase) ? previous.Title : current.Title,
+                    Detail = string.Equals(current.Detail, previous.Detail, StringComparison.OrdinalIgnoreCase) ? previous.Detail : current.Detail
+                };
+            }
+            updated.Add(current == previous ? previous : current);
+        }
+        updated.AddRange(outside.Where(row => pending.Remove(Key(row))));
+        var pinned = _shell.Recent.Files.Where(entry => entry.Pinned)
+            .Select(entry => Key(new SideRow("", "", entry.Path, 0)))
+            .Concat(_shell.Recent.Urls.Where(entry => entry.Pinned)
+                .Select(entry => Key(new SideRow("", "", entry.Path, 0, IsOnline: true)))).ToHashSet();
+        TreeRow.Synchronize(_outsideLibraryRows, updated.OrderByDescending(row => pinned.Contains(Key(row))).ToArray());
         SideList.IsVisible = outside.Count > 0;
-        SideList.ItemsSource = outside;
+        if (!ReferenceEquals(SideList.ItemsSource, _outsideLibraryRows)) SideList.ItemsSource = _outsideLibraryRows;
         OutsideLibraryHeader.IsVisible = outside.Count > 0;
         NoWorkspaceText.IsVisible = _shell.OpenWorkspaces.Count == 0 && outside.Count == 0;
     }
+
+    private void OnRecentRenamed(object? sender, RecentRename rename) => Dispatcher.UIThread.Post(() =>
+    {
+        if (_windowClosed || rename.Kind != RecentKind.File
+            || !WorkspacePaths.PathsEqual(rename.OldPath, rename.NewPath)) return;
+        for (var index = 0; index < _outsideLibraryRows.Count; index++)
+        {
+            var row = _outsideLibraryRows[index];
+            if (row.IsOnline || row.Path is not { } path || !WorkspacePaths.PathsEqual(path, rename.OldPath)) continue;
+            _outsideLibraryRows[index] = row with
+            {
+                Path = rename.NewPath,
+                Title = Path.GetFileName(rename.NewPath),
+                Detail = Path.GetDirectoryName(rename.NewPath) ?? string.Empty
+            };
+        }
+        if (_nav == "Files") RefreshOutsideLibrary();
+    });
 
     internal void ShowSearchResults(string query)
     {
@@ -364,7 +550,6 @@ public partial class MainWindow
         }
     }
 
-    private async void OnOpenFolderClick(object? sender, RoutedEventArgs e) => await OpenFolderAsync();
 
     private async Task OpenFolderAsync()
     {
@@ -381,10 +566,9 @@ public partial class MainWindow
 
     internal async Task OpenFolderSelectionAsync(string folder)
     {
-        if (await _shell.OpenDirectoryAsync(folder)) await ShowNavAsync("Files");
+        await OpenThenShowFilesAsync(treeReady => _shell.OpenDirectoryAsync(folder, treeReady));
     }
 
-    private async void OnShowTreeClick(object? sender, RoutedEventArgs e) => await ShowNavAsync("Files");
 
     private async void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -404,8 +588,10 @@ public partial class MainWindow
     private async void OnSideListSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_libraryRightPress) { SideList.SelectedItem = null; return; }
+        if (SideList.SelectedItem is SideRow { SearchQuery: { } query })
+        { SideList.SelectedItem = null; _lastSearch = query; ShowWorkspaceSearch(); return; }
         if (SideList.SelectedItem is SideRow { OpenTab: { } tab })
-        { _shell.ActiveTab = tab; SideList.SelectedItem = null; return; }
+        { _shell.SelectTab(tab, Tern.App.Shell.TabActivationReason.User); SideList.SelectedItem = null; return; }
         if (SideList.SelectedItem is not SideRow { Path: { } path } row)
         {
             return;
@@ -455,6 +641,20 @@ public partial class MainWindow
 
     private void OnLinksSearchChanged(object? sender, TextChangedEventArgs e) => RefreshLinks();
 
+    private void OnTagSearchClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: string tag }) return;
+        if (_shown?.FilePath is { } path && _shell.WorkspaceForPath(path) is { } owner) _shell.SelectWorkspace(owner);
+        _lastSearch = "tag:\"" + tag.Replace('"', ' ') + "\"";
+        ShowWorkspaceSearch();
+    }
+
+    private async void OnInspectorBacklinkSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (InspectorBacklinks.SelectedItem is SideRow { Path: { } path } row)
+            await OpenDocumentPathAsync(path, Math.Max(1, row.Line));
+    }
+
     private void RefreshLinks()
     {
         var query = this.FindControl<TextBox>("LinksSearchBox")!.Text?.Trim() ?? string.Empty;
@@ -471,6 +671,8 @@ public partial class MainWindow
 
     private void RefreshPanels()
     {
+        RefreshHeadingFolds();
+        RefreshHybridSource();
         RepairLinkButton.IsEnabled = false;
         var owner = _shown?.FilePath is { } path ? _shell.WorkspaceForPath(path) : _shell.Workspace;
         RelatedNotesButton.IsVisible = owner is not null && _shown is { IsReadOnly: false, FilePath: not null };
@@ -482,8 +684,17 @@ public partial class MainWindow
         RepairLinkButton.IsVisible = panel.Links.Any(link => link.IsBroken);
         _documentLinks = panel.Links.Select(l => new LinkRowView(l.Label, l.Destination, l.Line, l.IsBroken, l.IsExternal)).ToArray();
         RefreshLinks();
+        var backlinks = owner is not null && _shown?.FilePath is { } current
+            ? owner.Graph.GetBacklinks(current).Select(link => new SideRow(Path.GetFileName(link.SourcePath),
+                $"line {link.Line}: {link.Context}", link.SourcePath, link.Line)).ToArray() : [];
+        InspectorBacklinks.ItemsSource = backlinks;
+        InspectorBacklinksTitle.Text = $"Linked from ({backlinks.Length})";
+        InspectorBacklinksEmpty.IsVisible = backlinks.Length == 0;
         LinksSummary.Text = panel.LinksChecked == 0 ? string.Empty : panel.LinksBroken == 0 ? $"{panel.LinksChecked} checked" : $"{panel.LinksChecked} checked · {panel.LinksBroken} broken";
         InfoWords.Text = panel.Info.Words.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
+        InfoSessionWords.Text = _shown is null ? "–" : _shown.WordsWrittenThisSession.ToString("+0;-0;0", System.Globalization.CultureInfo.CurrentCulture);
+        var target = _shown?.Analysis?.FrontMatter is { } frontMatter ? FrontMatterReader.Read(frontMatter.Yaml).TargetWords : null;
+        InfoWordTarget.Text = target is { } goal ? $"{panel.Info.Words:N0} / {goal:N0}" : "Not set";
         InfoRead.Text = panel.Info.ReadMinutes == 0 ? "–" : $"{panel.Info.ReadMinutes} min";
         InfoModified.Text = _shown is null ? "–" : DocumentPanel.DescribeAge(panel.Info.ModifiedUtc, DateTime.UtcNow);
         TagList.ItemsSource = panel.Tags;
@@ -511,6 +722,7 @@ public partial class MainWindow
         {
             StatusPath.Text = string.Empty;
             StatusPosition.Text = string.Empty;
+            Avalonia.Automation.AutomationProperties.SetName(StatusPosition, "Cursor position");
             StatusWords.Text = string.Empty;
             StatusEncoding.Content = string.Empty;
             StatusLineEnding.Content = string.Empty;
@@ -523,15 +735,13 @@ public partial class MainWindow
         StatusPath.Text = tab.FilePath ?? (tab.RecoveredFromPath is { } original
             ? $"Recovered copy of {original} (not saved)" : tab.DisplayName + " (not saved)");
         StatusPosition.Text = $"Ln {caret.Line}, Col {caret.Column}";
-        StatusWords.Text = $"{tab.Analysis?.WordCount ?? 0:N0} words";
+        Avalonia.Automation.AutomationProperties.SetName(StatusPosition, CurrentSourceLineAnnouncement());
+        StatusWords.Text = Editor.SelectionLength > 0
+            ? $"{Tern.Markdown.MarkdownAnalyzer.CountWords(Editor.SelectedText):N0} selected · {tab.Analysis?.WordCount ?? 0:N0} words"
+            : $"{tab.Analysis?.WordCount ?? 0:N0} words";
         StatusEncoding.Content = "Encoding: " + tab.EncodingText;
         StatusLineEnding.Content = "Line endings: " + tab.LineEndingText;
-        StatusProfile.Content = tab.Profile switch
-        {
-            Tern.Markdown.MarkdownProfile.Gfm => "GFM",
-            Tern.Markdown.MarkdownProfile.Extended => "Extended",
-            _ => "CommonMark",
-        };
+        StatusProfile.Content = tab.Profile.DisplayName();
         UpdateResponsiveStatus();
     }
 
@@ -546,8 +756,10 @@ public partial class MainWindow
             return;
         }
 
+        var suggested = reopen && tab.IsReadOnly && tab.CurrentText.Contains('\0')
+            ? Tern.Domain.Text.TextEncodingKind.Utf16LittleEndian : tab.Session.Format.Encoding;
         var options = Tern.Filesystem.TextFileCodec.AvailableEncodings
-            .OrderByDescending(o => o.Kind == tab.Session.Format.Encoding && o.HasBom == tab.Session.Format.HasBom)
+            .OrderByDescending(o => o.Kind == suggested && o.HasBom == tab.Session.Format.HasBom)
             .ThenBy(o => o.CodePage == 65001 ? 0 : o.CodePage is 1200 or 1201 or 12000 or 12001 ? 1 : 2)
             .ThenBy(o => o.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         ShowPicker(reopen ? "Reopen existing bytes with encoding" : "Choose encoding for the next save", string.Empty,
@@ -568,7 +780,7 @@ public partial class MainWindow
                         _shell.StatusMessage = "Some characters cannot be saved in " + option.Name + ". Your text was kept.";
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                { _shell.StatusMessage = "The file could not be reopened: " + ex.Message; }
+                { _shell.StatusMessage = "The file could not be reopened: " + _shell.PlainProblem(ex); }
             }
 
             UpdateStatus();
@@ -579,7 +791,7 @@ public partial class MainWindow
     {
         if (_shown is not { } tab) return;
         ShowPicker("Markdown profile for this document", string.Empty,
-            _ => [.. Enum.GetValues<Tern.Markdown.MarkdownProfile>().Select(profile => new PickerItem(profile.ToString(), "Changes rendering only; source stays unchanged", string.Empty, profile))],
+            _ => [.. Enum.GetValues<Tern.Markdown.MarkdownProfile>().Select(profile => new PickerItem(profile.DisplayName(), "Changes rendering only; source stays unchanged", string.Empty, profile))],
             item =>
             {
                 HideOverlay();
@@ -617,6 +829,7 @@ public partial class MainWindow
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
+        if (_treeDragPath is not null) return;
         var items = e.DataTransfer.TryGetFiles();
         if (items is null)
         {
@@ -662,7 +875,7 @@ public partial class MainWindow
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
             {
-                problems.Add(Path.GetFileName(path) + ": " + ex.Message);
+                problems.Add(Path.GetFileName(path) + ": " + _shell.PlainProblem(ex));
             }
         }
         if (problems.Count > 0) _shell.StatusMessage = string.Join(" · ", problems);
@@ -672,9 +885,9 @@ public partial class MainWindow
     private static bool IsMarkdownPath(string path) =>
         Path.GetExtension(path).ToLowerInvariant() is ".md" or ".markdown" or ".mdown" or ".txt";
 
-    private static void OnDragOver(object? sender, DragEventArgs e)
+    private void OnDragOver(object? sender, DragEventArgs e)
     {
-        if (!e.DataTransfer.Contains(DataFormat.File)) return;
+        if (_treeDragPath is not null || !e.DataTransfer.Contains(DataFormat.File)) return;
         e.DragEffects = DragDropEffects.Copy;
         e.Handled = true;
     }

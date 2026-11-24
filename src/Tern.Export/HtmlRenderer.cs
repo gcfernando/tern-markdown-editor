@@ -10,7 +10,8 @@ using Tern.Rendering.Resources;
 namespace Tern.Export;
 
 /// <summary>Turns a <see cref="PreviewDocument"/> into the body markup of the exported page.</summary>
-internal sealed partial class HtmlRenderer(SafeResourceResolver resolver, ImageEmbedder images, bool includeFrontMatter, List<string> warnings)
+internal sealed partial class HtmlRenderer(SafeResourceResolver resolver, ImageEmbedder images, bool includeFrontMatter, List<string> warnings,
+    CancellationToken cancellationToken = default)
 {
     private static readonly HashSet<string> LinkSchemes = new(StringComparer.OrdinalIgnoreCase) { "http", "https", "mailto" };
 
@@ -58,6 +59,7 @@ internal sealed partial class HtmlRenderer(SafeResourceResolver resolver, ImageE
 
     private void Block(BlockNode block, bool tight)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_detachedAnchors.Remove(block.Source.StartLine, out var ids)) EmitAnchors(ids);
         switch (block)
         {
@@ -356,6 +358,7 @@ internal sealed partial class HtmlRenderer(SafeResourceResolver resolver, ImageE
 
     private void Inline(InlineNode node)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         switch (node)
         {
             case TextNode text:
@@ -478,6 +481,7 @@ internal sealed partial class HtmlRenderer(SafeResourceResolver resolver, ImageE
     /// </summary>
     private void SafeHtml(IReadOnlyList<HtmlPiece> pieces)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var emitted = new Stack<string?>();
         foreach (var piece in pieces)
         {

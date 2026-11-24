@@ -28,7 +28,7 @@ public sealed class BeginnerGuideTests
     {
         var registry = CommandRegistry.CreateDefault();
         var lessons = BeginnerLessons.For(registry);
-        Assert.Equal(new[] { "write", "open", "url", "read", "format", "find", "save", "images", "pdf", "print", "recover", "practice", "organize", "ai-choice", "ai" }, lessons.Select(l => l.Id));
+        Assert.Equal(new[] { "write", "open", "url", "read", "format", "find", "save", "images", "pdf", "print", "recover", "practice", "organize", "ai-choice", "ai", "templates", "search-notes", "explore", "share-answer" }, lessons.Select(l => l.Id));
         Assert.All(lessons, lesson =>
         {
             Assert.False(string.IsNullOrWhiteSpace(lesson.When));

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -13,22 +14,20 @@ public sealed class InsertTableWindow : Window
     internal TextBox RowsInput { get; } = new() { Text = "3", Width = 120 };
     internal TextBox ColumnsInput { get; } = new() { Text = "3", Width = 120 };
     internal Button InsertButton { get; } = new() { Content = "Insert table", IsDefault = true };
-    private readonly TextBlock _validation = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _validation = MessageTones.Follow(new() { TextWrapping = TextWrapping.Wrap });
     private readonly TextBlock _summary = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly Grid _preview = new() { ColumnSpacing = 3, RowSpacing = 3 };
+    private readonly Grid _preview = new() { [!Grid.ColumnSpacingProperty] = GuideParts.Space(4).ToBinding(), [!Grid.RowSpacingProperty] = GuideParts.Space(4).ToBinding() };
 
     public InsertTableWindow(bool replacesSelection = false)
     {
-        DialogParts.Setup(this, "Insert Table", 540, 460);
+        DialogParts.Setup(this, "Insert table", 540, 460, DialogGuidance.Table);
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close(null);
         InsertButton.Click += (_, _) => { if (Dimensions is { } dimensions) Close(dimensions); };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(InsertButton);
+        var buttons = GuideParts.Actions(InsertButton, cancel);
         Content = new StackPanel
         {
-            Margin = new Avalonia.Thickness(20), Spacing = 12,
+            Margin = new Avalonia.Thickness(20), [!StackPanel.SpacingProperty] = GuideParts.Space(12).ToBinding(),
             Children =
             {
                 new TextBlock { Text = "Rows include the header. Choose 1–100 rows and 1–20 columns.", TextWrapping = TextWrapping.Wrap },

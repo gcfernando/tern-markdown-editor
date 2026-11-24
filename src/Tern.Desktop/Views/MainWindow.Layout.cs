@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Tern.App.Commands;
+using Tern.Desktop.Services;
 
 namespace Tern.Desktop.Views;
 
@@ -11,6 +12,49 @@ public partial class MainWindow
     internal bool IsAIPopupOpen => _aiEntryFlyout?.IsOpen == true;
     private bool _inspectorForcedCompact;
     private bool _wasNarrow;
+    private bool _libraryAutoCollapsed;
+    private bool _libraryForcedOpen;
+    private bool _shortScreen;
+    private SurfaceMotion? _libraryMotion;
+    private SurfaceMotion? _inspectorMotion;
+    private SurfaceMotion? _bannerMotion;
+    private SurfaceMotion? _statusMotion;
+
+    private void ConfigureSurfaceMotion()
+    {
+        _libraryMotion = new(Sidebar, ChromeMotionLayer, ReturnFromChrome);
+        _inspectorMotion = new(RightPanel, ChromeMotionLayer, ReturnFromChrome);
+        _bannerMotion = new(NotificationBanner, ChromeMotionLayer, ReturnFromChrome);
+        _statusMotion = new(StatusMessage, ChromeMotionLayer, ReturnFromChrome);
+        MotionPolicy.Changed += OnMotionPolicyChanged;
+    }
+
+    private void ReturnFromChrome()
+    {
+        if (_shown is null) NewTabButton.Focus();
+        else FocusVisibleContent();
+    }
+
+    private void OnMotionPolicyChanged(object? sender, EventArgs e)
+    {
+        _libraryMotion?.Cancel();
+        _inspectorMotion?.Cancel();
+        _bannerMotion?.Cancel();
+        _statusMotion?.Cancel();
+    }
+
+    internal bool LibraryAutoCollapsed => _libraryAutoCollapsed;
+    internal bool IsShortScreen => _shortScreen;
+    private double EffectiveWidth => Bounds.Width > 0 ? Bounds.Width : Width;
+    private double EffectiveHeight => Bounds.Height > 0 ? Bounds.Height : Height;
+
+    // Below ~1000 effective px the Library collapses; the Expand Library button and its shortcut still toggle it.
+    private void ApplyLibraryVisibility()
+    {
+        var shown = _libraryAutoCollapsed ? _libraryForcedOpen : _shell.Settings.SidebarVisible;
+        _libraryMotion!.SetVisible(shown);
+        Body.ColumnDefinitions[0].Width = shown ? new GridLength(_shell.Settings.SidebarWidth) : new GridLength(0);
+    }
 
     private void ConfigureCompactAI()
     {
@@ -47,13 +91,24 @@ public partial class MainWindow
     {
         if (_windowClosed) return;
         FitAIPopup();
+        var scale = Math.Max(1, _shell.Settings.UiScale);
+        var collapse = WindowSizing.IsCompactWidth(EffectiveWidth, scale);
+        if (collapse != _libraryAutoCollapsed)
+        {
+            _libraryAutoCollapsed = collapse;
+            _libraryForcedOpen = false;
+            if (!_focusMode) ApplyLibraryVisibility();
+        }
+        var short_ = WindowSizing.IsShortHeight(EffectiveHeight);
+        _shortScreen = short_;
+        ContextGuidance.IsVisible = !short_ && _shell.Settings.ShowContextGuidance;
         var compact = Width < 1180 * Math.Max(1, _shell.Settings.UiScale);
         FindResults.MaxHeight = Math.Clamp((Height / Math.Max(.75, _shell.Settings.UiScale) - 480) * .5, 28, 160);
         UpdateFindLayout(compact);
         Breadcrumb.IsVisible = VersionLabel.IsVisible = TitleGuideButton.IsVisible = TitleSettingsButton.IsVisible = !compact;
         DocumentCaption.IsVisible = false;
-        TitleLayout.ColumnDefinitions[0].Width = new GridLength(compact ? 100 : 220);
-        SearchBox.Width = compact ? 180 : 300;
+        TitleLayout.ColumnDefinitions[0].Width = new GridLength((compact ? 100 : 220) * scale);
+        SearchBox.Width = (compact ? 180 : 300) * scale;
         SearchHint.IsVisible = !compact;
         if (_shown is not null) LocationBadge.IsVisible = !compact;
         Grid.SetRow(DocumentActions, compact ? 1 : 0);
@@ -63,7 +118,8 @@ public partial class MainWindow
         FocusButton.IsVisible = !compact;
         AIEntryButton.MaxWidth = compact ? 130 : 180;
         UpdateAIEntryCaption();
-        MainToolbarGrid.RowSpacing = compact ? 4 : 0;
+        MainToolbarGrid.RowSpacing = compact ? GuideParts.SpaceValue(4) : 0;
+        StatusFields.ItemSpacing = GuideParts.SpaceValue(compact ? 4 : 12);
         Grid.SetRow(StatusFields, 0);
         Grid.SetColumn(StatusFields, compact ? 0 : 1);
         Grid.SetColumnSpan(StatusFields, compact ? 2 : 1);
@@ -78,16 +134,18 @@ public partial class MainWindow
         _compactInspector = narrow && !_inspectorForcedCompact;
         if (!_focusMode)
         {
-            RightPanel.IsVisible = _shell.Settings.InspectorVisible && !_compactInspector;
+            _inspectorMotion!.SetVisible(_shell.Settings.InspectorVisible && !_compactInspector);
             Body.ColumnDefinitions[4].Width = RightPanel.IsVisible ? new GridLength(_shell.Settings.InspectorWidth) : new GridLength(0);
         }
         UpdatePanelRestoreButtons();
+        RefreshAuthoringState();
     }
 
     private void UpdateResponsiveStatus()
     {
         var compact = Width < 1180 * Math.Max(1, _shell.Settings.UiScale);
-        StatusPath.IsVisible = StatusWords.IsVisible = StatusProfile.IsVisible = _shown is not null && !compact;
+        StatusPath.IsVisible = StatusProfile.IsVisible = _shown is not null && !compact && !_shortScreen;
+        StatusWords.IsVisible = _shown is not null && (Editor.SelectionLength > 0 || !compact && !_shortScreen);
         // Long recovery descriptions remain in the tooltip/details action. Keep
         // the explicit Encoding and Line endings controls on a compact row.
         StatusSaved.MaxWidth = compact ? 100 : double.PositiveInfinity;
@@ -99,7 +157,7 @@ public partial class MainWindow
         _shell.Settings.InspectorVisible = visible;
         _inspectorForcedCompact = visible;
         _compactInspector = false;
-        RightPanel.IsVisible = visible;
+        _inspectorMotion!.SetVisible(visible);
         Body.ColumnDefinitions[4].Width = visible ? new GridLength(_shell.Settings.InspectorWidth) : new GridLength(0);
         UpdatePanelRestoreButtons();
         _shell.SaveSettings();
@@ -114,6 +172,7 @@ public partial class MainWindow
         settings.InspectorWidth = 260;
         settings.SourceShare = .5;
         _inspectorForcedCompact = false;
+        _libraryForcedOpen = false;
         ContentGrid.ColumnDefinitions[0].Width = ContentGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
         ApplySettings();
         ApplyViewMode();

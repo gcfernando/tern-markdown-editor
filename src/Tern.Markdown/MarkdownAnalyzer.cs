@@ -35,8 +35,11 @@ public static partial class MarkdownAnalyzer
         var lines = new LineIndex(text);
         var headings = new List<HeadingInfo>();
         var links = new List<LinkInfo>();
+        var remoteImageCount = 0;
         var tasks = new List<TaskItemInfo>();
+        var images = new List<ImageOccurrence>();
         var codeBlocks = new List<CodeBlockInfo>();
+        var codeSpans = new List<SourceRange>();
         var tables = new List<TableInfo>();
         var footnotes = new List<FootnoteInfo>();
         var anchors = new HeadingAnchors();
@@ -80,6 +83,7 @@ public static partial class MarkdownAnalyzer
                     links.Add(new LinkInfo(LinkKind.ReferenceDefinition, definition.Url ?? string.Empty, Range(definition.UrlSpan), lines.LineOf(definition.UrlSpan.Start), definition.Label ?? string.Empty));
                     break;
                 case CodeInline codeInline:
+                    codeSpans.Add(Range(codeInline.Span));
                     excluded.Add(Range(codeInline.Span));
                     break;
                 case AutolinkInline auto:
@@ -87,6 +91,9 @@ public static partial class MarkdownAnalyzer
                     break;
                 case LinkInline link:
                     CollectLink(text, link, lines, links);
+                    if (link.IsImage && link.Span.Start >= 0 && link.Span.End < text.Length)
+                        images.Add(new(link.Url ?? "", PlainText(link), lines.LineOf(link.Span.Start), Range(link.Span)));
+                    if (link.IsImage && Uri.TryCreate(link.Url, UriKind.Absolute, out var imageUrl) && imageUrl.Scheme is "http" or "https") remoteImageCount++;
                     break;
                 case TaskList task:
                     tasks.Add(BuildTask(text, task, lines));
@@ -106,8 +113,11 @@ public static partial class MarkdownAnalyzer
             Headings = headings,
             ExplicitAnchors = htmlMetadata.ExplicitAnchors,
             Links = links,
+            RemoteImageCount = remoteImageCount,
             Tasks = tasks,
+            Images = images,
             CodeBlocks = codeBlocks,
+            CodeSpans = codeSpans,
             Tables = tables,
             Footnotes = footnotes,
             WordCount = CountWords(body),
@@ -332,7 +342,7 @@ public static partial class MarkdownAnalyzer
         }
     }
 
-    private static int CountWords(string text)
+    public static int CountWords(string text)
     {
         var count = 0;
         var inWord = false;

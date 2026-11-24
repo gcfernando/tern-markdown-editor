@@ -67,9 +67,9 @@ public class CurrentDialogConventionTests
         Assert.False(settings.PreviewFullWidth);
         Find<NumericUpDown>(window, "Interface text scale").Value = 1.25m;
         Assert.Equal(1.25, settings.UiScale);
-        Find<NumericUpDown>(window, "Library sidebar width").Value = 320;
+        Find<NumericUpDown>(window, "Library width").Value = 320;
         Assert.Equal(320, settings.SidebarWidth);
-        Find<CheckBox>(window, "Show Library sidebar").IsChecked = false;
+        Find<CheckBox>(window, "Show Library").IsChecked = false;
         Assert.False(settings.SidebarVisible);
         Find<TextBox>(window, "Find a setting").Text = "Workspace exclusion patterns";
         await Settle();

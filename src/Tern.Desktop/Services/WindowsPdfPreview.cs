@@ -1,4 +1,5 @@
 using Windows.Data.Pdf;
+using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 
 namespace Tern.Desktop.Services;
@@ -31,12 +32,27 @@ internal sealed class WindowsPdfPreview : IDisposable
     {
         using var pdfPage = _pdf.GetPage(checked((uint)(page - 1)));
         using var output = new InMemoryRandomAccessStream();
-        await pdfPage.RenderToStreamAsync(output, new PdfPageRenderOptions { DestinationWidth = Math.Clamp(width, 400u, 2400u) });
+        await pdfPage.RenderToStreamAsync(output, new PdfPageRenderOptions
+        { DestinationWidth = Math.Clamp(width, 400u, 2400u), BackgroundColor = new Windows.UI.Color { A = 255, R = 255, G = 255, B = 255 } });
         using var reader = new DataReader(output.GetInputStreamAt(0));
         var count = checked((uint)output.Size);
         await reader.LoadAsync(count);
         var data = new byte[count]; reader.ReadBytes(data);
         return data;
     }
+    public async Task<RasterizedPdfPage> RenderPixelsAsync(int page, uint width)
+    {
+        var png = await RenderAsync(page, width);
+        using var source = new InMemoryRandomAccessStream();
+        using (var writer = new DataWriter(source.GetOutputStreamAt(0)))
+        { writer.WriteBytes(png); await writer.StoreAsync(); await writer.FlushAsync(); }
+        source.Seek(0);
+        var decoder = await BitmapDecoder.CreateAsync(source);
+        var pixels = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore, new BitmapTransform(),
+            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
+        return new RasterizedPdfPage(checked((int)decoder.PixelWidth), checked((int)decoder.PixelHeight), pixels.DetachPixelData());
+    }
     public void Dispose() => _source.Dispose();
 }
+
+internal sealed record RasterizedPdfPage(int Width, int Height, byte[] Pixels);

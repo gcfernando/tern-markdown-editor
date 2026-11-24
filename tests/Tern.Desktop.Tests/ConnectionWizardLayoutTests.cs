@@ -14,7 +14,7 @@ public sealed class ConnectionWizardLayoutTests
     public void Wizard_keeps_its_viewport_when_steps_and_details_change()
     {
         var window = new Window();
-        DialogParts.SetupWizard(window, "Connection setup");
+        DialogParts.SetupWizard(window, "Connection setup", DialogGuidance.Connections);
         var text = GuideParts.Body("Choose a service.");
         var details = new Expander { Header = "Details", Content = GuideParts.Body(new string('x', 4000)) };
         window.Content = GuideParts.Frame(GuideParts.Title("Connection setup"),
@@ -40,12 +40,12 @@ public sealed class ConnectionWizardLayoutTests
     public void Nested_connection_setup_matches_owner_size_and_marks_current_step()
     {
         var owner = new Window();
-        DialogParts.SetupWizard(owner, "AI connections");
+        DialogParts.SetupWizard(owner, "AI connections", DialogGuidance.Connections);
         owner.Width = 840;
         owner.Height = 680;
         owner.Show();
         var child = new Window();
-        DialogParts.SetupWizard(child, "GitHub Copilot");
+        DialogParts.SetupWizard(child, "GitHub Copilot", DialogGuidance.Connections);
         var steps = GuideParts.ConnectionSteps(1, "Choose service", "Configure", "Validate and save");
         child.Content = steps;
         child.Show(owner);

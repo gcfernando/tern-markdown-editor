@@ -15,6 +15,7 @@ public partial class MainWindow
         if (show && ReferenceTabs.SelectedItem is null)
             ReferenceTabs.SelectedItem = _shell.ActiveTab;
         if (show) ReferenceEditor.Focus(); else Editor.Focus();
+        RefreshMenuState();
     }
 
     private void OnCloseReferenceClick(object? sender, RoutedEventArgs e) => ToggleReferencePane();

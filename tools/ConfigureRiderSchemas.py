@@ -22,7 +22,7 @@ def configure():
     if previous is not None and settings.read_bytes() != previous:
         raise RuntimeError('Rider settings changed during configuration; retry.')
     if previous is not None:
-        backup = root / 'artifacts/ide-2e-check/misc.xml.before'
+        backup = root.parent / 'tern-build-output/ide-2e-check/misc.xml.before'
         backup.parent.mkdir(parents=True, exist_ok=True)
         if not backup.exists():
             backup.write_bytes(previous)

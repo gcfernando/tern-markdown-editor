@@ -12,15 +12,17 @@ namespace Tern.Desktop.Views;
 /// <summary>One selectable row in a <see cref="QuickPicker"/>.</summary>
 public sealed record PickerItem(string Title, string Detail, string Hint, object? Payload, Action? RemoveReference = null,
     IReadOnlyList<Tern.Search.HighlightRange>? TitleRanges = null, IReadOnlyList<Tern.Search.HighlightRange>? DetailRanges = null,
-    Func<Task>? CloseDocument = null);
+    Func<Task>? CloseDocument = null, bool IsEnabled = true, string? DisabledReason = null);
 public enum PickerPresentationState { EmptyQuery, Searching, Results, NoResults, Error }
 
 /// <summary>
 /// The floating search-and-pick box used by the command palette, quick open, go to line and workspace search.
 /// The owner supplies the rows for the current text; Enter accepts the highlighted row, Escape dismisses.
 /// </summary>
-public sealed class QuickPicker : Border
+public sealed class QuickPicker : Border, IDismissibleOverlay
 {
+    public bool DismissWithEscape => false;
+
     private readonly TextBox _input = new() { Padding = new Thickness(12, 10) };
     private readonly ListBox _list = new() { MaxHeight = 380 };
     private readonly TextBlock _empty = new() { Margin = new Thickness(14, 10), IsVisible = false };
@@ -35,9 +37,13 @@ public sealed class QuickPicker : Border
     private string? _lastQuery;
     private Func<bool>? _isCurrent;
     private Func<string?>? _errorProvider;
+    private Func<string?>? _scopeStatusProvider;
+    private string _scopeLabel = string.Empty;
     private readonly TextBlock _scope = new() { Margin = new Thickness(14, 8), TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _count = new() { Margin = new Thickness(14, 4), IsVisible = false };
     private readonly Button _recovery = new() { Margin = new Thickness(14, 8), IsVisible = false };
+    private readonly WrapPanel _syntax = new() { Margin = new Thickness(14, 4), IsVisible = false };
+    private readonly WrapPanel _actions = new() { Margin = new Thickness(14, 4), IsVisible = false };
     private Func<Task>? _recover;
     internal PickerPresentationState State { get; private set; }
 
@@ -47,7 +53,7 @@ public sealed class QuickPicker : Border
         HorizontalAlignment = HorizontalAlignment.Stretch;
         VerticalAlignment = VerticalAlignment.Top;
         Margin = new Thickness(12, 32, 12, 12);
-        CornerRadius = new CornerRadius(10);
+        this[!CornerRadiusProperty] = GuideParts.Radius("Popup").ToBinding();
         BorderThickness = new Thickness(1);
         this[!BackgroundProperty] = this.GetResourceObservable("Tern.Panel").ToBinding();
         this[!BorderBrushProperty] = this.GetResourceObservable("Tern.Border").ToBinding();
@@ -61,6 +67,7 @@ public sealed class QuickPicker : Border
         AutomationProperties.SetName(_list, "Results");
         AutomationProperties.SetName(_empty, "Search result status");
         AutomationProperties.SetName(_scope, "Search scope");
+        AutomationProperties.SetLiveSetting(_scope, AutomationLiveSetting.Polite);
         AutomationProperties.SetName(_count, "Completed result count");
         AutomationProperties.SetLiveSetting(_empty, AutomationLiveSetting.Polite);
         _empty.TextWrapping = TextWrapping.Wrap;
@@ -72,9 +79,15 @@ public sealed class QuickPicker : Border
                 return new Grid();
             }
 
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, MinHeight = 44 };
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding(), MinHeight = 44 };
             var text = new StackPanel();
-            text.Children.Add(Highlighted(item.Title, item.TitleRanges));
+            var title = Highlighted(item.Title, item.TitleRanges);
+            if (!item.IsEnabled)
+            {
+                title.Classes.Add("muted");
+                AutomationProperties.SetHelpText(grid, item.DisabledReason ?? item.Detail);
+            }
+            text.Children.Add(title);
             if (item.Detail.Length > 0)
             {
                 var detail = Highlighted(item.Detail, item.DetailRanges);
@@ -85,11 +98,11 @@ public sealed class QuickPicker : Border
 
             if (item.RemoveReference is { } removeReference)
             {
-                var remove = new Button { Content = "⋯", Width = 36, MinHeight = 36, Padding = new Thickness(8), VerticalAlignment = VerticalAlignment.Center };
+                var remove = new Button { Content = new VectorIcon { Kind = "More" }, Classes = { "icon-button" }, Width = 36, MinHeight = 36, Padding = new Thickness(8), VerticalAlignment = VerticalAlignment.Center };
                 remove.Classes.Add("flat");
                 AutomationProperties.SetName(remove, "Recent entry actions");
                 ToolTip.SetTip(remove, "Recent entry actions; the file and open edits are kept.");
-                var forget = new MenuItem { Header = "Forget recent entry" };
+                var forget = new MenuItem { Header = "Forget Recent Entry" };
                 AutomationProperties.SetName(forget, "Forget recent entry");
                 remove.Flyout = new MenuFlyout { Items = { forget } };
                 forget.Click += (_, e) =>
@@ -104,8 +117,9 @@ public sealed class QuickPicker : Border
             }
             if (item.CloseDocument is { } closeDocument)
             {
-                var close = new Button { Content = "×", Width = 36, MinHeight = 36, Classes = { "flat" } };
+                var close = new Button { Content = new VectorIcon { Kind = "Close" }, Width = 36, MinHeight = 36, Classes = { "flat", "icon-button" } };
                 AutomationProperties.SetName(close, "Close document " + item.Title);
+                ToolTip.SetTip(close, "Close document " + item.Title);
                 close.Click += async (_, e) => { e.Handled = true; await closeDocument(); RefreshResults(); _input.Focus(); };
                 grid.Children.Add(close); Grid.SetColumn(close, 2);
             }
@@ -142,7 +156,7 @@ public sealed class QuickPicker : Border
             try { await action(); }
             finally { _recovery.IsEnabled = true; }
         };
-        Child = new ScrollViewer { MaxHeight = 480, Content = new StackPanel { Children = { _scope, _input, rule, _count, _list, _empty, _recovery } } };
+        Child = new ScrollViewer { MaxHeight = 480, Content = new StackPanel { Children = { _scope, _input, _syntax, _actions, rule, _count, _list, _empty, _recovery } } };
     }
 
     internal TextBox Input => _input;
@@ -180,15 +194,23 @@ public sealed class QuickPicker : Border
     }
 
     public void Open(string watermark, string initialText, Func<string, IReadOnlyList<PickerItem>> provider, Action<PickerItem> accept, Action dismiss, string emptyText = "No matches", Func<string, string>? emptyTextProvider = null,
-        Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? asyncProvider = null, Func<bool>? isCurrent = null, Func<string?>? errorProvider = null)
+        Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>>? asyncProvider = null, Func<bool>? isCurrent = null, Func<string?>? errorProvider = null,
+        Func<string?>? scopeStatusProvider = null)
     {
         _queryCancellation?.Cancel();
         _lastQuery = null;
         _asyncProvider = asyncProvider;
         _isCurrent = isCurrent;
         _errorProvider = errorProvider;
-        _scope.Text = watermark.TrimEnd('…');
+        _scopeLabel = watermark.TrimEnd('…');
+        AutomationProperties.SetName(_input, _scopeLabel);
+        AutomationProperties.SetName(this, _scopeLabel + " picker");
+        _scopeStatusProvider = scopeStatusProvider;
         _recover = null;
+        _syntax.Children.Clear();
+        _syntax.IsVisible = false;
+        _actions.Children.Clear();
+        _actions.IsVisible = false;
         _recovery.IsVisible = false;
         _provider = provider;
         _accept = accept;
@@ -207,13 +229,24 @@ public sealed class QuickPicker : Border
     {
         var query = _input.Text ?? string.Empty;
         if (!force && _lastQuery == query) return;
+        var scopeStatus = _scopeStatusProvider?.Invoke();
+        _scope.Text = string.IsNullOrEmpty(scopeStatus) ? _scopeLabel : _scopeLabel + Environment.NewLine + scopeStatus;
         _lastQuery = query;
         var generation = ++_queryGeneration;
         _queryCancellation?.Cancel();
         if (_isCurrent?.Invoke() == false) { PresentError("The workspace changed. Start a new search in the current workspace."); return; }
         if (_asyncProvider is { } provider) { QueryWork = RefreshAsync(query, generation, provider); return; }
         try { Present(query, _provider(query)); }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException) { PresentError(ex.Message); }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException) { PresentError(Tern.App.Shell.UserProblem.Plain(ex)); }
+    }
+
+    public void AddAction(string label, Action action)
+    {
+        var button = new Button { Content = label, Classes = { "flat" } };
+        AutomationProperties.SetName(button, label);
+        button.Click += (_, _) => action();
+        _actions.Children.Add(button);
+        _actions.IsVisible = true;
     }
 
     public void SetRecoveryAction(string label, Func<Task> action)
@@ -222,6 +255,30 @@ public sealed class QuickPicker : Border
         AutomationProperties.SetName(_recovery, label);
         _recover = action;
         _recovery.IsVisible = State == PickerPresentationState.Error;
+    }
+
+    public void ShowSearchSyntax()
+    {
+        _syntax.Children.Clear();
+        foreach (var token in new[] { "tag:", "title:", "path:", "\"phrase\"", "-exclude" })
+        {
+            var button = new Button { Content = token, Classes = { "flat" } };
+            AutomationProperties.SetName(button, "Insert search filter " + token);
+            ToolTip.SetTip(button, "Insert " + token + " at the search cursor, then edit its value.");
+            button.Click += (_, _) =>
+            {
+                if (_isCurrent?.Invoke() == false) return;
+                var text = _input.Text ?? "";
+                var start = Math.Min(_input.SelectionStart, _input.SelectionEnd);
+                var end = Math.Max(_input.SelectionStart, _input.SelectionEnd);
+                var inserted = (start > 0 && !char.IsWhiteSpace(text[start - 1]) ? " " : "") + token;
+                _input.Text = text[..start] + inserted + text[end..];
+                _input.CaretIndex = start + inserted.Length;
+                _input.Focus();
+            };
+            _syntax.Children.Add(button);
+        }
+        _syntax.IsVisible = true;
     }
 
     private async Task RefreshAsync(string query, long generation, Func<string, CancellationToken, Task<IReadOnlyList<PickerItem>>> provider)
@@ -246,7 +303,7 @@ public sealed class QuickPicker : Border
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
-        { if (generation == _queryGeneration && !cancellation.IsCancellationRequested) PresentError(ex.Message); }
+        { if (generation == _queryGeneration && !cancellation.IsCancellationRequested) PresentError(Tern.App.Shell.UserProblem.Plain(ex)); }
         finally { if (ReferenceEquals(_queryCancellation, cancellation)) _queryCancellation = null; }
     }
 

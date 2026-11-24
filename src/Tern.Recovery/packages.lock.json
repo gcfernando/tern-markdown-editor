@@ -8,7 +8,7 @@
       "tern.filesystem": {
         "type": "Project",
         "dependencies": {
-          "Tern.Domain": "[1.0.0-rc.2, )"
+          "Tern.Domain": "[1.0.6, )"
         }
       }
     },

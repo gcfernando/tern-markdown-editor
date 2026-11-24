@@ -17,7 +17,7 @@ namespace Tern.Desktop.Tests;
 public sealed class ContextCoverageTests
 {
     [AvaloniaFact]
-    public async Task Closed_online_entry_disables_target_actions_but_close_all_closes_other_tabs_without_fetching()
+    public async Task Closed_online_entry_is_file_scoped_and_background_close_all_never_fetches_it()
     {
         using var f = new DesktopFixture();
         await f.Shell.OpenFileAsync(await f.WriteAsync("local-notes.md", "# Local notes\n"));
@@ -32,8 +32,16 @@ public sealed class ContextCoverageTests
         var container = Assert.IsType<ListBoxItem>(list.ContainerFromItem(online));
         RightClick(f, container, new Point(2, container.Bounds.Height / 2));
         var menu = OpenMenu(f);
-        foreach (var tag in new[] { "tab.close", "tab.closeRight", "tab.closeOthers" })
-            Assert.False(Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Tag, tag)).IsEnabled);
+        Assert.False(Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Tag, "tab.close")).IsEnabled);
+        Assert.DoesNotContain(menu.Items.OfType<MenuItem>(), item => item.Tag is "tab.closeRight" or "tab.closeOthers" or "tab.closeAll");
+        var actions = menu.Items.OfType<Control>().Where(control => control.IsVisible).ToArray();
+        Assert.IsType<Separator>(actions[^2]);
+        Assert.Contains("Recycle Bin", Assert.IsType<MenuItem>(actions[^1]).Header?.ToString());
+        Assert.All(menu.Items.OfType<MenuItem>().Where(item => item.Header?.ToString() is "Rename…" or "Reveal in File Explorer"),
+            item => Assert.False(item.IsEnabled));
+        menu.Close(); Pump(f);
+        RightClick(f, list, new Point(list.Bounds.Width / 2, list.Bounds.Height - 12));
+        menu = OpenMenu(f);
         var closeAll = Assert.Single(menu.Items.OfType<MenuItem>(), item => Equals(item.Tag, "tab.closeAll"));
         Assert.True(closeAll.IsEnabled);
         await Task.Delay(100, TestContext.Current.CancellationToken); Pump(f);
@@ -62,7 +70,7 @@ public sealed class ContextCoverageTests
         var container = Assert.IsType<ListBoxItem>(list.ContainerFromItem(online));
         var title = Assert.Single(container.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == online.Title);
         var detail = Assert.Single(container.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == online.Detail);
-        var download = Assert.Single(container.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "Download online file");
+        var download = Assert.Single(container.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "Save portable copy");
         var remove = Assert.Single(container.GetVisualDescendants().OfType<Button>(), button => AutomationProperties.GetName(button) == "File reference actions");
         foreach (var (control, point) in new (Control, Point)[]
         {
@@ -76,7 +84,7 @@ public sealed class ContextCoverageTests
             RightClick(f, control, point);
             var rowMenu = OpenMenu(f);
             Assert.Contains(rowMenu.Items.OfType<MenuItem>(), item => Equals(item.Header, "Open"));
-            Assert.Contains(rowMenu.Items.OfType<MenuItem>(), item => (item.Header as string)?.StartsWith("Download", StringComparison.Ordinal) == true);
+            Assert.Contains(rowMenu.Items.OfType<MenuItem>(), item => Equals(item.Header, "Save Portable Copy…"));
             Assert.Same(local, f.Shell.ActiveTab);
             Assert.Single(f.Shell.Tabs);
             Assert.Equal(0, handler.Calls);
@@ -120,7 +128,7 @@ public sealed class ContextCoverageTests
         f.Shell.Recent.AddUrl("http://localhost:8000/online.md");
         await f.Window.ShowNavAsync("Recent"); Pump(f);
         var buttons = f.Window.GetVisualDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible).ToList();
-        var download = Assert.Single(buttons, button => AutomationProperties.GetName(button) == "Download online file");
+        var download = Assert.Single(buttons, button => AutomationProperties.GetName(button) == "Save portable copy");
         var rename = Assert.Single(buttons, button => AutomationProperties.GetName(button) == "Rename local file");
         Assert.Equal(rename.Bounds.Size, download.Bounds.Size);
         Assert.InRange(Math.Abs(rename.TranslatePoint(default, f.Window)!.Value.X - download.TranslatePoint(default, f.Window)!.Value.X), 0, .5);

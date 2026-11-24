@@ -36,7 +36,7 @@ public sealed class Oct30ReviewTests
         var insertion = paste ? f.Window.PasteEditorAsync() : f.Window.RunCommandAsync(CommandIds.InsertImage);
         Dispatcher.UIThread.RunJobs(); f.Window.UpdateLayout();
         var prompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
-        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save note")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save document")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         await insertion;
         Assert.Equal(f.Dialogs.SavePath, draft.FilePath);
         Assert.Equal(string.Empty, await File.ReadAllTextAsync(f.Dialogs.SavePath));
@@ -55,7 +55,7 @@ public sealed class Oct30ReviewTests
         var insertion = f.Window.RunCommandAsync(CommandIds.InsertImage);
         Dispatcher.UIThread.RunJobs(); f.Window.UpdateLayout();
         var prompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
-        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save note")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        prompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save document")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         await insertion;
         Assert.Null(draft.FilePath);
         Assert.Equal(string.Empty, draft.CurrentText);
@@ -91,7 +91,7 @@ public sealed class Oct30ReviewTests
     }
 
     [AvaloniaFact]
-    public async Task Changing_export_format_requires_a_new_destination_and_rejects_the_old_extension()
+    public async Task Changing_export_format_keeps_the_folder_updates_extension_and_rejects_the_old_extension()
     {
         using var f = new DesktopFixture();
         var dialog = new ExportWindow("note.md", null, "text", MarkdownProfile.Gfm, null, ExportFormat.Html);
@@ -101,7 +101,7 @@ public sealed class Oct30ReviewTests
         var oldPath = Path.Combine(f.Docs, "note.html");
         pathBox.Text = oldPath;
         dialog.Format = ExportFormat.Pdf;
-        Assert.True(string.IsNullOrEmpty(pathBox.Text));
+        Assert.Equal(Path.Combine(f.Docs, "note.pdf"), pathBox.Text);
         Assert.Contains("Format changed", dialog.StatusText);
         Assert.False(await dialog.ExportAsync(oldPath));
         Assert.False(File.Exists(oldPath));

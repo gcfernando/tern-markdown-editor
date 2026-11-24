@@ -1,9 +1,11 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Tern.App.Commands;
+using Tern.Desktop.Views;
 using Tern.Domain.Text;
 
 namespace Tern.Desktop.Tests;
@@ -47,7 +49,13 @@ public sealed class IssueRegressionTests
         Assert.Equal(second, f.Shell.ActiveTab!.FilePath);
         Assert.Equal(f.Shell.ActiveTab.CurrentText.Length, f.Window.PreviewControl.Document!.SourceLength);
         await f.Window.ShowNavAsync("Recent");
-        await f.Window.RunCommandAsync(CommandIds.ClearRecent);
+        var clearing = f.Window.RunCommandAsync(CommandIds.ClearRecent);
+        var prompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
+        var approval = prompt.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Clear recent history"));
+        Assert.Contains("danger", approval.Classes);
+        Assert.False(approval.IsDefault);
+        approval.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await clearing.WaitAsync(TimeSpan.FromSeconds(5));
         Dispatcher.UIThread.RunJobs();
         Assert.Empty(f.Shell.Recent.Files);
         Assert.Equal(2, f.Shell.Tabs.Count);

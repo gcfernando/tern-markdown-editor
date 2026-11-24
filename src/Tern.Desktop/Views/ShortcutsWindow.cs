@@ -15,10 +15,13 @@ namespace Tern.Desktop.Views;
 public sealed class ShortcutsWindow : Window
 {
     private readonly CommandRegistry _registry;
+    private readonly CommandRegistry _liveRegistry;
+    private readonly Action? _commit;
+    internal CommandRegistry WorkingRegistry => _registry;
     private readonly ListBox _list = new();
     private readonly ListBox _categories = new();
     private readonly TextBox _capture = new() { PlaceholderText = "Record a shortcut", IsReadOnly = true, HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _message = MessageTones.Follow(new() { TextWrapping = TextWrapping.Wrap });
     private readonly TextBox _search = new() { PlaceholderText = "Find a command, category or feature…" };
     private readonly TextBlock _details = GuideParts.Body("Select a command to see its purpose and customize its keyboard shortcut.");
     private readonly TextBlock _selectedTitle = GuideParts.Title("Choose a command");
@@ -26,11 +29,14 @@ public sealed class ShortcutsWindow : Window
     private bool _recording;
 
     public ShortcutsWindow(CommandRegistry registry, Func<string, Task>? openFeature = null, Func<string, Task>? askAI = null,
-        Func<string, CancellationToken, Task<string>>? answerAI = null)
+        Func<string, CancellationToken, Task<string>>? answerAI = null, Action? commit = null)
     {
-        _registry = registry;
-        DialogParts.Setup(this, "Keyboard shortcuts", 1080, 740);
-        MinWidth = 840;
+        _liveRegistry = registry;
+        _registry = new CommandRegistry(registry.Commands);
+        _registry.LoadOverrides(registry.Overrides);
+        _commit = commit;
+        DialogParts.Setup(this, "Keyboard shortcuts", 1080, 740, DialogGuidance.Shortcuts);
+        MinWidth = 620;
         MinHeight = 520;
         AutomationProperties.SetName(_search, "Search keyboard shortcuts");
         AutomationProperties.SetName(_list, "Commands and shortcuts");
@@ -56,6 +62,7 @@ public sealed class ShortcutsWindow : Window
         var remove = new Button { Content = "Remove" };
         var reset = new Button { Content = "Reset" };
         var resetAll = new Button { Content = "Reset all" };
+        resetAll.Classes.Add("danger");
         AutomationProperties.SetName(assign, "Assign shortcut");
         AutomationProperties.SetName(remove, "Remove shortcut");
         AutomationProperties.SetName(reset, "Reset shortcut to default");
@@ -77,13 +84,17 @@ public sealed class ShortcutsWindow : Window
         var clear = new Button { Content = "Clear recording" };
         AutomationProperties.SetName(clear, "Clear recorded shortcut");
         clear.Click += (_, _) => { _recording = false; _capture.Text = string.Empty; _message.Text = "Recording cleared. The assigned shortcut has not changed."; };
-        var help = new Button { Content = "Feature guide" };
-        help.Click += async (_, _) => { if (_list.SelectedItem is ShortcutRow row) await new HelpWindow(registry, row.Id, openFeature, askAI, answerAI).ShowDialog(this); };
+        var help = new Button { Content = _registry.TryGet(CommandIds.Help, out var helpCommand) ? helpCommand.Title : "Learn Tern" };
+        help.Click += (_, _) =>
+        {
+            if (_list.SelectedItem is ShortcutRow row)
+                HelpWindow.ShowFor(this, () => new HelpWindow(_registry, row.Id, openFeature, askAI, answerAI), row.Id);
+        };
         _capture.AddHandler(KeyDownEvent, OnCaptureKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _list.ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<ShortcutRow>((row, _) =>
         {
             if (row is null) return new Grid();
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 12, Margin = new Thickness(2, 6) };
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(12).ToBinding(), Margin = new Thickness(2, 6) };
             grid.Children.Add(GuideParts.Vertical(new TextBlock { Text = row.Title, TextWrapping = TextWrapping.Wrap }, GuideParts.Caption(row.Category)));
             var gesture = GuideParts.Caption(row.Gesture);
             grid.Children.Add(gesture);
@@ -93,28 +104,62 @@ public sealed class ShortcutsWindow : Window
         var close = new Button { Content = "Done", IsDefault = true, MinWidth = 96, HorizontalAlignment = HorizontalAlignment.Right };
         close.Classes.Add("accent");
         AutomationProperties.SetName(close, "Close shortcuts");
-        close.Click += (_, _) => Close();
+        close.Click += (_, _) => { if (Commit()) Close(); };
+        var apply = new Button { Content = "Apply" };
+        apply.Click += (_, _) => Commit();
         var editor = GuideParts.Card(GuideParts.Vertical(_selectedTitle, _details, _binding, _capture,
             new WrapPanel { Children = { record, clear } }, new WrapPanel { Children = { assign, remove, reset } }, help,
             GuideParts.Caption("Remove unbinds this command. Reset restores its default. If another command uses the keys, Tern asks before moving them.")));
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("190,*,315"), ColumnSpacing = 18, Children = { _categories, _list, new ScrollViewer { Content = editor, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled } } };
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("190,*,315"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(16).ToBinding(), Children = { _categories, _list, new ScrollViewer { Content = editor, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled } } };
         Grid.SetColumn(body.Children[1], 1);
         Grid.SetColumn(body.Children[2], 2);
-        var footer = new DockPanel();
-        DockPanel.SetDock(close, Dock.Right);
-        DockPanel.SetDock(resetAll, Dock.Left);
-        footer.Children.Add(close);
-        footer.Children.Add(resetAll);
-        _message.Margin = new Thickness(16, 0);
-        footer.Children.Add(_message);
-        Content = new Grid { Margin = new Thickness(28), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 18, Children =
+        void Arrange()
+        {
+            var compact = ClientSize.Width < GuideParts.Scaled(900);
+            body.ColumnDefinitions = new(compact ? "*" : "190,*,315");
+            body.RowDefinitions = new(compact ? "80,*,*" : "*");
+            body.RowSpacing = compact ? GuideParts.SpaceValue(8) : 0;
+            for (var i = 0; i < body.Children.Count; i++)
+            {
+                Grid.SetColumn(body.Children[i], compact ? 0 : i);
+                Grid.SetRow(body.Children[i], compact ? i : 0);
+            }
+        }
+        SizeChanged += (_, _) => Arrange();
+        Opened += (_, _) => Arrange();
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        cancel.Click += (_, _) => Close();
+        var footer = GuideParts.Vertical(
+            GuideParts.Caption("Edits stay here until Apply or Done. Cancel keeps the last applied assignments."),
+            _message, GuideParts.Actions(close, cancel, resetAll, apply));
+        Content = new Grid { Margin = new Thickness(28), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(16).ToBinding(), Children =
         {
             GuideParts.Vertical(GuideParts.Title("Keyboard shortcuts"), GuideParts.Body("Find a command, review what it does, then choose the keys that feel natural.")), _search, body, footer,
         }};
         var layout = (Grid)Content;
         for (var i = 0; i < layout.Children.Count; i++) Grid.SetRow(layout.Children[i], i);
         Rebuild(null);
-        KeyDown += (_, e) => { if (e.Key == Key.Escape && !_capture.IsFocused) Close(); };
+        _search.AddHandler(KeyDownEvent, (_, e) => { if (e.Key == Key.Enter) e.Handled = true; },
+            Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        KeyDown += (_, e) => { if (e.Key == Key.Escape) { Close(); e.Handled = true; } };
+    }
+
+    private bool Commit()
+    {
+        var previous = _liveRegistry.Overrides.ToDictionary();
+        try
+        {
+            _liveRegistry.LoadOverrides(_registry.Overrides);
+            _commit?.Invoke();
+            _message.Text = "Shortcuts applied.";
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            _liveRegistry.LoadOverrides(previous);
+            _message.Text = "Shortcuts could not be applied. Your pending edits are kept here for retry. " + Tern.App.Shell.UserProblem.Plain(ex);
+            return false;
+        }
     }
 
     private void ShowSelection()
@@ -173,9 +218,14 @@ public sealed class ShortcutsWindow : Window
         var m = e.KeyModifiers;
         _capture.Text = new Gesture(m.HasFlag(KeyModifiers.Control), m.HasFlag(KeyModifiers.Alt), m.HasFlag(KeyModifiers.Shift), m.HasFlag(KeyModifiers.Meta), e.Key.ToString()).ToString();
         _recording = false;
-        _message.Text = "Recorded " + Gesture.Describe(_capture.Text) + ". Choose Assign to use it, or Clear recording to cancel.";
+        _message.Text = "Recorded " + Gesture.Describe(_capture.Text) + ". Choose Assign to use it, or Clear recording to cancel." + AltGrWarning(_capture.Text);
         e.Handled = true;
     }
+
+    internal static string AltGrWarning(string? gesture) =>
+        Gesture.TryParse(gesture, out var parsed) && parsed.CollidesWithAltGr
+            ? " Warning: on keyboard layouts with an AltGr key, Ctrl+Alt+letter or digit types a character (for example ś, ² or @), so this shortcut may not work there."
+            : string.Empty;
 
     private async Task AssignAsync()
     {
@@ -191,7 +241,7 @@ public sealed class ShortcutsWindow : Window
         var result = _registry.SetBinding(commandId, gesture);
         if (result.Succeeded)
         {
-            _message.Text = "Shortcut assigned.";
+            _message.Text = "Shortcut assigned here. Choose Apply or Done to commit it." + AltGrWarning(gesture);
             Rebuild(commandId);
             return true;
         }
@@ -203,7 +253,7 @@ public sealed class ShortcutsWindow : Window
             if (answer == 0)
             {
                 _registry.ForceBinding(commandId, gesture);
-                _message.Text = $"Moved from “{otherTitle}”.";
+                _message.Text = $"Moved from “{otherTitle}” here. Choose Apply or Done to commit it." + AltGrWarning(gesture);
                 Rebuild(commandId);
                 return true;
             }
@@ -228,8 +278,12 @@ public sealed class ShortcutsWindow : Window
     {
         if (all)
         {
+            if (await PromptWindow.AskAsync(this, "Reset all shortcuts?",
+                "Restore every shortcut to its default here? Custom assignments are removed only when you choose Apply or Done.",
+                ["Reset all shortcuts", "Cancel"], 1, 1, destructiveIndex: 0) != 0) return;
             _registry.ResetAll();
             Rebuild(null);
+            _message.Text = "Default shortcuts are pending. Choose Apply or Done to commit them.";
         }
         else if (_list.SelectedItem is ShortcutRow row)
         {

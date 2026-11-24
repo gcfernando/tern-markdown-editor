@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
 using Tern.Filesystem;
 using Tern.Markdown;
@@ -24,6 +25,7 @@ public sealed record IndexingSummary(int Scanned, int Indexed, int Unchanged, in
 public sealed class WorkspaceIndexer : IDisposable
 {
     private const int BatchSize = 200;
+    private const int WriteThreshold = 2500;
 
     private readonly string _root;
     private readonly SearchIndex _index;
@@ -45,6 +47,9 @@ public sealed class WorkspaceIndexer : IDisposable
     }
 
     public OverlayStore Overlay { get; }
+
+    /// <summary>Set while a workspace is prepared so link reading and indexing share one disk read per file.</summary>
+    public SharedFileReads? SharedReads { get; set; }
 
     /// <summary>Raised when a background update triggered by an attached watcher fails unexpectedly.</summary>
     public event EventHandler<Exception>? BackgroundError;
@@ -176,35 +181,69 @@ public sealed class WorkspaceIndexer : IDisposable
         var present = new HashSet<string>(files.Select(f => f.RelativePath), WorkspacePaths.Comparer);
         var removals = stamps.Keys.Where(p => !present.Contains(p)).ToList();
 
+        var containment = new PhysicalContainment(_root);
         int indexed = 0, unchanged = 0, failed = 0, processed = 0;
-        for (var offset = 0; offset < files.Count; offset += BatchSize)
+        using var bulk = files.Count > BatchSize ? _index.BeginBulkWrite() : null;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        // Parsing continues while the previous batch is written, so neither waits for the other.
+        var batches = Channel.CreateBounded<(FileOutcome[] Results, int Count, string Last)>(new BoundedChannelOptions(2) { SingleReader = true, SingleWriter = true });
+        var pendingRemovals = removals;
+        // Full-text segments are far cheaper to build in large transactions than in many small ones.
+        var pendingDocuments = new List<IndexedDocument>(WriteThreshold);
+        void FlushDocuments()
         {
-            ct.ThrowIfCancellationRequested();
-            var chunk = files.Skip(offset).Take(BatchSize).ToList();
-            var results = new ConcurrentBag<FileOutcome>();
-            await Parallel.ForEachAsync(
-                chunk,
-                new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 8), CancellationToken = ct },
-                (file, token) =>
-                {
-                    results.Add(Evaluate(file.RelativePath, file.FullPath, file.Length, file.LastWriteUtc, stamps.GetValueOrDefault(file.RelativePath)));
-                    return ValueTask.CompletedTask;
-                }).ConfigureAwait(false);
-
-            var upserts = results.Where(r => r.Document is not null).Select(r => r.Document!).ToList();
-            var removalsNow = offset == 0 ? removals : [];
-            WriteBatch(upserts, removalsNow, null);
-            foreach (var touched in results.Where(r => r.Touch is not null))
-            {
-                _index.Touch(touched.RelativePath, touched.Touch!);
-            }
-
-            indexed += upserts.Count;
-            unchanged += results.Count(r => r.Document is null && !r.Failed);
-            failed += results.Count(r => r.Failed);
-            processed += chunk.Count;
-            progress?.Report(new IndexProgress(processed, files.Count, chunk[^1].RelativePath));
+            if (pendingDocuments.Count == 0 && pendingRemovals.Count == 0) return;
+            WriteBatch(pendingDocuments, pendingRemovals, null);
+            pendingDocuments.Clear();
+            pendingRemovals = [];
         }
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? producerFailure = null;
+        var writer = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var (results, count, last) in batches.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var upserts = results.Where(r => r.Document is not null).Select(r => r.Document!).ToList();
+                    pendingDocuments.AddRange(upserts);
+                    if (pendingDocuments.Count >= WriteThreshold) FlushDocuments();
+                    _index.TouchMany(results.Where(r => r.Touch is not null).Select(r => (r.RelativePath, r.Touch!)).ToArray());
+                    indexed += upserts.Count;
+                    unchanged += results.Count(r => r.Document is null && !r.Failed);
+                    failed += results.Count(r => r.Failed);
+                    processed += count;
+                    progress?.Report(new IndexProgress(processed, files.Count, last));
+                }
+            }
+            catch { stop.Cancel(); throw; }
+            finally { FlushDocuments(); }
+        }, CancellationToken.None);
+        try
+        {
+            for (var offset = 0; offset < files.Count; offset += BatchSize)
+            {
+                stop.Token.ThrowIfCancellationRequested();
+                var chunk = files.Skip(offset).Take(BatchSize).ToList();
+                var results = new ConcurrentBag<FileOutcome>();
+                await Parallel.ForEachAsync(
+                    chunk,
+                    new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount - 1, 1, 16), CancellationToken = stop.Token },
+                    (file, token) =>
+                    {
+                        results.Add(Evaluate(file.RelativePath, file.FullPath, file.Length, file.LastWriteUtc, stamps.GetValueOrDefault(file.RelativePath), containment: containment));
+                        return ValueTask.CompletedTask;
+                    }).ConfigureAwait(false);
+                await batches.Writer.WriteAsync((results.ToArray(), chunk.Count, chunk[^1].RelativePath), stop.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { producerFailure = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex); stop.Cancel(); }
+        finally { batches.Writer.TryComplete(); }
+        // Always let the writer finish, so work already parsed is committed before this method returns.
+        await writer.ConfigureAwait(false);
+        producerFailure?.Throw();
+        ct.ThrowIfCancellationRequested();
 
         if (files.Count == 0 && removals.Count > 0)
         {
@@ -291,7 +330,7 @@ public sealed class WorkspaceIndexer : IDisposable
                 continue;
             }
 
-            if (_options.MaxFileSizeBytes is { } cap && info.Length > cap)
+            if (_options.MaxFileSizeBytes is { } cap && info.Length > cap && !CloudFiles.IsOnlineOnly(info.Attributes))
             { removalFiles.Add(relative); continue; }
 
             // A watcher event is an explicit hint that something changed, so coarse timestamps must not hide an edit.
@@ -371,19 +410,29 @@ public sealed class WorkspaceIndexer : IDisposable
     }
 
     // Reads and extracts one file. Returns "unchanged" cheaply when mtime and size match the stored stamp.
-    private FileOutcome Evaluate(string relative, string fullPath, long length, DateTime lastWriteUtc, IndexStamp? stored, bool trustStat = true)
+    private FileOutcome Evaluate(string relative, string fullPath, long length, DateTime lastWriteUtc, IndexStamp? stored, bool trustStat = true, PhysicalContainment? containment = null)
     {
-        if (!WorkspacePaths.IsPhysicallyContained(_root, fullPath))
+        if (!(containment?.Contains(fullPath) ?? WorkspacePaths.IsPhysicallyContained(_root, fullPath)))
         {
             return new FileOutcome(relative, null, null, true);
         }
         // A shared scan can precede graph preparation. Refresh this file's stamp
         // before deciding that the cached content is still current.
         var info = new FileInfo(fullPath);
-        try { length = info.Length; lastWriteUtc = info.LastWriteTimeUtc; }
+        try
+        {
+            length = info.Length;
+            lastWriteUtc = info.LastWriteTimeUtc;
+            if (CloudFiles.IsOnlineOnly(info.Attributes))
+            {
+                var nameOnly = new ExtractedDocument(Path.GetFileNameWithoutExtension(relative) + " (online-only)", [], [], string.Empty, 0);
+                return new FileOutcome(relative, new IndexedDocument(relative, nameOnly,
+                    new IndexStamp(lastWriteUtc.Ticks, length, "online-only")), null, false);
+            }
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return new FileOutcome(relative, null, null, true); }
         var ticks = lastWriteUtc.Ticks;
-        if (trustStat && stored is not null && stored.MtimeTicks == ticks && stored.Size == length)
+        if (trustStat && stored is not null && stored.Hash != "online-only" && stored.MtimeTicks == ticks && stored.Size == length)
         {
             return new FileOutcome(relative, null, null, false);
         }
@@ -391,11 +440,13 @@ public sealed class WorkspaceIndexer : IDisposable
         byte[] bytes;
         try
         {
-            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            if (stream.Length > (_options.MaxFileSizeBytes ?? DocumentFileService.MaximumEagerLoadBytes))
-                return new FileOutcome(relative, null, null, true);
-            bytes = new byte[stream.Length];
-            stream.ReadExactly(bytes);
+            var limit = _options.MaxFileSizeBytes ?? DocumentFileService.MaximumEagerLoadBytes;
+            var loaded = SharedReads is { } shared ? shared.Read(fullPath, () => ReadFile(fullPath, limit)) : ReadFile(fullPath, limit);
+            if (loaded is null || loaded.Length > limit) return new FileOutcome(relative, null, null, true);
+            // A shared read from before an edit must not be recorded against the newer file.
+            if (loaded.Length != length) loaded = ReadFile(fullPath, limit);
+            if (loaded is null) return new FileOutcome(relative, null, null, true);
+            bytes = loaded;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -411,6 +462,21 @@ public sealed class WorkspaceIndexer : IDisposable
         var text = TextFileCodec.Decode(bytes).Text;
         var content = MarkdownTextExtractor.Extract(relative, text, _profile);
         return new FileOutcome(relative, new IndexedDocument(relative, content, stamp), null, false);
+    }
+
+    private static byte[]? ReadFile(string path, long limit)
+    {
+        using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var size = RandomAccess.GetLength(handle);
+        if (size > limit) return null;
+        var bytes = new byte[size];
+        for (var total = 0; total < bytes.Length;)
+        {
+            var read = RandomAccess.Read(handle, bytes.AsSpan(total), total);
+            if (read == 0) throw new EndOfStreamException();
+            total += read;
+        }
+        return bytes;
     }
 
     private sealed record FileOutcome(string RelativePath, IndexedDocument? Document, IndexStamp? Touch, bool Failed);

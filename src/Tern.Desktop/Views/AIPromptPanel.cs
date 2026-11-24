@@ -6,12 +6,15 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Tern.Desktop.Services;
+using Tern.App.Shell;
 
 namespace Tern.Desktop.Views;
 
 /// <summary>A focused, multiline writing prompt over the current document.</summary>
-public sealed class AIPromptPanel : Border, IDisposable
+public sealed class AIPromptPanel : Border, IDisposable, IDismissibleOverlay
 {
+    public bool DismissWithEscape => false;
+
     private readonly CancellationTokenSource _lifetime = new();
     private bool _busy;
     private bool _disposed;
@@ -20,12 +23,13 @@ public sealed class AIPromptPanel : Border, IDisposable
     private readonly bool _writingOnly;
     private bool _refreshingConnections;
     private Action _refreshStatus = () => { };
+    internal ActivityScope? CurrentActivity { get; private set; }
 
     public AIPromptPanel(string documentName, AIWorkspaceService workspace, Func<string, string, CancellationToken, Task<string>> generate,
-        Action close, Func<Task> configure, Action<string> select, string shortcut = "Alt+Space",
+        Action close, Func<Task> configure, Action<string> select, string shortcut = "Ctrl+Shift+Space",
         Func<string, string, string?>? validate = null, Func<string, Task>? openTools = null,
         ComboBox? scope = null, string? initialAction = null, Action<string>? changeAction = null, bool writingOnly = false,
-        bool isEmptyDraft = false, string? initialInstruction = null)
+        bool isEmptyDraft = false, string? initialInstruction = null, ActivityFeed? activities = null)
     {
         _writingOnly = writingOnly;
         HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -33,16 +37,16 @@ public sealed class AIPromptPanel : Border, IDisposable
         Margin = new Thickness(16);
         MaxWidth = 720;
         Padding = new Thickness(20);
-        CornerRadius = new CornerRadius(14);
+        this[!CornerRadiusProperty] = GuideParts.Radius("Popup").ToBinding();
         BorderThickness = new Thickness(1);
         Classes.Add("ai-writing-workbench");
-        BoxShadow = new BoxShadows(new BoxShadow { Blur = 38, OffsetY = 12, Color = Color.Parse("#50000000") });
+        this.Bind(BoxShadowProperty, this.GetResourceObservable(Themes.ThemeManager.Shadow));
         this.Bind(BackgroundProperty, this.GetResourceObservable("Tern.Surface"));
         this.Bind(BorderBrushProperty, this.GetResourceObservable("Tern.Border"));
         var question = _question = new TextBox
         {
             AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 260, MaxHeight = 380,
-            FontSize = GuideParts.Scaled(15), Padding = new Thickness(12), MaxLength = 8000,
+            [!TextBox.FontSizeProperty] = GuideParts.Font("Lead").ToBinding(), Padding = new Thickness(12), MaxLength = AIConnectionRules.MaximumSendCharacters,
         };
         AutomationProperties.SetName(question, "AI writing question");
         var connections = _connections = new ComboBox
@@ -56,14 +60,17 @@ public sealed class AIPromptPanel : Border, IDisposable
         AutomationProperties.SetName(connections, "Writing AI connection");
         var destination = GuideParts.Caption("");
         AutomationProperties.SetName(destination, "AI writing destination");
-        var status = GuideParts.Body("");
+        var status = MessageTones.Follow(GuideParts.Body(""));
         AutomationProperties.SetName(status, "AI writing status");
-        var validation = GuideParts.Body("");
+        var validation = MessageTones.Follow(GuideParts.Body(""));
         AutomationProperties.SetName(validation, "AI writing validation");
+        var progress = new ContentControl { IsVisible = false };
+        AutomationProperties.SetName(progress, "AI generation progress");
         var send = new Button { Content = "Generate for review", MinHeight = 42 };
         send.Classes.Add("accent");
         AutomationProperties.SetName(send, "Generate AI suggestion");
         var cancel = new Button { Content = "Close" };
+        var retry = new Button { Content = "Retry generation", IsVisible = false };
         var settings = new Button { Content = "Manage connections", Classes = { "flat" } };
         var tools = new Button { Content = "Open MCP tools", MinHeight = 42, IsVisible = false };
         tools.Classes.Add("accent"); AutomationProperties.SetName(tools, "Open selected MCP tools");
@@ -72,7 +79,7 @@ public sealed class AIPromptPanel : Border, IDisposable
         AutomationProperties.SetName(promptHelp, "How to write an AI instruction");
         var scopeHelp = GuideParts.Caption("");
         AutomationProperties.SetName(scopeHelp, "What the selected text scope shares");
-        var shortcuts = new WrapPanel { ItemSpacing = 8, LineSpacing = 6 };
+        var shortcuts = new WrapPanel { [!WrapPanel.ItemSpacingProperty] = GuideParts.Space(8).ToBinding(), [!WrapPanel.LineSpacingProperty] = GuideParts.Space(4).ToBinding() };
         var connectionField = GuideParts.Vertical(GuideParts.Caption("Connection"), connections);
         var setup = new Button { Content = "Set up connection", Classes = { "accent" } };
         var setupHint = GuideParts.Caption("Choose Set up connection to add a local or remote writing model.");
@@ -123,6 +130,10 @@ public sealed class AIPromptPanel : Border, IDisposable
             var profile = connections.SelectedItem as WorkspaceConnection;
             var error = ValidationError();
             send.IsEnabled = !_busy && error is null;
+            ToolTip.SetTip(send, error ?? "Generate a suggestion to review before applying it.");
+            ToolTip.SetShowOnDisabled(send, true);
+            retry.IsVisible = failure is not null;
+            retry.IsEnabled = !_busy && !_disposed;
             send.Opacity = send.IsEnabled ? 1 : .45;
             var isTool = profile is { CanWrite: false };
             var selected = Equals(scope?.SelectedItem, "Selected text");
@@ -136,7 +147,7 @@ public sealed class AIPromptPanel : Border, IDisposable
             promptHelp.IsVisible = !isTool;
             scopeHelp.Text = scope?.SelectedItem switch
             {
-                "Selected text" => "Shares only the text you highlighted in Source.",
+                "Selected text" => "Shares only the text you highlighted in Source. After review, Apply changes replaces that selection.",
                 "Instruction only" => "Shares only your instruction. The generated result is inserted; existing note text is kept.",
                 _ when isEmptyDraft => "This note is empty, so only your instruction is shared.",
                 _ when scope is null => "Shares the entire note. To share only part of it, select that text in Source before opening Write with AI.",
@@ -155,13 +166,14 @@ public sealed class AIPromptPanel : Border, IDisposable
             send.IsVisible = !isTool && !needsSetup;
             validation.Text = isTool
                 ? "Choose a tool, inspect its description and JSON arguments, then run only the call you approve. Tool results never replace your note automatically."
-                : needsSetup || string.IsNullOrWhiteSpace(question.Text) ? "" : error ?? "";
+                : needsSetup ? "" : error ?? "";
             validation.IsVisible = !string.IsNullOrEmpty(validation.Text);
             status.IsVisible = !string.IsNullOrEmpty(status.Text);
             destination.Text = profile is null
                 ? ""
                 : isTool ? "Tool server: " + profile.Destination + ". Your note is not sent when opening tools."
-                : $"{scope?.SelectedItem ?? "Entire note"} and your instruction go to:\n{workspace.Summary(profile).Description}";
+                : $"{scope?.SelectedItem ?? "Entire document"} and your instruction go to:\n{workspace.Summary(profile).Description}"
+                    + (string.Equals(profile.Kind, "copilot", StringComparison.OrdinalIgnoreCase) ? "\n" + CopilotConnectionWindow.CopilotInputNotice : "");
             destination.IsVisible = !string.IsNullOrEmpty(destination.Text);
         }
         connections.SelectionChanged += (_, _) =>
@@ -186,24 +198,66 @@ public sealed class AIPromptPanel : Border, IDisposable
         }
         settings.Click += async (_, _) => await ConfigureAsync();
         setup.Click += async (_, _) => await ConfigureAsync();
+        void Retry()
+        {
+            if (_busy || _disposed || failure is null) return;
+            failure = null;
+            status.Text = "";
+            Refresh();
+            if (send.IsEnabled) send.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        }
+        retry.Click += (_, _) => Retry();
         send.Click += async (_, _) =>
         {
             if (_busy || ValidationError() is not null || connections.SelectedItem is not WorkspaceConnection profile) { Refresh(); return; }
             _busy = true; question.IsReadOnly = true; connections.IsEnabled = settings.IsEnabled = false;
-            cancel.Content = "Cancel request"; status.Text = "Validating connection and model before generation…"; Refresh();
+            cancel.Content = "Cancel request"; send.Content = "Generating…"; status.Text = "Validating connection and model before generation…"; Refresh();
+            using var activity = activities?.Begin("AI generation", documentName, cancel: () => { if (!_disposed) _lifetime.Cancel(); });
+            CurrentActivity = activity;
+            if (activity is not null)
+            {
+                // The shared indicator reports each phase and honors reduced motion.
+                progress.Content = new LoadingState(activities!, activity.Id);
+                progress.IsVisible = true;
+                status.Text = "";
+                Refresh();
+            }
             try
             {
                 status.Text = await generate(profile.Id, question.Text ?? "", _lifetime.Token);
+                activity?.Complete(outcome: "Suggestion ready for review; not applied");
                 if (!_disposed && !_lifetime.IsCancellationRequested) close();
             }
-            catch (OperationCanceledException) { status.Text = "Request canceled. Your note has not changed."; }
+            catch (OperationCanceledException)
+            {
+                if (_lifetime.IsCancellationRequested)
+                {
+                    activity?.Cancel("Canceled; no suggestion was applied. Already transmitted text cannot be recalled.");
+                    status.Text = "Request canceled. Your note has not changed.";
+                }
+                else
+                {
+                    activity?.Fail("The model request timed out. No suggestion was applied.");
+                    status.Text = failure = "The model request timed out. Your note has not changed. Retry after checking the connection.";
+                }
+            }
             catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException
                 or System.Text.Json.JsonException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-            { status.Text = ex.Message; failure = "Generation stopped. " + ex.Message; }
+            {
+                activity?.Fail(ex.Message);
+                status.Text = "Generation failed. Your note has not changed. " + Tern.App.Shell.UserProblem.Plain(ex);
+                failure = "Generation stopped. " + Tern.App.Shell.UserProblem.Plain(ex);
+                activities?.Post("AI generation failed. Your note has not changed.", ActivitySeverity.Error,
+                    [new BannerAction("Retry", Retry), new BannerAction("Manage connections", async () => { if (!_disposed) await ConfigureAsync(); })],
+                    Tern.App.Shell.UserProblem.Plain(ex));
+            }
+            catch (Exception ex) { activity?.Fail(ex.Message); throw; }
             finally
             {
+                CurrentActivity = null;
+                progress.Content = null; progress.IsVisible = false;
                 _busy = false; question.IsReadOnly = false; connections.IsEnabled = settings.IsEnabled = true;
-                cancel.Content = "Close"; Refresh();
+                cancel.Content = "Close"; send.Content = "Generate for review"; Refresh();
             }
         };
         AddHandler(KeyDownEvent, (_, e) =>
@@ -213,13 +267,13 @@ public sealed class AIPromptPanel : Border, IDisposable
             { send.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); e.Handled = true; }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         DetachedFromVisualTree += (_, _) => Dispose();
-        var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 16, Children =
+        var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(16).ToBinding(), Children =
         {
             GuideParts.Vertical(GuideParts.Body("✦  Write with AI"), GuideParts.Caption(documentName)),
             new TextBlock { Text = shortcut, Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center },
         } };
         Grid.SetColumn(heading.Children[1], 1);
-        var options = new WrapPanel { ItemSpacing = 12, LineSpacing = 8 };
+        var options = new WrapPanel { [!WrapPanel.ItemSpacingProperty] = GuideParts.Space(12).ToBinding(), [!WrapPanel.LineSpacingProperty] = GuideParts.Space(8).ToBinding() };
         if (scope is not null) options.Children.Add(GuideParts.Vertical(GuideParts.Caption("Text to share"), scope));
         options.Children.Add(connectionField);
         var contentScroll = new ScrollViewer
@@ -228,11 +282,11 @@ public sealed class AIPromptPanel : Border, IDisposable
                 promptTitle, promptHelp, shortcuts, question, options, scopeHelp, setupHint, destination, validation, status),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
-        var actions = GuideParts.Actions(settings, cancel, setup, tools, send);
+        var actions = GuideParts.ButtonRow(settings, cancel, setup, tools, retry, send);
         var footer = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 10, 0, 0),
-            Child = actions };
+            Child = GuideParts.Vertical(progress, actions) };
         footer.Bind(BorderBrushProperty, this.GetResourceObservable("Tern.Border"));
-        Child = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), RowSpacing = 12, Children = { heading, contentScroll, footer } };
+        Child = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding(), Children = { heading, contentScroll, footer } };
         Grid.SetRow(contentScroll, 1); Grid.SetRow(footer, 2);
         Refresh();
         _refreshStatus = Refresh;

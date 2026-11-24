@@ -185,6 +185,19 @@ internal static class FlowchartLayouter
                     sourcePorts[e], targetPorts[e], departureLanes[e], vertex => thickness[layerOf[vertex]]);
             routed.Add((points, null));
         }
+        void SimplifyAll()
+        {
+            for (var e = 0; e < edges.Count; e++)
+            {
+                if (from[e] == to[e]) continue;
+                var edgeIndex = e;
+                var flatTarget = nodes[to[e]].Shape is FlowNodeShape.Rectangle or FlowNodeShape.Rounded or FlowNodeShape.Subroutine or FlowNodeShape.Entity or FlowNodeShape.Class;
+                routed[e] = (SimplifyRoute(routed[e].Points, from[e], to[e], rects,
+                    routed.Where((_, index) => index != edgeIndex).Select(route => route.Points).ToArray(), horizontal, flatTarget), null);
+            }
+        }
+        SimplifyAll();
+        if (UncrossSharedPorts(routed, from, to, rects, horizontal)) SimplifyAll();
         var frames = BuildSubgraphFrames(diagram, indexOf, rects);
         var labelObstacles = rects.Concat(frames.Select(frame => new DiagramRect(frame.Bounds.X, frame.Bounds.Y, frame.Bounds.Width, SubgraphTitleHeight))).ToArray();
         var placedLabels = new List<DiagramRect>();
@@ -302,7 +315,7 @@ internal static class FlowchartLayouter
         for (var edge = 0; edge < from.Length; edge++)
         {
             var source = from[edge]; var target = to[edge];
-            if (source == target || chains[edge]?.Count != 2) continue;
+            if (source == target || chains[edge] is null) continue;
             var a = Cross(Port(source, target, sourcePorts[edge]));
             var b = Cross(Port(target, source, targetPorts[edge]));
             if (Math.Abs(a - b) < .001 || Math.Abs(a - b) > 48) continue;
@@ -662,6 +675,179 @@ internal static class FlowchartLayouter
         }
     }
 
+    /// <summary>
+    /// Replaces a long edge's per-rank jogs with a straight line or a single
+    /// dogleg when that path stays clear of other nodes and does not run along another edge.
+    /// </summary>
+    private static IReadOnlyList<DiagramPoint> SimplifyRoute(IReadOnlyList<DiagramPoint> route, int source, int target,
+        DiagramRect[] rectangles, IReadOnlyList<IReadOnlyList<DiagramPoint>> otherRoutes, bool horizontal, bool flatTarget)
+    {
+        if (route.Count <= 2) return route;
+        var start = route[0];
+        var end = route[^1];
+        // A few units of port offset reads as a kink. Slide the arrow along a flat
+        // target face to line up when it stays on the face and clear of other ports.
+        var drift = Math.Abs(horizontal ? start.Y - end.Y : start.X - end.X);
+        if (flatTarget && drift is > 0.001 and <= 12)
+        {
+            var face = rectangles[target];
+            var aligned = horizontal ? end with { Y = start.Y } : end with { X = start.X };
+            var onFace = horizontal
+                ? aligned.Y >= face.Y + 8 && aligned.Y <= face.Bottom - 8
+                : aligned.X >= face.X + 8 && aligned.X <= face.Right - 8;
+            var portsClear = otherRoutes.SelectMany(other => new[] { other[0], other[^1] })
+                .All(port => Distance(port, aligned) >= 10);
+            if (onFace && portsClear) end = aligned;
+        }
+        var obstacles = rectangles.Where((_, index) => index != source && index != target)
+            .Select(r => new DiagramRect(r.X - 12, r.Y - 12, r.Width + 24, r.Height + 24)).ToArray();
+        var foreign = otherRoutes.SelectMany(other => Enumerable.Range(1, other.Count - 1)
+            .Select(index => (A: other[index - 1], B: other[index]))).ToArray();
+        bool Clear(DiagramPoint[] candidate)
+        {
+            for (var index = 1; index < candidate.Length; index++)
+            {
+                var a = candidate[index - 1];
+                var b = candidate[index];
+                if (obstacles.Any(rectangle => SegmentIntersects(rectangle, a, b))
+                    || foreign.Any(segment => RunsAlong(a, b, segment.A, segment.B))) return false;
+            }
+            return true;
+        }
+        double Rank(DiagramPoint point) => horizontal ? point.X : point.Y;
+        if (Math.Abs(horizontal ? start.Y - end.Y : start.X - end.X) < 0.001)
+        {
+            DiagramPoint[] straight = [start, end];
+            if (Clear(straight)) return straight;
+        }
+        if (route.Count <= 4) return route;
+        var middle = (Rank(start) + Rank(end)) / 2;
+        foreach (var rank in route.Skip(1).Take(route.Count - 2).Select(Rank).Distinct()
+            .Where(rank => Math.Abs(rank - Rank(start)) > 16 && Math.Abs(rank - Rank(end)) > 16)
+            .OrderBy(rank => Math.Abs(rank - middle)))
+        {
+            DiagramPoint[] dogleg = horizontal
+                ? [start, new(rank, start.Y), new(rank, end.Y), end]
+                : [start, new(start.X, rank), new(end.X, rank), end];
+            if (Clear(dogleg)) return dogleg;
+        }
+        if (route.Count > 6)
+        {
+            // No single dogleg fits: leave once, run one straight lane past the
+            // blocking nodes and return once, instead of jogging at every rank.
+            var enter = Rank(route[1]); var leave = Rank(route[^2]);
+            var low = Math.Min(enter, leave); var high = Math.Max(enter, leave);
+            double CrossOf(DiagramPoint point) => horizontal ? point.Y : point.X;
+            var lanes = obstacles
+                .Where(o => (horizontal ? o.X : o.Y) < high && (horizontal ? o.Right : o.Bottom) > low)
+                .SelectMany(o => horizontal ? new[] { o.Y - 4, o.Bottom + 4 } : [o.X - 4, o.Right + 4])
+                .Where(lane => Math.Abs(lane - CrossOf(start)) > 1 && Math.Abs(lane - CrossOf(end)) > 1)
+                .Distinct().OrderBy(lane => Math.Abs(lane - CrossOf(start)) + Math.Abs(lane - CrossOf(end)));
+            foreach (var lane in lanes)
+            {
+                DiagramPoint[] channel = horizontal
+                    ? [start, new(enter, start.Y), new(enter, lane), new(leave, lane), new(leave, end.Y), end]
+                    : [start, new(start.X, enter), new(lane, enter), new(lane, leave), new(end.X, leave), end];
+                if (Clear(channel)) return channel;
+            }
+        }
+        return route;
+    }
+
+    /// <summary>
+    /// Two connections on one node face can cross right at that node only because their
+    /// ports are in the wrong order. Swap those ports when that removes the crossing.
+    /// </summary>
+    private static bool UncrossSharedPorts(List<(IReadOnlyList<DiagramPoint> Points, DiagramRect? Label)> routed,
+        int[] from, int[] to, DiagramRect[] rectangles, bool horizontal)
+    {
+        double Cross(DiagramPoint point) => horizontal ? point.Y : point.X;
+        double Rank(DiagramPoint point) => horizontal ? point.X : point.Y;
+        DiagramPoint WithCross(DiagramPoint point, double value) => horizontal ? point with { Y = value } : point with { X = value };
+        IReadOnlyList<DiagramPoint>? Moved(IReadOnlyList<DiagramPoint> route, bool atStart, double value)
+        {
+            if (route.Count < 4) return null;
+            var points = route.ToList();
+            var (port, next) = atStart ? (0, 1) : (points.Count - 1, points.Count - 2);
+            if (Math.Abs(Cross(points[port]) - Cross(points[next])) > .001) return null;
+            points[port] = WithCross(points[port], value);
+            points[next] = WithCross(points[next], value);
+            var clean = new List<DiagramPoint>();
+            foreach (var point in points)
+                if (clean.Count == 0 || Distance(clean[^1], point) > .001) clean.Add(point);
+            return clean.Count >= 2 ? clean : null;
+        }
+        static bool Between(double value, double a, double b) => value > Math.Min(a, b) + .001 && value < Math.Max(a, b) - .001;
+        static int Crossings(IReadOnlyList<DiagramPoint> first, IReadOnlyList<DiagramPoint> second)
+        {
+            var count = 0;
+            for (var i = 1; i < first.Count; i++)
+                for (var j = 1; j < second.Count; j++)
+                {
+                    var (a, b, c, d) = (first[i - 1], first[i], second[j - 1], second[j]);
+                    if ((Math.Abs(a.X - b.X) < .001 && Math.Abs(c.Y - d.Y) < .001 && Between(a.X, c.X, d.X) && Between(c.Y, a.Y, b.Y))
+                        || (Math.Abs(a.Y - b.Y) < .001 && Math.Abs(c.X - d.X) < .001 && Between(c.X, a.X, b.X) && Between(a.Y, c.Y, d.Y))) count++;
+                }
+            return count;
+        }
+        bool ClearOfNodes(IReadOnlyList<DiagramPoint> route, int edge)
+        {
+            for (var index = 1; index < route.Count; index++)
+                for (var node = 0; node < rectangles.Length; node++)
+                {
+                    if (node == from[edge] || node == to[edge]) continue;
+                    var r = rectangles[node];
+                    if (SegmentIntersects(new DiagramRect(r.X - 8, r.Y - 8, r.Width + 16, r.Height + 16), route[index - 1], route[index])) return false;
+                }
+            return true;
+        }
+        int Total(IReadOnlyList<DiagramPoint> route, int first, int second) =>
+            Enumerable.Range(0, routed.Count).Where(index => index != first && index != second && from[index] != to[index])
+                .Sum(index => Crossings(route, routed[index].Points));
+        var changed = false;
+        for (var e = 0; e < routed.Count; e++)
+        {
+            if (from[e] == to[e]) continue;
+            for (var f = e + 1; f < routed.Count; f++)
+            {
+                if (from[f] == to[f] || Crossings(routed[e].Points, routed[f].Points) == 0) continue;
+                var swapped = false;
+                foreach (var eStart in new[] { true, false })
+                {
+                    foreach (var fStart in new[] { true, false })
+                    {
+                        if ((eStart ? from[e] : to[e]) != (fStart ? from[f] : to[f])) continue;
+                        var ePort = eStart ? routed[e].Points[0] : routed[e].Points[^1];
+                        var fPort = fStart ? routed[f].Points[0] : routed[f].Points[^1];
+                        if (Math.Abs(Rank(ePort) - Rank(fPort)) > .5) continue;
+                        var eRoute = Moved(routed[e].Points, eStart, Cross(fPort));
+                        var fRoute = Moved(routed[f].Points, fStart, Cross(ePort));
+                        if (eRoute is null || fRoute is null || Crossings(eRoute, fRoute) != 0
+                            || !ClearOfNodes(eRoute, e) || !ClearOfNodes(fRoute, f)
+                            || Total(eRoute, e, f) + Total(fRoute, e, f) > Total(routed[e].Points, e, f) + Total(routed[f].Points, e, f)) continue;
+                        routed[e] = (eRoute, null);
+                        routed[f] = (fRoute, null);
+                        changed = swapped = true;
+                        break;
+                    }
+                    if (swapped) break;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static bool RunsAlong(DiagramPoint a, DiagramPoint b, DiagramPoint c, DiagramPoint d)
+    {
+        static bool Shared(double a1, double a2, double b1, double b2) =>
+            Math.Min(Math.Max(a1, a2), Math.Max(b1, b2)) - Math.Max(Math.Min(a1, a2), Math.Min(b1, b2)) > 1;
+        if (Math.Abs(a.X - b.X) < 0.001 && Math.Abs(c.X - d.X) < 0.001)
+            return Math.Abs(a.X - c.X) < 2 && Shared(a.Y, b.Y, c.Y, d.Y);
+        if (Math.Abs(a.Y - b.Y) < 0.001 && Math.Abs(c.Y - d.Y) < 0.001)
+            return Math.Abs(a.Y - c.Y) < 2 && Shared(a.X, b.X, c.X, d.X);
+        return false;
+    }
+
     private static List<DiagramPoint> LoopPoints(FlowNodeShape shape, DiagramRect rect, bool horizontal)
     {
         var c = rect.Center;
@@ -755,6 +941,7 @@ internal static class FlowchartLayouter
                 new(segment.Control!.Value.X, segment.Control.Value.Y, 0, 0)])).ToArray();
         var best = preferred;
         var bestScore = (Nodes: int.MaxValue, Labels: int.MaxValue, Lines: int.MaxValue, Distance: double.PositiveInfinity);
+        DiagramRect? clearOverBend = null;
         foreach (var candidate in candidates.OrderBy(candidate =>
             Math.Pow(candidate.Center.X - preferred.Center.X, 2) + Math.Pow(candidate.Center.Y - preferred.Center.Y, 2)))
         {
@@ -762,7 +949,18 @@ internal static class FlowchartLayouter
             var nodeCollisions = nodes.Count(padded.Overlaps);
             var labelCollisions = labels.Count(padded.Overlaps);
             var lineCollisions = foreignSegments.Count(segment => SegmentIntersects(padded, segment.A, segment.B)) + foreignCorners.Count(padded.Overlaps);
-            if (nodeCollisions == 0 && labelCollisions == 0 && lineCollisions == 0) return candidate;
+            if (nodeCollisions == 0 && labelCollisions == 0 && lineCollisions == 0)
+            {
+                // A label over its own bend hides where the line turns. Use one only
+                // when no equally clear position sits on a straight part of the route.
+                var coversBend = !isLoop && points.Skip(1).Take(points.Count - 2).Any(point =>
+                    point.X >= padded.X && point.X <= padded.Right && point.Y >= padded.Y && point.Y <= padded.Bottom);
+                var nearRoute = isLoop || Enumerable.Range(1, points.Count - 1).Any(index => SegmentIntersects(
+                    new DiagramRect(padded.X - 8, padded.Y - 8, padded.Width + 16, padded.Height + 16), points[index - 1], points[index]));
+                if (!coversBend && nearRoute) return candidate;
+                clearOverBend ??= candidate;
+                continue;
+            }
             var dx = candidate.Center.X - preferred.Center.X;
             var dy = candidate.Center.Y - preferred.Center.Y;
             var score = (Nodes: nodeCollisions, Labels: labelCollisions, Lines: lineCollisions, Distance: dx * dx + dy * dy);
@@ -770,6 +968,7 @@ internal static class FlowchartLayouter
             best = candidate;
             bestScore = score;
         }
+        if (clearOverBend is { } clear) return clear;
         // Dense feedback/parallel edges can exhaust the local corridors. Keep
         // searching outward rather than knowingly publishing an overlapping label.
         if (bestScore.Nodes + bestScore.Labels + bestScore.Lines > 0)

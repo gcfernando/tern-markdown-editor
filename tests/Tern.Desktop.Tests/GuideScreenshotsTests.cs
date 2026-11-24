@@ -24,7 +24,7 @@ public class GuideScreenshotsTests
         Window[] windows = [new SettingsWindow(new AppSettings()), new ShortcutsWindow(registry), new AboutWindow(), guide, new AIConnectionsWindow(Path.Combine(fixture.AppData, "settings"))];
         string[] names = ["settings", "shortcuts", "about", "guide", "ai-connections"];
         var root = FindRoot();
-        var output = Path.Combine(root, "artifacts", "screenshots", "issues-v1");
+        var output = Tern.Tests.Shared.TestOutput.Folder("screenshots", "issues-v1");
         Directory.CreateDirectory(output);
         for (var i = 0; i < windows.Length; i++)
         {
@@ -48,7 +48,7 @@ public class GuideScreenshotsTests
             }
             if (window is AIConnectionsWindow)
             {
-                var next = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "AI setup next");
+                var next = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetName(b) == "Next step");
                 next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var model = window.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "Model name");
                 var key = window.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "API key (saved only when you choose Save connection)");
@@ -60,7 +60,7 @@ public class GuideScreenshotsTests
                 window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var send = window.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Send request"));
                 Assert.False(send.IsEnabled);
-                var consent = window.GetVisualDescendants().OfType<CheckBox>().Single(c => AutomationProperties.GetName(c) == "Send exactly the message above to the endpoint above");
+                var consent = window.GetVisualDescendants().OfType<CheckBox>().Single(c => AutomationProperties.GetName(c) == AIConnectionsWindow.TestConsentText);
                 consent.IsChecked = true;
                 Assert.False(send.IsEnabled); // Empty required settings cannot be bypassed by consent.
                 var message = window.GetVisualDescendants().OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "Exact message to send");

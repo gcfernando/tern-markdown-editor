@@ -7,7 +7,6 @@ namespace Tern.Desktop.Services;
 internal static class DistributionContent
 {
     private const string Resource = "Tern.DistributionContent.zip";
-    internal static bool IsBundled => Assembly.GetExecutingAssembly().GetManifestResourceInfo(Resource) is not null;
     internal static async Task<string> LocationAsync()
     {
         using var embedded = Assembly.GetExecutingAssembly().GetManifestResourceStream(Resource);

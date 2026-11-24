@@ -12,7 +12,7 @@
         Classes="studio"
         Title="Tern"
         Icon="avares://Tern/Assets/tern.ico"
-        Width="1440" Height="880" MinWidth="900" MinHeight="560"
+        Width="1440" Height="880" MinWidth="720" MinHeight="420"
         ExtendClientAreaToDecorationsHint="True"
         WindowDecorations="BorderOnly"
         ExtendClientAreaTitleBarHeightHint="48"
@@ -24,10 +24,10 @@
     <!-- Title bar -->
     <Border x:Name="TitleBar" Grid.Row="0" Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1" MinHeight="48" PointerPressed="OnTitlePointerPressed">
       <Grid x:Name="TitleLayout" ColumnDefinitions="220,*,Auto,Auto" Margin="18,0,0,0">
-        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Stretch" Background="Transparent">
+        <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.8}" VerticalAlignment="Stretch" Background="Transparent">
           <Path Width="26" Height="26" Stretch="Uniform" Fill="{DynamicResource Tern.Accent}" VerticalAlignment="Center" AutomationProperties.Name="Tern logo" Data="M1,3 C7,5 10,8 12,11 C15,8 18,8 21,10 L28,9 L23,13 C22,19 18,21 13,20 L5,27 L8,19 L3,20 L7,15 C4,12 2,8 1,3 Z" />
-          <TextBlock Text="Tern" FontSize="17" FontWeight="SemiBold" LetterSpacing="0.3" VerticalAlignment="Center" />
-          <TextBlock x:Name="VersionLabel" Text="V1.0.5" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" VerticalAlignment="Center" />
+          <TextBlock Text="Tern" FontSize="{DynamicResource Tern.FontSize.Section}" FontWeight="SemiBold" LetterSpacing="0.3" VerticalAlignment="Center" />
+          <TextBlock x:Name="VersionLabel" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" VerticalAlignment="Center" />
           <TextBlock x:Name="Breadcrumb" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="110" />
         </StackPanel>
 
@@ -39,7 +39,7 @@
           </Grid>
         </Button>
 
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}" HorizontalAlignment="Right" VerticalAlignment="Center">
           <Button x:Name="RestoreLibraryButton" Classes="flat icon" MinWidth="32" MinHeight="32" IsVisible="False" Tag="view.toggleSidebar" Click="OnRestoreLibraryClick" AutomationProperties.Name="Expand Library" ToolTip.Tip="Expand Library">
             <Path Width="17" Height="17" Stretch="Uniform" Stroke="{DynamicResource Tern.Accent}" StrokeThickness="1.4" Data="M1,1 L15,1 L15,15 L1,15 Z M5,1 L5,15 M8,5 L11,8 L8,11" />
           </Button>
@@ -49,10 +49,10 @@
           <Button x:Name="RestoreReadingButton" Classes="flat icon" MinWidth="32" MinHeight="32" IsVisible="False" Tag="view.split" Click="OnMenuCommandClick" AutomationProperties.Name="Expand Reading preview" ToolTip.Tip="Expand Reading preview beside Source">
             <Path Width="17" Height="17" Stretch="Uniform" Stroke="{DynamicResource Tern.Accent}" StrokeThickness="1.4" Data="M1,1 L15,1 L15,15 L1,15 Z M8,1 L8,15 M10,5 L13,8 L10,11" />
           </Button>
-          <Button x:Name="TitleGuideButton" Classes="flat" Content="Guide" Tag="app.help" Click="OnMenuCommandClick" AutomationProperties.Name="Open feature guide" />
-          <Button x:Name="TitleSettingsButton" Classes="flat" Content="Settings" Tag="app.settings" Click="OnMenuCommandClick" AutomationProperties.Name="Open settings" />
-          <Border x:Name="LocationBadge" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="1" CornerRadius="5" Padding="9,5" AutomationProperties.Name="Current file location">
-            <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button x:Name="TitleGuideButton" Classes="flat" Content="Learn" Tag="app.help" Click="OnMenuCommandClick" AutomationProperties.Name="Learn Tern" />
+          <Button x:Name="TitleSettingsButton" Classes="flat" Content="{DynamicResource Tern.Command.app.settings}" Tag="app.settings" Click="OnMenuCommandClick" AutomationProperties.Name="Open settings" />
+          <Border x:Name="LocationBadge" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="1" CornerRadius="{DynamicResource Tern.Radius.Control}" Padding="9,5" AutomationProperties.Name="Current file location">
+            <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}">
               <Path Width="14" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Accent}" StrokeThickness="1.4" Data="M2,1 L9,1 L14,6 L14,15 L2,15 Z M9,1 L9,6 L14,6 M5,9 L11,9 M5,12 L11,12" VerticalAlignment="Center" />
               <TextBlock x:Name="LocationBadgeText" Text="Local files" Foreground="{DynamicResource Tern.Accent}" FontWeight="SemiBold" />
             </StackPanel>
@@ -60,9 +60,15 @@
 
         </StackPanel>
         <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="12,0,0,0">
-          <Button Classes="flat" Width="42" Content="─" Click="OnMinimizeClick" AutomationProperties.Name="Minimize window" />
-          <Button Classes="flat" Width="42" Content="□" Click="OnMaximizeClick" AutomationProperties.Name="Maximize or restore window" />
-          <Button Classes="flat" Width="42" Content="✕" Click="OnCloseWindowClick" AutomationProperties.Name="Close window" />
+          <StackPanel.Styles>
+            <Style Selector="Button.captionClose:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+              <Setter Property="Background" Value="{DynamicResource Tern.Danger}" />
+              <Setter Property="Foreground" Value="White" />
+            </Style>
+          </StackPanel.Styles>
+          <Button x:Name="MinimizeButton" Classes="flat icon-button" Width="42" Click="OnMinimizeClick" AutomationProperties.Name="Minimize" ToolTip.Tip="Minimize"><!-- A flat path has no height for uniform stretch, so the dash is drawn directly. --><Border Width="{DynamicResource Tern.Space.16}" Height="1.5" CornerRadius="1" HorizontalAlignment="Center" VerticalAlignment="Center" Background="{Binding $parent[Button].Foreground}" /></Button>
+          <Button x:Name="MaximizeButton" Classes="flat icon-button" Width="42" Click="OnMaximizeClick" AutomationProperties.Name="Maximize" ToolTip.Tip="Maximize"><views:VectorIcon Kind="Maximize" /></Button>
+          <Button x:Name="CloseWindowButton" Classes="flat captionClose icon-button" Width="42" Click="OnCloseWindowClick" AutomationProperties.Name="Close" ToolTip.Tip="Close"><views:VectorIcon Kind="Close" /></Button>
         </StackPanel>
       </Grid>
     </Border>
@@ -71,104 +77,221 @@
       <Grid x:Name="MainToolbarGrid" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="0">
       <Menu x:Name="ApplicationMenu" Background="Transparent" AutomationProperties.Name="Application menu">
         <MenuItem Header="_File">
-          <MenuItem Header="_New Document" Tag="file.new" InputGesture="Ctrl+N" Click="OnMenuCommandClick" />
-          <MenuItem Header="New File in Folder…" Tag="workspace.newFile" Click="OnMenuCommandClick" />
-          <MenuItem Header="New Folder…" Tag="workspace.newFolder" Click="OnMenuCommandClick" />
+          <MenuItem Header="_N" Tag="file.new" InputGesture="Ctrl+N" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.file.newFromTemplate}" Tag="file.newFromTemplate" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.file.openTodaysNote}" Tag="file.openTodaysNote" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="_Open Files…" Tag="file.open" InputGesture="Ctrl+O" Click="OnMenuCommandClick" />
-          <MenuItem Header="Open from URL…" Tag="file.openUrl" Click="OnMenuCommandClick" />
-          <MenuItem Header="Open _Folder…" Tag="workspace.openFolder" InputGesture="Ctrl+Shift+O" Click="OnMenuCommandClick" />
-          <MenuItem Header="Open Workspace…" Tag="workspace.open" Click="OnMenuCommandClick" />
-          <MenuItem Header="Create Workspace…" Tag="workspace.create" Click="OnMenuCommandClick" />
+          <MenuItem Header="_O" Tag="file.open" InputGesture="Ctrl+O" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.file.openUrl}" Tag="file.openUrl" Click="OnMenuCommandClick" />
+          <MenuItem x:Name="OpenRecentMenu" Header="Open Recent" SubmenuOpened="OnOpenRecentSubmenuOpened">
+            <MenuItem Header="More…" Click="OnRecentMoreClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.history.discarded}" Tag="history.discarded" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.history.clear}" Tag="history.clear" Click="OnMenuCommandClick" />
+          </MenuItem>
+          <MenuItem Header="Folders and workspaces" AutomationProperties.Name="Folders and workspaces">
+            <MenuItem Header="_F" Tag="workspace.openFolder" InputGesture="Ctrl+Shift+O" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.open}" Tag="workspace.open" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.create}" Tag="workspace.create" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.promoteFolder}" Tag="workspace.promoteFolder" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.newFile}" Tag="workspace.newFile" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.newFolder}" Tag="workspace.newFolder" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.close}" Tag="workspace.close" InputGesture="Ctrl+Shift+W" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.workspace.closeAll}" Tag="workspace.closeAll" Click="OnMenuCommandClick" />
+          </MenuItem>
           <Separator />
-          <MenuItem Header="_Save" Tag="file.save" InputGesture="Ctrl+S" Click="OnMenuCommandClick" />
-          <MenuItem Header="Save _As…" Tag="file.saveAs" InputGesture="Ctrl+Shift+S" Click="OnMenuCommandClick" />
-          <MenuItem Header="Save All" Tag="file.saveAll" Click="OnMenuCommandClick" />
-          <MenuItem Header="Rename Document…" Tag="file.rename" InputGesture="F2" Click="OnMenuCommandClick" />
-          <MenuItem Header="Clear Recent History" Tag="history.clear" Click="OnMenuCommandClick" />
-          <MenuItem Header="Version History…" Tag="file.history" Click="OnMenuCommandClick" />
+          <MenuItem Header="_S" Tag="file.save" InputGesture="Ctrl+S" Click="OnMenuCommandClick" />
+          <MenuItem Header="_A" Tag="file.saveAs" InputGesture="Ctrl+Shift+S" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.file.saveAll}" Tag="file.saveAll" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="Export as…" Tag="export.as" Click="OnMenuCommandClick" />
-          <MenuItem Header="_Print preview…" Tag="file.print" InputGesture="Ctrl+P" Click="OnMenuCommandClick" />
+          <MenuItem Header="Document actions" AutomationProperties.Name="Document actions">
+            <MenuItem Header="{DynamicResource Tern.Command.file.rename}" Tag="file.rename" InputGesture="F2" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.file.move}" Tag="file.move" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.file.duplicate}" Tag="file.duplicate" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.file.reveal}" Tag="file.reveal" Click="OnMenuCommandClick" />
+          </MenuItem>
+          <MenuItem Header="History and recovery" AutomationProperties.Name="History and recovery">
+            <MenuItem Header="{DynamicResource Tern.Command.file.history}" Tag="file.history" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.file.gitDiff}" Tag="file.gitDiff" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.file.reload}" Tag="file.reload" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.file.saveFragments}" Tag="file.saveFragments" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="History Privacy">
+              <MenuItem Header="{DynamicResource Tern.Command.workspace.privacy}" Tag="workspace.privacy" Click="OnMenuCommandClick" />
+              <MenuItem Header="{DynamicResource Tern.Command.file.clearHistory}" Tag="file.clearHistory" Click="OnMenuCommandClick" />
+              <MenuItem Header="{DynamicResource Tern.Command.workspace.clearHistory}" Tag="workspace.clearHistory" Click="OnMenuCommandClick" />
+            </MenuItem>
+          </MenuItem>
+          <MenuItem Header="Encoding and line endings" AutomationProperties.Name="Encoding and line endings">
+            <MenuItem Header="{DynamicResource Tern.Command.file.reopenWithEncoding}" Tag="file.reopenWithEncoding" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.file.changeEncoding}" Tag="file.changeEncoding" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.file.changeLineEnding}" Tag="file.changeLineEnding" Click="OnMenuCommandClick" />
+          </MenuItem>
           <Separator />
-          <MenuItem Header="Close Workspace" Tag="workspace.close" InputGesture="Ctrl+Shift+W" Click="OnMenuCommandClick" />
-          <MenuItem Header="Close All Workspaces" Tag="workspace.closeAll" Click="OnMenuCommandClick" />
-          <MenuItem Header="Close All Documents" Tag="tab.closeAll" InputGesture="Ctrl+Alt+W" Click="OnMenuCommandClick" />
-          <MenuItem Header="Close Tab" Tag="tab.close" InputGesture="Ctrl+W" Click="OnMenuCommandClick" />
-          <MenuItem Header="E_xit" Tag="app.exit" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.export.as}" Tag="export.as" Click="OnMenuCommandClick" />
+          <MenuItem Header="_P" Tag="file.print" InputGesture="Ctrl+P" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.tab.close}" Tag="tab.close" InputGesture="Ctrl+W" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.tab.closeAll}" Tag="tab.closeAll" InputGesture="Ctrl+Shift+F11" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="_x" Tag="app.exit" Click="OnMenuCommandClick" />
         </MenuItem>
         <MenuItem Header="_Edit">
-          <MenuItem Header="_Undo" Tag="edit.undo" InputGesture="Ctrl+Z" Click="OnMenuCommandClick" />
-          <MenuItem Header="_Redo" Tag="edit.redo" InputGesture="Ctrl+Y" Click="OnMenuCommandClick" />
+          <MenuItem Header="_U" Tag="edit.undo" InputGesture="Ctrl+Z" Click="OnMenuCommandClick" />
+          <MenuItem Header="_R" Tag="edit.redo" InputGesture="Ctrl+Y" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="_Find…" Tag="edit.find" InputGesture="Ctrl+F" Click="OnMenuCommandClick" />
-          <MenuItem Header="_Replace…" Tag="edit.replace" InputGesture="Ctrl+H" Click="OnMenuCommandClick" />
-          <MenuItem Header="Find in Workspace…" Tag="search.inWorkspace" Click="OnMenuCommandClick" />
-          <MenuItem Header="Write with AI…" Tag="edit.askAI" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.cut}" Tag="edit.cut" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.copy}" Tag="edit.copy" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.paste}" Tag="edit.paste" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.pastePlain}" Tag="edit.pastePlain" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.pasteTable}" Tag="edit.pasteTable" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="Settings…" Tag="app.settings" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.selectAll}" Tag="edit.selectAll" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="_F" Tag="edit.find" InputGesture="Ctrl+F" Click="OnMenuCommandClick" />
+          <MenuItem Header="_R" Tag="edit.replace" InputGesture="Ctrl+H" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.search.inWorkspace}" Tag="search.inWorkspace" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.search.replaceWorkspace}" Tag="search.replaceWorkspace" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.askAI}" Tag="edit.askAI" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.edit.askKnowledge}" Tag="edit.askKnowledge" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.app.aiConnections}" Tag="app.aiConnections" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.app.settings}" Tag="app.settings" Click="OnMenuCommandClick" />
         </MenuItem>
         <MenuItem Header="F_ormat">
-          <MenuItem Header="Bold" Tag="format.bold" Click="OnMenuCommandClick" />
-          <MenuItem Header="Italic" Tag="format.italic" Click="OnMenuCommandClick" />
-          <MenuItem Header="Inline Code" Tag="format.code" Click="OnMenuCommandClick" />
-          <MenuItem Header="Strikethrough" Tag="format.strikethrough" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.bold}" Tag="format.bold" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.italic}" Tag="format.italic" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.code}" Tag="format.code" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.strikethrough}" Tag="format.strikethrough" Click="OnMenuCommandClick" />
           <Separator />
           <MenuItem Header="Heading">
-            <MenuItem Header="Heading 1 (title)" Tag="format.heading1" Click="OnMenuCommandClick" />
-            <MenuItem Header="Heading 2 (section)" Tag="format.heading2" Click="OnMenuCommandClick" />
-            <MenuItem Header="Heading 3 (subsection)" Tag="format.heading3" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.heading1}" Tag="format.heading1" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.heading2}" Tag="format.heading2" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.heading3}" Tag="format.heading3" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.headingUp}" Tag="format.headingUp" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.headingDown}" Tag="format.headingDown" Click="OnMenuCommandClick" />
           </MenuItem>
-          <MenuItem Header="Larger Heading" Tag="format.headingUp" Click="OnMenuCommandClick" />
-          <MenuItem Header="Smaller Heading" Tag="format.headingDown" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="Quote" Tag="format.quote" Click="OnMenuCommandClick" />
-          <MenuItem Header="Bullet List" Tag="format.bullet" Click="OnMenuCommandClick" />
-          <MenuItem Header="Numbered List" Tag="format.numbered" Click="OnMenuCommandClick" />
-          <MenuItem Header="Checklist" Tag="format.task" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.quote}" Tag="format.quote" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="Insert Link" Tag="format.link" Click="OnMenuCommandClick" />
-          <MenuItem Header="Insert Local Image…" Tag="insert.image" Click="OnMenuCommandClick" />
-          <MenuItem Header="Paste Image as Attachment…" Tag="insert.pasteImage" Click="OnMenuCommandClick" />
-          <MenuItem Header="Insert Table" Tag="insert.table" Click="OnMenuCommandClick" />
-          <MenuItem Header="Insert Code Block" Tag="insert.codeBlock" Click="OnMenuCommandClick" />
-          <MenuItem Header="Insert Horizontal Rule" Tag="insert.rule" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.bullet}" Tag="format.bullet" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.numbered}" Tag="format.numbered" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.task}" Tag="format.task" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.task.toggleAtCaret}" Tag="task.toggleAtCaret" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.indent}" Tag="format.indent" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.format.outdent}" Tag="format.outdent" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="Table">
+            <MenuItem Header="{DynamicResource Tern.Command.insert.table}" Tag="insert.table" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.rowAbove}" Tag="format.table.rowAbove" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.rowBelow}" Tag="format.table.rowBelow" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.columnLeft}" Tag="format.table.columnLeft" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.columnRight}" Tag="format.table.columnRight" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.deleteRow}" Tag="format.table.deleteRow" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.deleteColumn}" Tag="format.table.deleteColumn" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.moveLeft}" Tag="format.table.moveLeft" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.moveRight}" Tag="format.table.moveRight" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.alignLeft}" Tag="format.table.alignLeft" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.alignCenter}" Tag="format.table.alignCenter" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.alignRight}" Tag="format.table.alignRight" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.alignNone}" Tag="format.table.alignNone" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.sortAscending}" Tag="format.table.sortAscending" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.sortDescending}" Tag="format.table.sortDescending" Click="OnMenuCommandClick" />
+            <Separator />
+            <MenuItem Header="{DynamicResource Tern.Command.format.table.format}" Tag="format.table.format" Click="OnMenuCommandClick" />
+          </MenuItem>
+          <Separator />
+          <MenuItem Header="Section">
+            <MenuItem Header="{DynamicResource Tern.Command.nav.foldSection}" Tag="nav.foldSection" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.moveSectionUp}" Tag="format.moveSectionUp" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.moveSectionDown}" Tag="format.moveSectionDown" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.promoteSection}" Tag="format.promoteSection" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.format.demoteSection}" Tag="format.demoteSection" Click="OnMenuCommandClick" />
+          </MenuItem>
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.format.link}" Tag="format.link" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.insert.image}" Tag="insert.image" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.insert.pasteImage}" Tag="insert.pasteImage" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.insert.codeBlock}" Tag="insert.codeBlock" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.insert.rule}" Tag="insert.rule" Click="OnMenuCommandClick" />
         </MenuItem>
         <MenuItem Header="_View">
-          <MenuItem Header="Source" Tag="view.source" InputGesture="Ctrl+1" Click="OnMenuCommandClick" />
-          <MenuItem Header="Split" Tag="view.split" InputGesture="Ctrl+2" Click="OnMenuCommandClick" />
-          <MenuItem Header="Reading" Tag="view.reading" InputGesture="Ctrl+3" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.source}" Tag="view.source" InputGesture="Ctrl+1" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.split}" Tag="view.split" InputGesture="Ctrl+2" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.reading}" Tag="view.reading" InputGesture="Ctrl+3" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="Focus Mode" Tag="view.toggleFocus" InputGesture="F8" Click="OnMenuCommandClick" />
-          <MenuItem Header="Reference Pane" Tag="view.toggleReference" Click="OnMenuCommandClick" />
-          <MenuItem Header="Sidebar" Tag="view.toggleSidebar" Click="OnMenuCommandClick" />
-          <MenuItem Header="Outline Panel" Tag="view.toggleRightPanel" Click="OnMenuCommandClick" />
-          <MenuItem Header="Reset layout" Tag="view.resetLayout" Click="OnMenuCommandClick" />
-          <MenuItem Header="Switch Theme" Tag="view.toggleTheme" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.toggleFocus}" Tag="view.toggleFocus" ToggleType="CheckBox" InputGesture="F8" Click="OnMenuCommandClick" />
           <Separator />
-          <MenuItem Header="Library">
-            <MenuItem Header="All Files" Tag="nav.libraryFiles" Click="OnMenuCommandClick" />
-            <MenuItem Header="Recent Files" Tag="nav.libraryRecent" Click="OnMenuCommandClick" />
-            <MenuItem Header="Search Results" Tag="nav.librarySearch" Click="OnMenuCommandClick" />
-            <MenuItem Header="Backlinks" Tag="nav.libraryBacklinks" Click="OnMenuCommandClick" />
-            <MenuItem Header="Broken Links" Tag="nav.libraryBrokenLinks" Click="OnMenuCommandClick" />
-            <MenuItem Header="Tasks" Tag="nav.libraryTasks" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.toggleReference}" Tag="view.toggleReference" ToggleType="CheckBox" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.toggleSidebar}" Tag="view.toggleSidebar" ToggleType="CheckBox" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.toggleRightPanel}" Tag="view.toggleRightPanel" ToggleType="CheckBox" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.resetLayout}" Tag="view.resetLayout" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.view.toggleTheme}" Tag="view.toggleTheme" Click="OnMenuCommandClick" />
+          <MenuItem Header="Theme">
+            <MenuItem x:Name="SystemThemeMenu" Header="Follow System" ToggleType="Radio" GroupName="Theme" Tag="System" Click="OnThemeMenuClick" />
+            <MenuItem x:Name="PaperThemeMenu" Header="Paper" ToggleType="Radio" GroupName="Theme" Tag="Paper" Click="OnThemeMenuClick" />
+            <MenuItem x:Name="MidnightThemeMenu" Header="Midnight" ToggleType="Radio" GroupName="Theme" Tag="Midnight" Click="OnThemeMenuClick" />
+            <MenuItem x:Name="GraphiteThemeMenu" Header="Graphite" ToggleType="Radio" GroupName="Theme" Tag="Graphite" Click="OnThemeMenuClick" />
+            <MenuItem x:Name="HarborThemeMenu" Header="Harbor" ToggleType="Radio" GroupName="Theme" Tag="Harbor" Click="OnThemeMenuClick" />
+            <MenuItem x:Name="LinenThemeMenu" Header="Linen" ToggleType="Radio" GroupName="Theme" Tag="Linen" Click="OnThemeMenuClick" />
+            <MenuItem x:Name="MistThemeMenu" Header="Mist" ToggleType="Radio" GroupName="Theme" Tag="Mist" Click="OnThemeMenuClick" />
+          </MenuItem>
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.view.zoomIn}" Tag="view.zoomIn" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.zoomOut}" Tag="view.zoomOut" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.zoomReset}" Tag="view.zoomReset" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.view.readCurrentLine}" Tag="view.readCurrentLine" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.view.readDocumentStatus}" Tag="view.readDocumentStatus" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="Library views" AutomationProperties.Name="Library views">
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryFiles}" Tag="nav.libraryFiles" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryRecent}" Tag="nav.libraryRecent" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.librarySearch}" Tag="nav.librarySearch" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryBacklinks}" Tag="nav.libraryBacklinks" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryBrokenLinks}" Tag="nav.libraryBrokenLinks" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryTasks}" Tag="nav.libraryTasks" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryTags}" Tag="nav.libraryTags" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryMentions}" Tag="nav.libraryMentions" Click="OnMenuCommandClick" />
+            <MenuItem Header="{DynamicResource Tern.Command.nav.libraryGraph}" Tag="nav.libraryGraph" Click="OnMenuCommandClick" />
           </MenuItem>
         </MenuItem>
+        <MenuItem Header="_Go">
+          <MenuItem Header="{DynamicResource Tern.Command.nav.quickOpen}" Tag="nav.quickOpen" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.nav.goToLine}" Tag="nav.goToLine" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.nav.goToHeading}" Tag="nav.goToHeading" Click="OnMenuCommandClick" />
+          <Separator />
+          <MenuItem Header="{DynamicResource Tern.Command.tab.next}" Tag="tab.next" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.tab.previous}" Tag="tab.previous" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.tab.reopenClosed}" Tag="tab.reopenClosed" Click="OnMenuCommandClick" />
+        </MenuItem>
         <MenuItem Header="_Help">
-          <MenuItem Header="Tern Quick Start…" Tag="help.welcome" Click="OnMenuCommandClick" />
-          <MenuItem Header="Feature Guide and Tutorials…" Tag="app.help" InputGesture="F1" Click="OnMenuCommandClick" />
-          <MenuItem Header="Reset Tern…" Tag="app.reset" Click="OnMenuCommandClick" />
-          <MenuItem Header="All Commands…" Tag="nav.commandPalette" Click="OnMenuCommandClick" />
-          <MenuItem Header="Keyboard Shortcuts…" Tag="app.shortcuts" Click="OnMenuCommandClick" />
-          <MenuItem Header="About Tern…" Tag="app.about" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.help.welcome}" Tag="help.welcome" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.app.help}" Tag="app.help" InputGesture="F1" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.app.reset}" Tag="app.reset" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.nav.commandPalette}" Tag="nav.commandPalette" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.app.shortcuts}" Tag="app.shortcuts" Click="OnMenuCommandClick" />
+          <MenuItem Header="{DynamicResource Tern.Command.app.about}" Tag="app.about" Click="OnMenuCommandClick" />
         </MenuItem>
       </Menu>
       <TextBlock x:Name="DocumentCaption" Grid.Column="1" VerticalAlignment="Center" Margin="24,0,12,0" TextTrimming="CharacterEllipsis" FontWeight="Medium" />
-      <StackPanel x:Name="DocumentActions" Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <StackPanel x:Name="DocumentActions" Grid.Column="2" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.8}" VerticalAlignment="Center">
         <Button x:Name="AIEntryButton" Content="AI · set up" MaxWidth="180" Click="OnAIEntryClick" AutomationProperties.Name="AI connection and actions" />
           <Border Classes="card" Padding="3">
-            <StackPanel Orientation="Horizontal" Spacing="2">
+            <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}">
               <ToggleButton x:Name="SourceButton" Classes="seg" Content="Source" Click="OnModeClick" Tag="Source" AutomationProperties.Name="Source mode" />
               <ToggleButton x:Name="SplitButton" Classes="seg" Content="Split" Click="OnModeClick" Tag="Split" AutomationProperties.Name="Split mode" />
               <ToggleButton x:Name="ReadingButton" Classes="seg" Content="Reading" Click="OnModeClick" Tag="Reading" AutomationProperties.Name="Reading mode" />
@@ -183,10 +306,10 @@
         </Button>
       </StackPanel>
       <Border x:Name="AIBar" Grid.Row="1" Grid.ColumnSpan="3" IsVisible="False" Background="{DynamicResource Tern.Panel}" Padding="20">
-        <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="14">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <StackPanel Spacing="4">
-              <TextBlock Text="AI assistant" FontSize="{DynamicResource Tern.SectionFontSize}" FontWeight="SemiBold" />
+        <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="{DynamicResource Tern.Space.12}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{DynamicResource Tern.Space.12}">
+            <StackPanel Spacing="{DynamicResource Tern.Space.4}">
+              <TextBlock Text="AI assistant" FontSize="{DynamicResource Tern.FontSize.Section}" FontWeight="SemiBold" />
               <TextBlock Text="Choose a connection and a task." Classes="muted" TextWrapping="Wrap" />
             </StackPanel>
             <Button x:Name="AIEntryClose" Grid.Column="1" Classes="flat icon" VerticalAlignment="Top" Click="OnAIEntryCloseClick" ToolTip.Tip="Close AI panel" AutomationProperties.Name="Close AI panel">
@@ -194,14 +317,14 @@
             </Button>
           </Grid>
           <ScrollViewer x:Name="AIPopupScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="14">
-          <StackPanel Spacing="6">
+          <StackPanel Spacing="{DynamicResource Tern.Space.12}">
+          <StackPanel Spacing="{DynamicResource Tern.Space.4}">
           <TextBlock Text="CONNECTION" Classes="caps" />
           <ComboBox x:Name="AIConnectionPicker" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" MinHeight="38" PlaceholderText="Choose an AI connection" SelectionChanged="OnAIConnectionChanged" AutomationProperties.Name="Active AI connection">
             <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}" x:CompileBindings="False" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
           </ComboBox>
           </StackPanel>
-          <StackPanel Spacing="10">
+          <StackPanel Spacing="{DynamicResource Tern.Space.8}">
             <TextBlock x:Name="AIConnectionSummary" Classes="muted" TextWrapping="Wrap" />
             <Expander x:Name="AIConnectionDetails" Header="Connection details" Classes="ai-advanced" HorizontalAlignment="Stretch">
               <SelectableTextBlock x:Name="AIConnectionDetailsText" TextWrapping="Wrap" Margin="0,10,0,0" AutomationProperties.Name="Full AI connection details" />
@@ -210,10 +333,10 @@
           </StackPanel>
           </ScrollViewer>
           <Button x:Name="AIConnectionAction" Grid.Row="2" HorizontalAlignment="Stretch" Content="Write with AI" Click="OnAIPrimaryActionClick" AutomationProperties.Name="Write with AI" Classes="accent" />
-          <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="8">
+          <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="{DynamicResource Tern.Space.8}">
             <Button x:Name="AIManageConnections" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Content="Connections" Tag="app.aiConnections" Click="OnAIConnectionsClick" AutomationProperties.Name="Manage AI connections" />
-            <Button x:Name="AIAskWorkspace" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Click="OnAskWorkspaceClick" AutomationProperties.Name="Ask your workspace with AI">
-              <TextBlock Text="Ask workspace" TextWrapping="Wrap" TextAlignment="Center" />
+            <Button x:Name="AIAskWorkspace" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Click="OnAskWorkspaceClick" AutomationProperties.Name="Explore your notes">
+              <TextBlock Text="{DynamicResource Tern.Command.edit.askKnowledge}" TextWrapping="Wrap" TextAlignment="Center" />
             </Button>
           </Grid>
         </Grid>
@@ -222,7 +345,7 @@
     </Border>
 
     <!-- Body -->
-    <Grid Grid.Row="2" x:Name="Body" ColumnDefinitions="260,1,*,1,260">
+    <Grid Grid.Row="2" x:Name="Body" ColumnDefinitions="260,1,*,1,260" RowDefinitions="*,0">
 
       <!-- Sidebar -->
       <Border x:Name="Sidebar" Background="{DynamicResource Tern.Panel}">
@@ -233,43 +356,51 @@
             <Button x:Name="WorkspaceAddButton" Grid.Column="1" Classes="flat" Content="+ Add" Padding="9,5" AutomationProperties.Name="Add files or folders">
               <Button.Flyout>
                 <MenuFlyout>
-                  <MenuItem Classes="global-add" Header="New document" Tag="file.new" Click="OnGlobalAddCommandClick" />
-                  <MenuItem Header="Open Files…" Tag="file.open" Click="OnMenuCommandClick" />
-                  <MenuItem Header="Open from URL…" Tag="file.openUrl" Click="OnMenuCommandClick" />
-                  <MenuItem Header="Open Folder…" Tag="workspace.openFolder" Click="OnMenuCommandClick" />
-                  <MenuItem Header="Open Workspace…" Tag="workspace.open" Click="OnMenuCommandClick" />
-                  <MenuItem Classes="global-add" Header="Create Workspace…" Tag="workspace.create" Click="OnGlobalAddCommandClick" />
+                  <MenuItem Classes="global-add" Header="{DynamicResource Tern.Command.file.new}" Tag="file.new" Click="OnGlobalAddCommandClick" />
+                  <MenuItem Header="{DynamicResource Tern.Command.file.newFromTemplate}" Tag="file.newFromTemplate" Click="OnMenuCommandClick" />
+                  <MenuItem Header="{DynamicResource Tern.Command.file.open}" Tag="file.open" Click="OnMenuCommandClick" />
+                  <MenuItem Header="{DynamicResource Tern.Command.file.openUrl}" Tag="file.openUrl" Click="OnMenuCommandClick" />
+                  <MenuItem Header="{DynamicResource Tern.Command.workspace.openFolder}" Tag="workspace.openFolder" Click="OnMenuCommandClick" />
+                  <MenuItem Header="{DynamicResource Tern.Command.workspace.open}" Tag="workspace.open" Click="OnMenuCommandClick" />
+                  <MenuItem Classes="global-add" Header="{DynamicResource Tern.Command.workspace.create}" Tag="workspace.create" Click="OnGlobalAddCommandClick" />
                   <Separator />
-                  <MenuItem Classes="global-add" Header="New File in Folder…" Tag="workspace.newFile" Click="OnGlobalAddCommandClick" />
-                  <MenuItem Classes="global-add" Header="New Folder…" Tag="workspace.newFolder" Click="OnGlobalAddCommandClick" />
+                  <MenuItem Classes="global-add" Header="{DynamicResource Tern.Command.workspace.newFile}" Tag="workspace.newFile" Click="OnGlobalAddCommandClick" />
+                  <MenuItem Classes="global-add" Header="{DynamicResource Tern.Command.workspace.newFolder}" Tag="workspace.newFolder" Click="OnGlobalAddCommandClick" />
                 </MenuFlyout>
               </Button.Flyout>
             </Button>
-            <Button Grid.Column="2" Content="‹" Classes="flat" Tag="view.toggleSidebar" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Library. Restore with View → Sidebar." AutomationProperties.Name="Collapse Library" />
+            <Button Grid.Column="2" Classes="flat icon-button" Tag="view.toggleSidebar" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Library. Restore with View → Library." AutomationProperties.Name="Collapse Library"><views:VectorIcon Kind="ChevronLeft" /></Button>
           </Grid>
-          <Border x:Name="WorkspaceCard" Grid.Row="1" Margin="12,0,12,12" Padding="12" CornerRadius="8" Background="{DynamicResource Tern.AccentSoft}">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="5">
+          <Border x:Name="WorkspaceCard" Grid.Row="1" Margin="12,0,12,12" Padding="12" CornerRadius="{DynamicResource Tern.Radius.Card}" Background="{DynamicResource Tern.AccentSoft}">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="{DynamicResource Tern.Space.4}">
               <TextBlock x:Name="WorkspaceTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               <Button Grid.Column="1" Classes="flat icon" Tag="workspace.close" Click="OnMenuCommandClick" ToolTip.Tip="Close selected workspace or folder (Ctrl+Shift+W)" AutomationProperties.Name="Close selected workspace or folder">
                 <Path Width="10" Height="10" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.4" Data="M1,1 L9,9 M1,9 L9,1" />
               </Button>
-              <TextBlock x:Name="WorkspaceLocation" Grid.Row="1" Grid.ColumnSpan="2" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" TextTrimming="CharacterEllipsis" />
-              <TextBlock x:Name="WorkspaceCount" Grid.Row="2" Grid.ColumnSpan="2" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
+              <TextBlock x:Name="WorkspaceLocation" Grid.Row="1" Grid.ColumnSpan="2" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="WorkspaceCount" Grid.Row="2" Grid.ColumnSpan="2" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" />
               <ComboBox x:Name="WorkspaceSelector" Grid.Row="3" Grid.ColumnSpan="2" HorizontalAlignment="Stretch" SelectionChanged="OnWorkspaceSelectionChanged" AutomationProperties.Name="Active workspace">
                 <ComboBox.ItemTemplate><DataTemplate x:DataType="shell:WorkspaceSession"><TextBlock Text="{Binding Root}" TextTrimming="CharacterEllipsis" /></DataTemplate></ComboBox.ItemTemplate>
               </ComboBox>
             </Grid>
           </Border>
-          <WrapPanel Grid.Row="2" Margin="12,0,12,6" ItemSpacing="8" LineSpacing="4">
+          <WrapPanel Grid.Row="2" Margin="12,0,12,6" ItemSpacing="{DynamicResource Tern.Space.8}" LineSpacing="{DynamicResource Tern.Space.4}">
 <Button Classes="flat" Content="Expand all" Tag="expand" Click="OnExpandAllRootsClick" ToolTip.Tip="Expand all Library folders and workspaces" />
 <Button Classes="flat" Content="Collapse all" Tag="collapse" Click="OnExpandAllRootsClick" ToolTip.Tip="Collapse all Library folders and workspaces" />
 </WrapPanel>
 <Grid Grid.Row="3" RowDefinitions="Auto,*">
-  <StackPanel x:Name="TaskFilterBar" IsVisible="False" Spacing="4" Margin="12,4">
+  <StackPanel x:Name="TaskFilterBar" IsVisible="False" Spacing="{DynamicResource Tern.Space.4}" Margin="12,4">
     <TextBlock x:Name="TaskScopeCount" TextWrapping="Wrap" Classes="muted" />
     <ComboBox x:Name="TaskFilter" SelectedIndex="0" SelectionChanged="OnTaskFilterChanged" HorizontalAlignment="Stretch" AutomationProperties.Name="Filter workspace tasks">
       <ComboBoxItem Content="Open tasks" /><ComboBoxItem Content="Completed tasks" /><ComboBoxItem Content="All tasks" />
     </ComboBox>
+    <Expander Header="Task filters">
+      <StackPanel Spacing="{DynamicResource Tern.Space.4}">
+        <TextBox x:Name="TaskPathFilter" PlaceholderText="Filter by path" TextChanged="OnTaskQueryChanged" AutomationProperties.Name="Task path filter" />
+        <TextBox x:Name="TaskTagFilter" PlaceholderText="Filter by document tag" TextChanged="OnTaskQueryChanged" AutomationProperties.Name="Task tag filter" />
+        <CheckBox x:Name="TaskGroupByFile" Content="Group by file" IsChecked="True" Click="OnTaskGroupChanged" />
+      </StackPanel>
+    </Expander>
   </StackPanel>
 <Grid x:Name="LibraryContent" Grid.Row="1" RowDefinitions="*,Auto,Auto" Background="Transparent">
             <TextBlock x:Name="NoWorkspaceText" Classes="muted" Margin="16" TextWrapping="Wrap" IsVisible="False"
@@ -298,35 +429,47 @@
                   <Setter Property="Background" Value="Transparent" />
                 </Style>
               </TreeView.Styles>
-              <TreeView.ItemTemplate>
-                <TreeDataTemplate x:DataType="vm:TreeRow" ItemsSource="{Binding Children}">
-                  <StackPanel Spacing="0" HorizontalAlignment="Stretch" ToolTip.Tip="{Binding FullPath}">
-                    <Border x:Name="WorkspaceSectionCard" IsVisible="{Binding IsSection}" Classes.selected="{Binding IsSelected}" Margin="0,6,4,4" Padding="10" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Tern.Border}" Background="{DynamicResource Tern.Panel}" AutomationProperties.Name="{Binding SectionAccessibleName}">
+              <TreeView.Resources>
+                <DataTemplate x:Key="LibrarySectionTemplate" x:DataType="vm:TreeRow">
+                    <Border x:Name="WorkspaceSectionCard" Classes.selected="{Binding IsSelected}" Margin="0,6,4,4" Padding="10" CornerRadius="{DynamicResource Tern.Radius.Card}" BorderThickness="1" BorderBrush="{DynamicResource Tern.Border}" Background="{DynamicResource Tern.Panel}" AutomationProperties.Name="{Binding SectionAccessibleName}">
                       <Border.ContextMenu>
                         <ContextMenu Closed="OnLibraryContextClosed">
                           <MenuItem Header="Create File…" Tag="file" Click="OnTreeCreateClick" />
                           <MenuItem Header="Create Folder…" Tag="folder" Click="OnTreeCreateClick" />
                           <MenuItem Header="Create Workspace…" Tag="workspace" Click="OnTreeCreateClick" />
+                          <MenuItem Header="Make Folder a Workspace…" IsVisible="{Binding CanPromote}" Click="OnTreePromoteClick" />
                           <Separator />
-                          <MenuItem Header="Close this section" IsVisible="{Binding IsSectionOpen}" Click="OnWorkspaceSectionCloseClick" />
+                          <MenuItem Header="Close This Section" IsVisible="{Binding IsSectionOpen}" Click="OnWorkspaceSectionCloseClick" />
                         </ContextMenu>
                       </Border.ContextMenu>
                       <Border.Styles><Style Selector="Border.selected"><Setter Property="BorderBrush" Value="{DynamicResource Tern.Accent}" /><Setter Property="Background" Value="{DynamicResource Tern.AccentSoft}" /></Style></Border.Styles>
-                      <StackPanel Spacing="5">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
-                          <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                      <StackPanel Spacing="{DynamicResource Tern.Space.4}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{DynamicResource Tern.Space.4}">
+                          <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.8}" VerticalAlignment="Center">
                             <Path Width="15" Height="15" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2" Data="{Binding IconPath}" AutomationProperties.Name="{Binding SectionIconName}" />
-                            <TextBlock Classes="caps" Text="{Binding SectionKind}" FontSize="{DynamicResource Tern.SmallFontSize}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <TextBlock Classes="caps" Text="{Binding SectionKind}" FontSize="{DynamicResource Tern.FontSize.Caption}" VerticalAlignment="Center" TextWrapping="Wrap" />
                           </StackPanel>
-                          <Button Grid.Column="1" Classes="flat icon" Content="×" MinWidth="28" MinHeight="28" Padding="4" IsVisible="{Binding IsSectionOpen}" Click="OnWorkspaceSectionCloseClick" AutomationProperties.Name="Close this Library section" ToolTip.Tip="Close this workspace or folder; keep its saved files" />
+                          <Button Grid.Column="1" Classes="flat icon icon-button" MinWidth="28" MinHeight="28" Padding="4" IsVisible="{Binding IsSectionOpen}" Click="OnWorkspaceSectionCloseClick" AutomationProperties.Name="Close this Library section" ToolTip.Tip="Close this workspace or folder; keep its saved files"><views:VectorIcon Kind="Close" /></Button>
                         </Grid>
                         <Button Classes="flat" Padding="0" HorizontalContentAlignment="Left" Click="OnWorkspaceSectionSelectClick" AutomationProperties.Name="Select this Library section" ToolTip.Tip="Select this workspace or folder for its commands">
                           <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
                         </Button>
-                        <TextBlock Text="{Binding FullPath}" FontSize="{DynamicResource Tern.SmallFontSize}" Classes="muted" TextTrimming="CharacterEllipsis" AutomationProperties.Name="Section folder path" />
-                        <TextBlock Text="{Binding SectionCapability}" FontSize="{DynamicResource Tern.SmallFontSize}" Classes="muted" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding SectionNotice}" IsVisible="{Binding HasSectionNotice}" FontSize="{DynamicResource Tern.SmallFontSize}" Classes="muted" TextWrapping="Wrap" />
-                        <WrapPanel Orientation="Horizontal" ItemSpacing="6">
+                        <TextBlock Text="{Binding FullPath}" FontSize="{DynamicResource Tern.FontSize.Caption}" Classes="muted" TextTrimming="CharacterEllipsis" AutomationProperties.Name="Section folder path" />
+                        <TextBlock Text="{Binding SectionCapability}" FontSize="{DynamicResource Tern.FontSize.Caption}" Classes="muted" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ChildrenLoadingText}" IsVisible="{Binding IsLoadingChildren}" FontSize="{DynamicResource Tern.FontSize.Caption}" Classes="muted" />
+                        <TextBlock Text="{Binding SectionNotice}" IsVisible="{Binding HasSectionNotice}" FontSize="{DynamicResource Tern.FontSize.Caption}" Classes="muted" TextWrapping="Wrap" />
+                        <StackPanel IsVisible="{Binding IsEmptyWorkspace}" Spacing="{DynamicResource Tern.Space.4}">
+                          <TextBlock Text="Your workspace is ready. Choose a next step:" TextWrapping="Wrap" />
+                          <Button Content="New note here" Tag="file" Click="OnTreeCreateClick" />
+                          <Button Content="Import existing files" Click="OnImportWorkspaceFilesClick" />
+                          <Button Content="Learn workspaces" Classes="flat" Click="OnLearnWorkspacesClick" />
+                        </StackPanel>
+                        <ProgressBar IsVisible="{Binding IsPreparingContent}" Minimum="0" Maximum="1"
+                                     Value="{Binding ContentProgressFraction}" IsIndeterminate="{Binding IsContentProgressIndeterminate}"
+                                     Height="4" AutomationProperties.Name="Workspace preparation progress" />
+                        <Button Content="Cancel indexing" IsVisible="{Binding IsPreparingContent}"
+                                Click="OnCancelWorkspacePreparationClick" AutomationProperties.Name="Cancel workspace indexing and keep the file tree" />
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="{DynamicResource Tern.Space.4}">
                           <Button Classes="flat" Padding="6,3" Content="{Binding SectionToggleText}" Click="OnWorkspaceSectionToggleClick" ToolTip.Tip="{Binding SectionToggleHint}" AutomationProperties.Name="{Binding SectionToggleHint}" />
                           <Button Classes="flat" Padding="6,3" Content="Create…" AutomationProperties.Name="Create in this section" ToolTip.Tip="Create directly inside this workspace or folder">
                             <Button.Flyout><MenuFlyout>
@@ -335,47 +478,73 @@
                               <MenuItem Header="Create Workspace…" Tag="workspace" Click="OnTreeCreateClick" />
                             </MenuFlyout></Button.Flyout>
                           </Button>
+                          <Button Classes="flat" Padding="6,3" Content="Make workspace…" IsVisible="{Binding CanPromote}" Click="OnTreePromoteClick" AutomationProperties.Name="Make this folder a workspace" ToolTip.Tip="Make Folder a Workspace: add content search, backlinks, link checks and tasks without moving files" />
                         </WrapPanel>
                       </StackPanel>
                     </Border>
-                  <Grid IsVisible="{Binding IsTreeEntry}" Classes.active="{Binding IsActive}" ColumnDefinitions="18,*,Auto,Auto" ColumnSpacing="7" MinHeight="30">
+                </DataTemplate>
+                <DataTemplate x:Key="LibraryEntryTemplate" x:DataType="vm:TreeRow">
+                  <Grid Classes.active="{Binding IsActive}" ColumnDefinitions="18,*,Auto,Auto" ColumnSpacing="{DynamicResource Tern.Space.8}" MinHeight="30" Background="Transparent" DragDrop.AllowDrop="True" PointerPressed="OnTreeRowPointerPressed" PointerMoved="OnTreeRowPointerMoved" DragDrop.DragOver="OnTreeRowDragOver" DragDrop.Drop="OnTreeRowDrop">
                     <Grid.Styles>
                       <Style Selector="Grid.active"><Setter Property="Background" Value="{DynamicResource Tern.AccentSoft}" /></Style>
                       <Style Selector="Grid:pointerover"><Setter Property="Background" Value="{DynamicResource Tern.Hover}" /></Style>
                     </Grid.Styles>
                     <Grid.ContextMenu>
-                      <ContextMenu Closed="OnLibraryContextClosed">
+                      <ContextMenu Tag="library-entry" Closed="OnLibraryContextClosed" />
+                    </Grid.ContextMenu>
+                    <Path Width="15" Height="15" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2" Data="{Binding IconPath}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}" VerticalAlignment="Center">
+                      <TextBlock Text="⚠" IsVisible="{Binding IsChangedOnDisk}" Foreground="{DynamicResource Tern.Warning}" ToolTip.Tip="Changed on disk" AutomationProperties.Name="Changed on disk" />
+                      <Ellipse Width="6" Height="6" Fill="{DynamicResource Tern.Accent}" IsVisible="{Binding IsDirty}" VerticalAlignment="Center" AutomationProperties.Name="Unsaved changes" />
+                      <Ellipse Width="6" Height="6" Fill="{DynamicResource Tern.Warning}" IsVisible="{Binding HasGitChange}" VerticalAlignment="Center" ToolTip.Tip="{Binding GitState}" AutomationProperties.Name="{Binding GitState}" />
+                    </StackPanel>
+                    <Button Grid.Column="3" Classes="flat row-close" IsVisible="{Binding ShowCloseAction}" Click="OnTreeRowCloseClick" ToolTip.Tip="{Binding CloseActionHint}" AutomationProperties.Name="{Binding CloseActionName}">
+                      <Path Width="9" Height="9" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M1,1 L8,8 M1,8 L8,1" />
+                    </Button>
+                  </Grid>
+                </DataTemplate>
+                <DataTemplate x:Key="LibraryEntryMenuTemplate" x:DataType="vm:TreeRow">
+                      <ContextMenu>
                         <MenuItem Header="Create File…" Tag="file" IsVisible="{Binding IsDirectory}" Click="OnTreeCreateClick" />
                         <MenuItem Header="Create Folder…" Tag="folder" IsVisible="{Binding IsDirectory}" Click="OnTreeCreateClick" />
                         <MenuItem Header="Create Workspace…" Tag="workspace" IsVisible="{Binding IsDirectory}" Click="OnTreeCreateClick" />
+                        <MenuItem Header="Make Folder a Workspace…" IsVisible="{Binding CanPromote}" Click="OnTreePromoteClick" />
                         <MenuItem Header="Open" IsVisible="{Binding CanRename}" Click="OnLibraryOpenContextClick" />
                         <MenuItem Header="Rename…" IsVisible="{Binding CanRename}" Click="OnLibraryRenameClick" />
-                        <MenuItem Header="Move file to Recycle Bin…" IsVisible="{Binding CanRename}" Click="OnLibraryDeleteClick">
-                          <MenuItem.Icon><Path Width="16" Height="16" Data="{DynamicResource Tern.Icon.Trash}" Stroke="{DynamicResource Tern.Danger}" StrokeThickness="1.5" /></MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Close all" IsVisible="{Binding CanRename}" Tag="tab.closeAll" Click="OnDocumentContextClick" />
-                        <MenuItem Header="Close tabs to the right" IsVisible="{Binding CanRename}" Tag="tab.closeRight" Click="OnDocumentContextClick" />
-                        <MenuItem Header="Close other tabs" IsVisible="{Binding CanRename}" Tag="tab.closeOthers" Click="OnDocumentContextClick" />
+                        <MenuItem Header="Rename Folder…" IsVisible="{Binding IsFolderEntry}" Click="OnFolderRenameClick" />
+                        <MenuItem Header="Move to…" IsVisible="{Binding CanRename}" Click="OnLibraryMoveClick" />
+                        <MenuItem Header="Move Folder to…" IsVisible="{Binding IsFolderEntry}" Click="OnLibraryMoveClick" />
+                        <MenuItem Header="Duplicate" IsVisible="{Binding CanRename}" Click="OnLibraryDuplicateClick" />
+                        <MenuItem Header="Duplicate Folder" IsVisible="{Binding IsFolderEntry}" Click="OnLibraryDuplicateClick" />
+                        <MenuItem Header="Reveal in File Explorer" Click="OnLibraryRevealClick" />
                         <MenuItem Header="Close Workspace" IsVisible="{Binding IsWorkspace}" Click="OnTreeWorkspaceCloseClick" />
                         <MenuItem Header="Close Document" IsVisible="{Binding IsOpen}" Click="OnTreeCloseClick" />
                         <MenuItem Header="Close Folder Documents" IsVisible="{Binding IsDirectory}" Click="OnFolderCloseClick" />
                         <MenuItem Header="Collapse Folder" IsVisible="{Binding IsDirectory}" Click="OnFolderCollapseClick" />
+                        <Separator IsVisible="{Binding IsRecyclable}" />
+                        <MenuItem Header="Move to Recycle Bin…" IsVisible="{Binding CanRename}" Click="OnLibraryDeleteClick">
+                          <MenuItem.Icon><Path Width="16" Height="16" Data="{DynamicResource Tern.Icon.Trash}" Stroke="{DynamicResource Tern.Danger}" StrokeThickness="1.5" /></MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="Move Folder to Recycle Bin…" IsVisible="{Binding IsFolderEntry}" Click="OnFolderRecycleClick">
+                          <MenuItem.Icon><Path Width="16" Height="16" Data="{DynamicResource Tern.Icon.Trash}" Stroke="{DynamicResource Tern.Danger}" StrokeThickness="1.5" /></MenuItem.Icon>
+                        </MenuItem>
                       </ContextMenu>
-                    </Grid.ContextMenu>
-                    <Path Width="15" Height="15" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2" Data="{Binding IconPath}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                    <Ellipse Grid.Column="2" Width="6" Height="6" Fill="{DynamicResource Tern.Accent}" IsVisible="{Binding IsDirty}" VerticalAlignment="Center" AutomationProperties.Name="Unsaved changes" />
-                    <Button Grid.Column="3" Classes="flat row-close" IsVisible="{Binding IsOpen}" Click="OnTreeCloseClick" ToolTip.Tip="Close document" AutomationProperties.Name="Close document">
-                      <Path Width="9" Height="9" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M1,1 L8,8 M1,8 L8,1" />
-                    </Button>
-                    <Button Grid.Column="3" Classes="flat row-close" IsVisible="{Binding IsWorkspace}" Click="OnTreeWorkspaceCloseClick" ToolTip.Tip="Close this workspace" AutomationProperties.Name="Close this workspace">
-                      <Path Width="9" Height="9" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M1,1 L8,8 M1,8 L8,1" />
-                    </Button>
-                    <Button Grid.Column="3" Classes="flat row-close" IsVisible="{Binding IsExpandedFolder}" Click="OnFolderCloseClick" ToolTip.Tip="Close folder documents and collapse" AutomationProperties.Name="Close folder">
-                      <Path Width="9" Height="9" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M1,1 L8,8 M1,8 L8,1" />
-                    </Button>
-                  </Grid>
-                  </StackPanel>
+                </DataTemplate>
+              </TreeView.Resources>
+              <TreeView.ItemTemplate>
+                <TreeDataTemplate x:DataType="vm:TreeRow" ItemsSource="{Binding PresentedChildren}">
+                  <ContentControl Classes="library-row" Classes.library-section="{Binding IsSection}" Content="{Binding}"
+                                  HorizontalContentAlignment="Stretch" ToolTip.Tip="{Binding FullPath}">
+                    <ContentControl.Styles>
+                      <Style Selector="ContentControl.library-row">
+                        <Setter Property="ContentTemplate" Value="{StaticResource LibraryEntryTemplate}" />
+                      </Style>
+                      <Style Selector="ContentControl.library-row.library-section">
+                        <Setter Property="ContentTemplate" Value="{StaticResource LibrarySectionTemplate}" />
+                      </Style>
+                    </ContentControl.Styles>
+                  </ContentControl>
                 </TreeDataTemplate>
               </TreeView.ItemTemplate>
             </TreeView>
@@ -383,36 +552,35 @@
             <ListBox x:Name="SideList" Margin="6,0" IsVisible="False" SelectionChanged="OnSideListSelectionChanged" AutomationProperties.Name="Panel results">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:SideRow">
-                  <Grid ColumnDefinitions="*,36,36" ColumnSpacing="6" MinHeight="44" Background="Transparent" ToolTip.Tip="{Binding Path}">
+                  <Grid ColumnDefinitions="*,36,36" ColumnSpacing="{DynamicResource Tern.Space.4}" MinHeight="44" Background="Transparent" ToolTip.Tip="{Binding Path}">
                     <Grid.ContextMenu><ContextMenu Closed="OnLibraryContextClosed">
                       <MenuItem Header="{Binding OpenLabel}" Click="OnLibraryOpenContextClick" />
-                      <MenuItem Header="Download and Open…" IsVisible="{Binding IsOnline}" Click="OnLibraryDownloadClick" />
+                      <MenuItem Header="Save Portable Copy…" IsVisible="{Binding IsOnline}" Click="OnLibraryDownloadClick" />
                       <MenuItem Header="Rename…" IsVisible="{Binding IsDocument}" IsEnabled="{Binding CanRename}" Click="OnLibraryRenameClick" ToolTip.Tip="Download an online file before renaming its local copy." />
-                      <MenuItem Header="Move file to Recycle Bin…" IsVisible="{Binding IsDocument}" IsEnabled="{Binding CanRename}" Click="OnLibraryDeleteClick" ToolTip.Tip="Move the local file to the Windows Recycle Bin and remove its history.">
+                      <MenuItem Header="Reveal in File Explorer" IsVisible="{Binding IsDocument}" IsEnabled="{Binding CanRename}" Click="OnLibraryRevealClick" />
+                      <MenuItem Header="{DynamicResource Tern.Command.tab.close}" IsVisible="{Binding IsDocument}" Tag="tab.close" Click="OnDocumentContextClick" />
+                      <MenuItem Header="{Binding RemoveLabel}" IsVisible="{Binding CanRemoveReference}" Click="OnRemoveRecentClick" ToolTip.Tip="Remove the reference only; keep the file and open edits." />
+                      <Separator IsVisible="{Binding IsDocument}" />
+                      <MenuItem Header="Move File to Recycle Bin…" IsVisible="{Binding IsDocument}" IsEnabled="{Binding CanRename}" Click="OnLibraryDeleteClick" ToolTip.Tip="Move the local file to the Windows Recycle Bin and remove its history.">
                         <MenuItem.Icon><Path Width="16" Height="16" Data="{DynamicResource Tern.Icon.Trash}" Stroke="{DynamicResource Tern.Danger}" StrokeThickness="1.5" /></MenuItem.Icon>
                       </MenuItem>
-                      <Separator IsVisible="{Binding IsDocument}" />
-                      <MenuItem Header="Close" IsVisible="{Binding IsDocument}" Tag="tab.close" Click="OnDocumentContextClick" />
-                      <MenuItem Header="Close all" IsVisible="{Binding IsDocument}" Tag="tab.closeAll" Click="OnDocumentContextClick" />
-                      <MenuItem Header="Close tabs to the right" IsVisible="{Binding IsDocument}" Tag="tab.closeRight" Click="OnDocumentContextClick" />
-                      <MenuItem Header="Close other tabs" IsVisible="{Binding IsDocument}" Tag="tab.closeOthers" Click="OnDocumentContextClick" />
-                      <Separator />
-                      <MenuItem Header="{Binding RemoveLabel}" IsVisible="{Binding CanRemoveReference}" Click="OnRemoveRecentClick" ToolTip.Tip="Remove the reference only; keep the file and open edits." />
                     </ContextMenu></Grid.ContextMenu>
-                    <Grid ColumnDefinitions="18,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" VerticalAlignment="Center">
-                    <Path Width="15" Height="15" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2" Data="{Binding IconPath}" VerticalAlignment="Center" />
+                    <Grid ColumnDefinitions="18,*" RowDefinitions="Auto,Auto" ColumnSpacing="{DynamicResource Tern.Space.8}" VerticalAlignment="Center">
+                    <Path Width="15" Height="15" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2" Data="{Binding IconPath}" VerticalAlignment="Center" IsVisible="{Binding HasIcon}" />
+                    <CheckBox IsVisible="{Binding IsTask}" IsChecked="{Binding TaskChecked, Mode=OneWay}" Click="OnTaskToggleClick" AutomationProperties.Name="{Binding TaskAccessibleName}" ToolTip.Tip="Toggle this task; Undo in its document to revert" />
                     <TextBlock Grid.Column="1" Text="{Binding Title}" Classes.missing="{Binding IsMissing}" TextTrimming="CharacterEllipsis">
                       <TextBlock.Styles><Style Selector="TextBlock.missing"><Setter Property="Foreground" Value="{DynamicResource Tern.Danger}" /></Style></TextBlock.Styles>
                     </TextBlock>
-                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasDetail}" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasDetail}" />
                     </Grid>
-                    <Button Grid.Column="1" Classes="flat" Padding="8" Width="36" MinHeight="36" VerticalAlignment="Center" IsVisible="{Binding IsOnline}" Click="OnLibraryDownloadClick" ToolTip.Tip="Download and open a local copy" AutomationProperties.Name="Download online file">
+                    <Button Grid.Column="1" Classes="flat" Padding="8" Width="36" MinHeight="36" VerticalAlignment="Center" IsVisible="{Binding IsOnline}" Click="OnLibraryDownloadClick" ToolTip.Tip="Save portable copy…" AutomationProperties.Name="Save portable copy">
                       <Path Width="14" Height="14" Stroke="{DynamicResource Tern.Accent}" StrokeThickness="1.5" Data="M7,1 L7,10 M3,6 L7,10 L11,6 M1,11 L1,14 L13,14 L13,11" />
                     </Button>
                     <Button Grid.Column="1" Classes="flat" Padding="8" Width="36" MinHeight="36" VerticalAlignment="Center" IsVisible="{Binding CanRename}" Click="OnLibraryRenameClick" ToolTip.Tip="Rename this local file" AutomationProperties.Name="Rename local file">
                       <Path Width="14" Height="14" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.5" Data="M2,10 L2,14 L6,14 L14,6 L10,2 Z M8,4 L12,8" />
                     </Button>
-                    <Button Grid.Column="2" Content="⋯" Classes="flat" Padding="8" Width="36" MinHeight="36" VerticalAlignment="Center" IsVisible="{Binding CanRemoveReference}" ToolTip.Tip="{Binding RemoveHint}" AutomationProperties.Name="{Binding RemoveAccessibleName}">
+                    <Button Grid.Column="2" Classes="flat icon-button" Padding="8" Width="36" MinHeight="36" VerticalAlignment="Center" IsVisible="{Binding CanRemoveReference}" ToolTip.Tip="{Binding RemoveHint}" AutomationProperties.Name="{Binding RemoveAccessibleName}">
+                      <views:VectorIcon Kind="More" />
                       <Button.Flyout><MenuFlyout><MenuItem Header="{Binding RemoveLabel}" Click="OnRemoveRecentClick" /></MenuFlyout></Button.Flyout>
                     </Button>
                   </Grid>
@@ -427,66 +595,84 @@
                     AutomationProperties.Name="Library shortcuts" Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="8,0">
           <Expander.HeaderTemplate>
             <DataTemplate x:DataType="x:String">
-              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.8}" VerticalAlignment="Center">
                 <Path Width="13" Height="13" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.2"
                       Data="M1,1 H6 V6 H1 Z M9,1 H14 V6 H9 Z M1,9 H6 V14 H1 Z M9,9 H14 V14 H9 Z" />
                 <TextBlock Text="{Binding}" FontWeight="SemiBold" VerticalAlignment="Center" />
               </StackPanel>
             </DataTemplate>
           </Expander.HeaderTemplate>
-          <StackPanel Margin="0,4,0,8" Spacing="1" x:Name="NavPanel">
+          <StackPanel Margin="0,4,0,8" Spacing="{DynamicResource Tern.Space.4}" x:Name="NavPanel">
             <ToggleButton Classes="nav" x:Name="NavRecent" Tag="Recent" Click="OnNavClick" AutomationProperties.Name="Recent files">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M8,2 A6,6 0 1 1 2,8 M2,3 L2,8 L7,8 M8,4 L8,8 L11,10" VerticalAlignment="Center" /><TextBlock Text="Recent" /></StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M8,2 A6,6 0 1 1 2,8 M2,3 L2,8 L7,8 M8,4 L8,8 L11,10" VerticalAlignment="Center" /><TextBlock Text="Recent" /></StackPanel>
             </ToggleButton>
             <ToggleButton Classes="nav" x:Name="NavSearch" Tag="Search" Click="OnNavClick" AutomationProperties.Name="Search results">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M11,6 A5,5 0 1 1 1,6 A5,5 0 1 1 11,6 M10,10 L15,15" VerticalAlignment="Center" /><TextBlock Text="Search" /></StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M11,6 A5,5 0 1 1 1,6 A5,5 0 1 1 11,6 M10,10 L15,15" VerticalAlignment="Center" /><TextBlock Text="Search" /></StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="nav" x:Name="NavTags" Tag="Tags" Click="OnNavClick" AutomationProperties.Name="Workspace tags">
+              <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M1,1 L8,1 L15,8 L8,15 L1,8 Z M4,4 L5,4 L5,5 L4,5 Z" VerticalAlignment="Center" /><TextBlock Text="Tags" /></StackPanel>
             </ToggleButton>
             <ToggleButton Classes="nav" x:Name="NavFiles" Tag="Files" Click="OnNavClick" AutomationProperties.Name="All files">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,8 L11,8 M6,11 L11,11" VerticalAlignment="Center" /><TextBlock Text="All Files" /></StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M3,1 L10,1 L14,5 L14,15 L3,15 Z M10,1 L10,5 L14,5 M6,8 L11,8 M6,11 L11,11" VerticalAlignment="Center" /><TextBlock Text="All Files" /></StackPanel>
             </ToggleButton>
             <ToggleButton Classes="nav" x:Name="NavBacklinks" Tag="Backlinks" Click="OnNavClick" AutomationProperties.Name="Backlinks">
-              <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L10,11 M10,11 L7,14 Q4,16 2,13 Q0,11 3,8 L6,5 M5,11 L11,5" VerticalAlignment="Center" /><TextBlock Text="Backlinks" /></StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L10,11 M10,11 L7,14 Q4,16 2,13 Q0,11 3,8 L6,5 M5,11 L11,5" VerticalAlignment="Center" /><TextBlock Text="Backlinks" /></StackPanel>
             </ToggleButton>
             <ToggleButton Classes="nav" x:Name="NavBroken" Tag="Broken" Click="OnNavClick" AutomationProperties.Name="Broken links">
               <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M5,6 L2,9 Q0,12 3,14 Q5,16 8,13 L10,11 M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L11,10 M1,1 L15,15" VerticalAlignment="Center" /><TextBlock Text="Broken Links" /></StackPanel>
-                <Border x:Name="BrokenBadge" Grid.Column="1" Background="{DynamicResource Tern.Danger}" CornerRadius="9" Padding="7,1" IsVisible="False">
-                  <TextBlock x:Name="BrokenBadgeText" FontSize="{DynamicResource Tern.SmallFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.OnDanger}" />
+                <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M5,6 L2,9 Q0,12 3,14 Q5,16 8,13 L10,11 M6,5 L9,2 Q12,0 14,3 Q16,5 13,8 L11,10 M1,1 L15,15" VerticalAlignment="Center" /><TextBlock Text="Broken Links" /></StackPanel>
+                <Border x:Name="BrokenBadge" Grid.Column="1" Background="{DynamicResource Tern.Danger}" CornerRadius="{DynamicResource Tern.Radius.Card}" Padding="7,1" IsVisible="False">
+                  <TextBlock x:Name="BrokenBadgeText" FontSize="{DynamicResource Tern.FontSize.Caption}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.OnDanger}" />
                 </Border>
               </Grid>
             </ToggleButton>
             <ToggleButton Classes="nav" x:Name="NavTasks" Tag="Tasks" Click="OnNavClick" AutomationProperties.Name="Tasks">
               <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="12"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M2,2 L14,2 L14,14 L2,14 Z M5,8 L7,10 L12,5" VerticalAlignment="Center" /><TextBlock Text="Tasks" /></StackPanel>
-                <Border x:Name="TasksBadge" Grid.Column="1" Background="{DynamicResource Tern.AccentSoft}" CornerRadius="9" Padding="7,1" IsVisible="False">
-                  <TextBlock x:Name="TasksBadgeText" FontSize="{DynamicResource Tern.SmallFontSize}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.Accent}" />
+                <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.12}"><Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.3" Data="M2,2 L14,2 L14,14 L2,14 Z M5,8 L7,10 L12,5" VerticalAlignment="Center" /><TextBlock Text="Tasks" /></StackPanel>
+                <Border x:Name="TasksBadge" Grid.Column="1" Background="{DynamicResource Tern.AccentSoft}" CornerRadius="{DynamicResource Tern.Radius.Card}" Padding="7,1" IsVisible="False">
+                  <TextBlock x:Name="TasksBadgeText" FontSize="{DynamicResource Tern.FontSize.Caption}" FontWeight="SemiBold" Foreground="{DynamicResource Tern.Accent}" />
                 </Border>
               </Grid>
             </ToggleButton>
+            <ScrollViewer MaxHeight="120" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="SavedSearchList" Spacing="{DynamicResource Tern.Space.4}" AutomationProperties.Name="Saved workspace searches" />
+            </ScrollViewer>
           </StackPanel>
           </Expander>
         </Grid>
         </ScrollViewer>
       </Border>
-      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Width="7" Margin="-3,0" DragCompleted="OnLayoutResizeCompleted" IsVisible="{Binding IsVisible, ElementName=Sidebar}" AutomationProperties.Name="Resize sidebar" />
+      <GridSplitter Grid.Column="1" ResizeDirection="Columns" Width="7" Margin="-3,0" DragCompleted="OnLayoutResizeCompleted" IsVisible="{Binding IsVisible, ElementName=Sidebar}" AutomationProperties.Name="Resize Library" />
 
       <!-- Center -->
-      <Border Grid.Column="2" Margin="16" CornerRadius="12" ClipToBounds="True" BorderThickness="1" BorderBrush="{DynamicResource Tern.Border}" Background="{DynamicResource Tern.Surface}">
+      <Border Grid.Column="2" Margin="16" CornerRadius="{DynamicResource Tern.Radius.Popup}" ClipToBounds="True" BorderThickness="1" BorderBrush="{DynamicResource Tern.Border}" Background="{DynamicResource Tern.Surface}">
       <Grid RowDefinitions="Auto,Auto,Auto,*">
         <Border Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1" DoubleTapped="OnTabBarDoubleTapped">
           <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-            <Button x:Name="TabsPrevious" Classes="flat" Content="‹" Width="32" Margin="4,0" VerticalAlignment="Center" IsVisible="False" Tag="left" Click="OnTabScrollClick" AutomationProperties.Name="Scroll tabs left" ToolTip.Tip="Scroll tabs left" />
+            <Button x:Name="TabsPrevious" Classes="flat icon-button" Width="32" Margin="4,0" VerticalAlignment="Center" IsVisible="False" Tag="left" Click="OnTabScrollClick" AutomationProperties.Name="Scroll tabs left" ToolTip.Tip="Scroll tabs left"><views:VectorIcon Kind="ChevronLeft" /></Button>
             <ListBox Grid.Column="1" x:Name="TabStrip" Loaded="OnTabStripLoaded" SelectionChanged="OnTabSelectionChanged" AutomationProperties.Name="Open documents"
                      ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollBarVisibility="Disabled" Padding="6,6,0,0">
               <ListBox.ItemsPanel>
-                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2" /></ItemsPanelTemplate>
+                <ItemsPanelTemplate><VirtualizingStackPanel Orientation="Horizontal" CacheLength="0.5" /></ItemsPanelTemplate>
               </ListBox.ItemsPanel>
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="docs:DocumentTab">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <StackPanel.ContextMenu><ContextMenu><MenuItem Header="Rename" Tag="tab.rename" IsEnabled="{Binding CanRename}" Click="OnDocumentContextClick" /><MenuItem Header="Close" Tag="tab.close" Click="OnDocumentContextClick" /><MenuItem Header="Close All" Tag="tab.closeAll" Click="OnDocumentContextClick" /><MenuItem Header="Close Tabs to the Right" Tag="tab.closeRight" Click="OnDocumentContextClick" /><MenuItem Header="Close Other Tabs" Tag="tab.closeOthers" Click="OnDocumentContextClick" /></ContextMenu></StackPanel.ContextMenu>
+                  <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.8}">
+                    <StackPanel.ContextMenu><ContextMenu>
+                      <MenuItem Header="{DynamicResource Tern.Command.file.rename}" Tag="tab.rename" IsEnabled="{Binding CanRename}" Click="OnDocumentContextClick" />
+                      <MenuItem Header="Copy Path" Tag="tab.copyPath" IsEnabled="{Binding !IsUntitled}" Click="OnDocumentContextClick" />
+                      <MenuItem Header="Reveal in File Explorer" Tag="tab.reveal" IsEnabled="{Binding !IsUntitled}" Click="OnDocumentContextClick" />
+                      <MenuItem Header="{DynamicResource Tern.Command.tab.reopenClosed}" Tag="tab.reopen" Click="OnDocumentContextClick" />
+                      <Separator />
+                      <MenuItem Header="{DynamicResource Tern.Command.tab.close}" Tag="tab.close" Click="OnDocumentContextClick" />
+                      <MenuItem Header="{DynamicResource Tern.Command.tab.closeAll}" Tag="tab.closeAll" Click="OnDocumentContextClick" />
+                      <MenuItem Header="Close Tabs to the Right" Tag="tab.closeRight" Click="OnDocumentContextClick" />
+                      <MenuItem Header="Close Other Tabs" Tag="tab.closeOthers" Click="OnDocumentContextClick" />
+                    </ContextMenu></StackPanel.ContextMenu>
                     <TextBlock x:Name="TabTitleText" Text="{Binding DisplayName}" MaxWidth="240" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" DoubleTapped="OnTabRename" ToolTip.Tip="{DynamicResource Tern.RenameDocumentHint}" />
-                    <TextBox Text="{Binding DisplayName, Mode=OneWay}" IsVisible="False" MinWidth="140" KeyDown="OnInlineRenameKeyDown" LostFocus="OnInlineRenameLostFocus" AutomationProperties.Name="Document name; Enter to apply, Escape to cancel" />
+                    <TextBox Text="{Binding DisplayName, Mode=OneWay}" IsVisible="False" MinWidth="140" KeyDown="OnInlineRenameKeyDown" LostFocus="OnInlineRenameLostFocus" AutomationProperties.Name="Document name; Enter or leave the field to apply, Escape to cancel" />
+                    <TextBlock x:Name="TabRenameError" IsVisible="False" MaxWidth="240" TextWrapping="Wrap" Foreground="{DynamicResource Tern.Danger}" VerticalAlignment="Center" AutomationProperties.Name="Document rename error" />
+                    <TextBlock Text="⚠" IsVisible="{Binding IsChangedOnDisk}" Foreground="{DynamicResource Tern.Warning}" VerticalAlignment="Center" ToolTip.Tip="Changed on disk" AutomationProperties.Name="Changed on disk" />
                     <Ellipse Width="7" Height="7" Fill="{DynamicResource Tern.Accent}" IsVisible="{Binding IsDirty}" VerticalAlignment="Center" AutomationProperties.Name="Unsaved changes" />
                     <Button Classes="flat row-close" Click="OnTabCloseClick" ToolTip.Tip="{DynamicResource Tern.CloseDocumentHint}" AutomationProperties.Name="Close tab">
                       <Path Width="10" Height="10" Stroke="{DynamicResource Tern.Muted}" StrokeThickness="1.4" Data="M1,1 L9,9 M1,9 L9,1" />
@@ -495,43 +681,43 @@
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <Button Grid.Column="2" x:Name="TabsNext" Classes="flat" Content="›" Width="32" Margin="4,0" VerticalAlignment="Center" IsVisible="False" Tag="right" Click="OnTabScrollClick" AutomationProperties.Name="Scroll tabs right" ToolTip.Tip="Scroll tabs right" />
-            <Button Grid.Column="3" x:Name="OpenDocumentsButton" Classes="flat" Content="▾" Width="36" Click="OnOpenDocumentsClick" AutomationProperties.Name="List open documents" ToolTip.Tip="List open documents" />
-            <Button x:Name="NewTabButton" Grid.Column="4" Classes="flat" Content="+" FontSize="16" Margin="4" Click="OnNewTabClick" AutomationProperties.Name="New document" ToolTip.Tip="{DynamicResource Tern.NewDocumentHint}" />
+            <Button Grid.Column="2" x:Name="TabsNext" Classes="flat icon-button" Width="32" Margin="4,0" VerticalAlignment="Center" IsVisible="False" Tag="right" Click="OnTabScrollClick" AutomationProperties.Name="Scroll tabs right" ToolTip.Tip="Scroll tabs right"><views:VectorIcon Kind="ChevronRight" /></Button>
+            <Button Grid.Column="3" x:Name="OpenDocumentsButton" Classes="flat icon-button" Width="36" Click="OnOpenDocumentsClick" AutomationProperties.Name="List open documents" ToolTip.Tip="List open documents"><views:VectorIcon Kind="ChevronDown" /></Button>
+            <Button x:Name="NewTabButton" Grid.Column="4" Classes="flat icon-button" Margin="4" Click="OnNewTabClick" AutomationProperties.Name="New document" ToolTip.Tip="{DynamicResource Tern.NewDocumentHint}"><views:VectorIcon Kind="Plus" /></Button>
           </Grid>
         </Border>
 
         <!-- Find / replace -->
-        <Border x:Name="FindBar" Grid.Row="1" IsVisible="False" Padding="10,8" Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1">
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
-            <WrapPanel x:Name="FindControls" ItemSpacing="6" LineSpacing="6">
-              <TextBox x:Name="FindBox" Width="200" PlaceholderText="Find in current note" TextChanged="OnFindTextChanged" KeyDown="OnFindKeyDown" AutomationProperties.Name="Find text" />
-              <WrapPanel x:Name="FindOptionsPanel" ItemSpacing="6">
-              <ToggleButton x:Name="CaseToggle" Content="Aa" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Match case" AutomationProperties.Name="Match case" />
-              <ToggleButton x:Name="WordToggle" Content="W" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Whole word" AutomationProperties.Name="Whole word" />
-              <ToggleButton x:Name="RegexToggle" Content=".*" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Regular expression" AutomationProperties.Name="Regular expression" />
+        <Border x:Name="FindBar" KeyboardNavigation.TabNavigation="Local" Grid.Row="1" IsVisible="False" Padding="10,8" Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="{DynamicResource Tern.Space.4}" ColumnSpacing="{DynamicResource Tern.Space.8}">
+            <WrapPanel x:Name="FindControls" ItemSpacing="{DynamicResource Tern.Space.4}" LineSpacing="{DynamicResource Tern.Space.4}">
+              <TextBox x:Name="FindBox" KeyboardNavigation.TabIndex="0" Width="200" PlaceholderText="Find in current document" TextChanged="OnFindTextChanged" KeyDown="OnFindKeyDown" AutomationProperties.Name="Find text" />
+              <WrapPanel x:Name="FindOptionsPanel" ItemSpacing="{DynamicResource Tern.Space.4}">
+              <ToggleButton x:Name="CaseToggle" KeyboardNavigation.TabIndex="4" Content="Aa" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Match case" AutomationProperties.Name="Match case" />
+              <ToggleButton x:Name="WordToggle" KeyboardNavigation.TabIndex="5" Content="W" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Whole word" AutomationProperties.Name="Whole word" />
+              <ToggleButton x:Name="RegexToggle" KeyboardNavigation.TabIndex="6" Content=".*" Classes="seg" Click="OnFindOptionClick" ToolTip.Tip="Regular expression" AutomationProperties.Name="Regular expression" />
               </WrapPanel>
-              <Button x:Name="FindOptionsButton" Content="⋯" IsVisible="False" Click="OnFindOptionsClick" ToolTip.Tip="Search options: match case, whole word, regular expression" AutomationProperties.Name="Search options: match case, whole word, regular expression" />
-              <Button x:Name="FindPreviousButton" Content="↑" Click="OnFindPreviousClick" ToolTip.Tip="Previous match (Shift+Enter / Shift+F3)" AutomationProperties.Name="Previous match" />
-              <Button x:Name="FindNextButton" Content="↓" Click="OnFindNextClick" ToolTip.Tip="Next match (Enter / F3)" AutomationProperties.Name="Next match" />
-              <ToggleButton x:Name="FindResultsToggle" Content="Results" Classes="seg" Click="OnFindResultsClick" ToolTip.Tip="Show matching lines in this note" AutomationProperties.Name="Show search results" />
-              <ToggleButton x:Name="FindReplaceToggle" Content="Replace" Classes="seg" Click="OnFindReplaceToggleClick" ToolTip.Tip="Show replacement controls (Ctrl+H)" AutomationProperties.Name="Show replacement controls" />
+              <Button x:Name="FindOptionsButton" KeyboardNavigation.TabIndex="7" Classes="icon-button" IsVisible="False" Click="OnFindOptionsClick" ToolTip.Tip="Search options: match case, whole word, regular expression" AutomationProperties.Name="Search options: match case, whole word, regular expression"><views:VectorIcon Kind="More" /></Button>
+              <Button x:Name="FindPreviousButton" KeyboardNavigation.TabIndex="8" Classes="icon-button" Click="OnFindPreviousClick" ToolTip.Tip="Previous match (Shift+Enter / Shift+F3)" AutomationProperties.Name="Previous match"><views:VectorIcon Kind="ArrowUp" /></Button>
+              <Button x:Name="FindNextButton" KeyboardNavigation.TabIndex="9" Classes="icon-button" Click="OnFindNextClick" ToolTip.Tip="Next match (Enter / F3)" AutomationProperties.Name="Next match"><views:VectorIcon Kind="ArrowDown" /></Button>
+              <ToggleButton x:Name="FindResultsToggle" KeyboardNavigation.TabIndex="10" Content="Results" Classes="seg" Click="OnFindResultsClick" ToolTip.Tip="Show matching lines in this note" AutomationProperties.Name="Show search results" />
+              <ToggleButton x:Name="FindReplaceToggle" KeyboardNavigation.TabIndex="11" Content="Replace" Classes="seg" Click="OnFindReplaceToggleClick" ToolTip.Tip="Show replacement controls (Ctrl+H)" AutomationProperties.Name="Show replacement controls" />
               <TextBlock x:Name="FindStatus" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="280" AutomationProperties.LiveSetting="Polite" />
-              <Button x:Name="FindSourceButton" Content="Show in Source" IsVisible="False" Click="OnFindSourceClick" ToolTip.Tip="This match is Markdown syntax or a destination hidden in Reading" />
+              <Button x:Name="FindSourceButton" KeyboardNavigation.TabIndex="12" Content="Show in Source" IsVisible="False" Click="OnFindSourceClick" ToolTip.Tip="This match is Markdown syntax or a destination hidden in Reading" />
             </WrapPanel>
-            <Button Grid.Column="1" Classes="flat" Content="✕" Click="OnFindCloseClick" AutomationProperties.Name="Close find" />
-            <WrapPanel Grid.Row="1" x:Name="ReplaceRow" ItemSpacing="6" LineSpacing="6">
-              <TextBox x:Name="ReplaceBox" Width="180" PlaceholderText="Replace with" TextChanged="OnFindTextChanged" KeyDown="OnFindKeyDown" AutomationProperties.Name="Replacement text" />
-              <Button x:Name="ReplaceCurrentButton" Content="Replace" Click="OnReplaceClick" AutomationProperties.Name="Replace this match" />
-              <Button x:Name="ReplaceAllButton" Content="Replace all" Click="OnReplaceAllClick" AutomationProperties.Name="Replace all matches" />
+            <Button Grid.Column="1" KeyboardNavigation.TabIndex="13" Classes="flat icon-button" Click="OnFindCloseClick" AutomationProperties.Name="Close find" ToolTip.Tip="Close find"><views:VectorIcon Kind="Close" /></Button>
+            <WrapPanel Grid.Row="1" x:Name="ReplaceRow" ItemSpacing="{DynamicResource Tern.Space.4}" LineSpacing="{DynamicResource Tern.Space.4}">
+              <TextBox x:Name="ReplaceBox" KeyboardNavigation.TabIndex="1" Width="180" PlaceholderText="Replace with" TextChanged="OnFindTextChanged" KeyDown="OnFindKeyDown" AutomationProperties.Name="Replacement text" />
+              <Button x:Name="ReplaceCurrentButton" KeyboardNavigation.TabIndex="2" Content="Replace" Click="OnReplaceClick" AutomationProperties.Name="Replace this match" />
+              <Button x:Name="ReplaceAllButton" KeyboardNavigation.TabIndex="3" Content="Replace all" Click="OnReplaceAllClick" AutomationProperties.Name="Replace all matches" ToolTip.ShowOnDisabled="True" ToolTip.Tip="Replace all matches (Ctrl+Alt+Enter while focus is in Find or Replace)" />
             </WrapPanel>
-            <ListBox x:Name="FindResults" Grid.Row="2" Grid.ColumnSpan="2" IsVisible="False" MaxHeight="160" SelectionChanged="OnFindResultSelected" KeyDown="OnFindResultsKeyDown" AutomationProperties.Name="Matches in current note" />
+            <ListBox x:Name="FindResults" KeyboardNavigation.TabIndex="14" Grid.Row="2" Grid.ColumnSpan="2" IsVisible="False" MaxHeight="160" SelectionChanged="OnFindResultSelected" KeyDown="OnFindResultsKeyDown" AutomationProperties.Name="Matches in current note" />
           </Grid>
         </Border>
 
         <StackPanel Grid.Row="2">
         <Border x:Name="FirstNoteChecklist" IsVisible="False" Padding="10,6" Background="{DynamicResource Tern.Panel}">
-          <WrapPanel ItemSpacing="12" LineSpacing="6">
+          <WrapPanel ItemSpacing="{DynamicResource Tern.Space.12}" LineSpacing="{DynamicResource Tern.Space.4}">
             <TextBlock x:Name="FirstHeadingStep" Text="○ Write a heading" VerticalAlignment="Center" />
             <TextBlock x:Name="FirstPreviewStep" Text="○ Preview your note" VerticalAlignment="Center" />
             <TextBlock x:Name="FirstSaveStep" Text="○ Save your note" VerticalAlignment="Center" />
@@ -539,9 +725,28 @@
           </WrapPanel>
         </Border>
         <Border x:Name="DocumentProblem" IsVisible="False" Padding="10,6" Background="{DynamicResource Tern.ErrorBackground}">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{DynamicResource Tern.Space.8}">
             <TextBlock x:Name="DocumentProblemText" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
-            <Button Grid.Column="1" Content="Details / save copy…" Click="OnProtectionClick" />
+            <StackPanel x:Name="ChangedOnDiskActions" Grid.Column="1" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}" IsVisible="False">
+              <Button x:Name="ChangedCompareButton" Content="Compare…" Click="OnChangedCompareClick" ToolTip.Tip="Review your version and the disk version side by side" AutomationProperties.Name="Compare my version with the version on disk" />
+              <Button x:Name="ChangedReloadButton" Content="Reload" Click="OnChangedReloadClick" ToolTip.Tip="Replace the editor text with the version on disk" AutomationProperties.Name="Reload the version on disk" />
+              <Button x:Name="ChangedKeepMineButton" Content="Keep mine" Click="OnChangedKeepMineClick" ToolTip.Tip="Replace the file on disk with your version; the disk version is kept in History" AutomationProperties.Name="Keep my version and replace the file on disk" />
+            </StackPanel>
+            <Button Grid.Column="2" Content="Details / save copy…" Click="OnProtectionClick" />
+          </Grid>
+        </Border>
+        <Border x:Name="RemoteImagesBanner" IsVisible="False" Padding="10,6" Background="{DynamicResource Tern.Panel}">
+          <WrapPanel ItemSpacing="{DynamicResource Tern.Space.8}" LineSpacing="{DynamicResource Tern.Space.4}">
+            <TextBlock x:Name="RemoteImagesText" VerticalAlignment="Center" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+            <Button x:Name="LoadRemoteImagesOnce" Content="Load once" Click="OnLoadRemoteImagesOnce" />
+            <Button x:Name="AlwaysLoadRemoteImages" Content="Always for this file" Click="OnAlwaysLoadRemoteImages" />
+          </WrapPanel>
+        </Border>
+        <Border x:Name="NotificationBanner" IsVisible="False" Padding="10,6" Background="{DynamicResource Tern.ErrorBackground}">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{DynamicResource Tern.Space.8}">
+            <TextBlock x:Name="NotificationBannerText" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+            <StackPanel x:Name="NotificationBannerActions" Grid.Column="1" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}" />
+            <Button x:Name="NotificationBannerDismiss" Grid.Column="2" Content="Dismiss" Click="OnDismissBannerClick" AutomationProperties.Name="Dismiss notification" />
           </Grid>
         </Border>
         </StackPanel>
@@ -558,14 +763,15 @@
                     <WrapPanel x:Name="AuthoringExtras" Orientation="Horizontal">
                       <Button Content="List" Classes="flat" Tag="format.bullet" Click="OnMenuCommandClick" AutomationProperties.Name="Bullet list" />
                       <Button Content="1." Classes="flat" Tag="format.numbered" Click="OnMenuCommandClick" AutomationProperties.Name="Numbered list" />
-                      <Button Content="☐" Classes="flat" Tag="format.task" Click="OnMenuCommandClick" AutomationProperties.Name="Checklist" />
+                      <Button Classes="flat icon-button" Tag="format.task" Click="OnMenuCommandClick" AutomationProperties.Name="Checklist" ToolTip.Tip="Checklist"><views:VectorIcon Kind="Checkbox" /></Button>
                       <Button Content="Link" Classes="flat" Tag="format.link" Click="OnMenuCommandClick" AutomationProperties.Name="Insert link" />
                       <Button Content="Image" Classes="flat" Tag="insert.image" Click="OnMenuCommandClick" AutomationProperties.Name="Insert image" />
                       <Button Content="Table" Classes="flat" Tag="insert.table" Click="OnMenuCommandClick" AutomationProperties.Name="Insert table" />
                       <Button Content="Code" Classes="flat" Tag="insert.codeBlock" Click="OnMenuCommandClick" AutomationProperties.Name="Code block" />
                     </WrapPanel>
                     <Button x:Name="AuthoringMore" Content="More…" Classes="flat" AutomationProperties.Name="More formatting commands" />
-                    <Button Content="?" Classes="flat" Tag="view.source" Click="OnFeatureHelpClick" AutomationProperties.Name="Source editor help" />
+                    <Button x:Name="TableActions" Content="Table tools" Classes="flat" IsVisible="False" AutomationProperties.Name="Table editing commands" />
+                    <Button Classes="flat icon-button" views:Help.Feature="view.source" ToolTip.Tip="Help: Source view" Click="OnFeatureHelpClick" AutomationProperties.Name="Source editor help"><views:VectorIcon Kind="Help" /></Button>
                 </WrapPanel>
               </Border>
             <editing:AccessibleMarkdownEditor x:Name="Editor" Grid.Row="1" Background="Transparent" Foreground="{DynamicResource Tern.Text}"
@@ -580,42 +786,50 @@
               <Border Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,0,0,1" Padding="14,8">
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock x:Name="ReadingPaneLabel" Classes="caps" Text="READING PREVIEW" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}">
                     <Button Content="Options" Classes="flat" AutomationProperties.Name="Reading options">
-                      <Button.Flyout><Flyout><StackPanel Spacing="8">
+                      <Button.Flyout><Flyout FlyoutPresenterClasses="tern-popup"><StackPanel Margin="16" MinWidth="300" Spacing="{DynamicResource Tern.Space.8}">
+                        <TextBlock Classes="caps" Text="READING OPTIONS" />
                         <CheckBox x:Name="SyncScrollingCheck" Content="Sync Source and Reading scrolling" Click="OnSyncScrollingClick" />
                         <CheckBox x:Name="FullReadingWidthCheck" Content="Use full reading width" Click="OnReadingWidthClick" />
-                        <Button Content="Edit source" Tag="view.source" Click="OnMenuCommandClick" />
-                        <WrapPanel><Button Content="Beginning" Tag="top" Click="OnReadingNavigationClick" /><Button Content="Previous page" Tag="up" Click="OnReadingNavigationClick" /><Button Content="Next page" Tag="down" Click="OnReadingNavigationClick" /></WrapPanel>
+                        <Separator />
+                        <WrapPanel x:Name="ReadingFlyoutNav" ItemSpacing="{DynamicResource Tern.Space.8}" LineSpacing="{DynamicResource Tern.Space.8}"><Button Content="Go to top" Tag="top" Click="OnReadingNavigationClick" /><Button Content="Page up" Tag="up" Click="OnReadingNavigationClick" /><Button Content="Page down" Tag="down" Click="OnReadingNavigationClick" /></WrapPanel>
+                        <Button Content="Edit source" Tag="view.source" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnMenuCommandClick" />
                       </StackPanel></Flyout></Button.Flyout>
                     </Button>
-                    <StackPanel x:Name="ReadingNavActions" Orientation="Horizontal" Spacing="2">
-                    <Button Content="Top" Classes="flat" Tag="top" Click="OnReadingNavigationClick" ToolTip.Tip="Go to the beginning of the document (Home)" AutomationProperties.Name="Go to document beginning" />
-                    <Button Content="↑" Classes="flat" Tag="up" Click="OnReadingNavigationClick" ToolTip.Tip="Scroll up one page (Page Up)" AutomationProperties.Name="Previous reading page" />
-                    <Button Content="↓" Classes="flat" Tag="down" Click="OnReadingNavigationClick" ToolTip.Tip="Scroll down one page (Page Down)" AutomationProperties.Name="Next reading page" />
-                    <Button Content="?" Classes="flat" Tag="view.reading" Click="OnFeatureHelpClick" AutomationProperties.Name="Reading preview help" />
-                    <Button Content="›" Classes="flat" Tag="view.source" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Reading preview. Restore with Split or Reading above." AutomationProperties.Name="Collapse Reading preview" />
+                    <StackPanel x:Name="ReadingNavActions" Orientation="Horizontal" Spacing="{DynamicResource Tern.Space.4}">
+                    <Button Content="Go to top" Classes="flat" Tag="top" Click="OnReadingNavigationClick" ToolTip.Tip="Go to top (Home)" AutomationProperties.Name="Go to top" />
+                    <Button Classes="flat icon-button" Tag="up" Click="OnReadingNavigationClick" ToolTip.Tip="Page up (Page Up)" AutomationProperties.Name="Page up"><views:VectorIcon Kind="ArrowUp" /></Button>
+                    <Button Classes="flat icon-button" Tag="down" Click="OnReadingNavigationClick" ToolTip.Tip="Page down (Page Down)" AutomationProperties.Name="Page down"><views:VectorIcon Kind="ArrowDown" /></Button>
+                    <Button Classes="flat icon-button" views:Help.Feature="view.reading" ToolTip.Tip="Help: Reading view" Click="OnFeatureHelpClick" AutomationProperties.Name="Reading preview help"><views:VectorIcon Kind="Help" /></Button>
+                    <Button Classes="flat icon-button" Tag="view.source" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Reading preview. Restore with Split or Reading above." AutomationProperties.Name="Collapse Reading preview"><views:VectorIcon Kind="ChevronRight" /></Button>
                     </StackPanel>
                   </StackPanel>
                 </Grid>
               </Border>
               <pv:PreviewView x:Name="Preview" Grid.Row="1" AutomationProperties.Name="Document preview" />
+              <Border x:Name="PreviewProblem" Grid.Row="1" IsVisible="False" Background="{DynamicResource Tern.Preview.Background}" Padding="20">
+                <StackPanel Spacing="{DynamicResource Tern.Space.12}" VerticalAlignment="Center">
+                  <TextBlock x:Name="PreviewProblemText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                  <Button Content="Rebuild preview" Click="OnRetryPreviewClick" HorizontalAlignment="Left" />
+                </StackPanel>
+              </Border>
             </Grid>
           </Border>
             <ScrollViewer Grid.ColumnSpan="3" IsVisible="{Binding IsVisible, ElementName=EmptyText}" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Center">
-              <StackPanel x:Name="EmptyText" Spacing="16" MaxWidth="680" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="32" />
+              <StackPanel x:Name="EmptyText" Spacing="{DynamicResource Tern.Space.16}" MaxWidth="680" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="32" />
             </ScrollViewer>
         </Grid>
-        <GridSplitter x:Name="ReferenceSplitter" Grid.Column="1" Width="4" ResizeDirection="Columns" IsVisible="False" AutomationProperties.Name="Resize reference pane" />
+        <GridSplitter x:Name="ReferenceSplitter" Grid.Column="1" Width="7" ResizeDirection="Columns" IsVisible="False" AutomationProperties.Name="Resize reference pane" />
         <Border x:Name="ReferencePane" Grid.Column="2" IsVisible="False" Background="{DynamicResource Tern.Surface}">
           <Grid RowDefinitions="Auto,*">
-            <StackPanel Background="{DynamicResource Tern.Panel}" Margin="8" Spacing="6">
+            <StackPanel Background="{DynamicResource Tern.Panel}" Margin="8" Spacing="{DynamicResource Tern.Space.4}">
               <TextBlock Text="REFERENCE · READ ONLY" Classes="caps" />
               <Grid ColumnDefinitions="*,Auto">
               <ComboBox x:Name="ReferenceTabs" HorizontalAlignment="Stretch" SelectionChanged="OnReferenceTabChanged" AutomationProperties.Name="Reference document">
                 <ComboBox.ItemTemplate><DataTemplate x:DataType="docs:DocumentTab"><TextBlock Text="{Binding DisplayName}" /></DataTemplate></ComboBox.ItemTemplate>
               </ComboBox>
-              <Button Grid.Column="1" Content="✕" Classes="flat" Click="OnCloseReferenceClick" AutomationProperties.Name="Close reference pane" />
+              <Button Grid.Column="1" Classes="flat icon-button" Click="OnCloseReferenceClick" AutomationProperties.Name="Close reference pane" ToolTip.Tip="Close reference pane"><views:VectorIcon Kind="Close" /></Button>
               </Grid>
             </StackPanel>
             <editing:AccessibleMarkdownEditor x:Name="ReferenceEditor" Grid.Row="1" IsReadOnly="True" ShowLineNumbers="True" Background="Transparent" Foreground="{DynamicResource Tern.Text}" LineNumbersForeground="{DynamicResource Tern.Muted}" Padding="8,12" AutomationProperties.Name="Reference source, read only" />
@@ -634,15 +848,15 @@
         </Border.Resources>
         <Grid RowDefinitions="Auto,*" Margin="12,18">
           <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,16">
-            <StackPanel Spacing="4"><TextBlock Text="Inspector" FontSize="{DynamicResource Tern.SectionFontSize}" FontWeight="SemiBold" /><TextBlock Text="Navigate. Understand. Review." TextWrapping="Wrap" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" /></StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal"><Button Content="?" Classes="flat" Tag="inspector.outline" Click="OnFeatureHelpClick" AutomationProperties.Name="Inspector help" /><Button Content="›" Classes="flat" Tag="view.toggleRightPanel" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Inspector. Restore with View → Outline Panel." AutomationProperties.Name="Collapse Inspector" /></StackPanel>
+            <StackPanel Spacing="{DynamicResource Tern.Space.4}"><TextBlock Text="Inspector" FontSize="{DynamicResource Tern.FontSize.Section}" FontWeight="SemiBold" /><TextBlock Text="Navigate. Understand. Review." TextWrapping="Wrap" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" /></StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal"><Button Classes="flat icon-button" views:Help.Feature="inspector.outline" ToolTip.Tip="Help: Inspector" Click="OnFeatureHelpClick" AutomationProperties.Name="Inspector help"><views:VectorIcon Kind="Help" /></Button><Button Classes="flat icon-button" Tag="view.toggleRightPanel" Click="OnMenuCommandClick" ToolTip.Tip="Collapse Inspector. Restore with View → Inspector." AutomationProperties.Name="Collapse Inspector"><views:VectorIcon Kind="ChevronRight" /></Button></StackPanel>
           </Grid>
-          <TabControl x:Name="InspectorContent" Grid.Row="1" AutomationProperties.Name="Document inspector sections" FontSize="{DynamicResource Tern.SmallFontSize}">
+          <TabControl x:Name="InspectorContent" Grid.Row="1" AutomationProperties.Name="Document inspector sections" FontSize="{DynamicResource Tern.FontSize.Caption}">
           <TabItem Header="Outline" ToolTip.Tip="Navigate document headings">
-            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="0,12,0,0" RowSpacing="8">
-              <StackPanel Spacing="3">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="0,12,0,0" RowSpacing="{DynamicResource Tern.Space.8}">
+              <StackPanel Spacing="{DynamicResource Tern.Space.4}">
                 <TextBlock Text="On this page" FontWeight="SemiBold" />
-                <TextBlock x:Name="OutlineCount" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
+                <TextBlock x:Name="OutlineCount" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" />
                 <TextBlock x:Name="OutlineCurrent" TextWrapping="Wrap" Classes="muted" AutomationProperties.Name="Current document section" />
               </StackPanel>
               <TextBox x:Name="OutlineSearchBox" Grid.Row="1" PlaceholderText="Search headings" TextChanged="OnOutlineSearchChanged" AutomationProperties.Name="Search outline headings">
@@ -652,12 +866,12 @@
                 </TextBox.InnerLeftContent>
               </TextBox>
               <TextBlock x:Name="OutlineEmpty" Grid.Row="2" Text="Add # headings in Source to create an outline." Classes="muted" TextWrapping="Wrap" />
-            <ListBox x:Name="OutlineList" Grid.Row="3" SelectionChanged="OnOutlineSelectionChanged" AutomationProperties.Name="Document outline">
+            <ListBox x:Name="OutlineList" Grid.Row="3" SelectionChanged="OnOutlineSelectionChanged" ContextRequested="OnOutlineContextRequested" AutomationProperties.Name="Document outline">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:OutlineRow">
-                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="{Binding Indent}" ToolTip.Tip="{Binding Text}">
-                    <Border Background="{DynamicResource Tern.AccentSoft}" CornerRadius="4" Padding="4,1" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding LevelLabel}" Foreground="{DynamicResource Tern.Accent}" FontSize="{DynamicResource Tern.SmallFontSize}" />
+                  <Grid ColumnDefinitions="Auto,*" ColumnSpacing="{DynamicResource Tern.Space.8}" Margin="{Binding Indent}" ToolTip.Tip="{Binding Text}">
+                    <Border Background="{DynamicResource Tern.AccentSoft}" CornerRadius="{DynamicResource Tern.Radius.Control}" Padding="4,1" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding LevelLabel}" Foreground="{DynamicResource Tern.Accent}" FontSize="{DynamicResource Tern.FontSize.Caption}" />
                     </Border>
                     <TextBlock Grid.Column="1" Text="{Binding Text}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                   </Grid>
@@ -667,12 +881,12 @@
             </Grid>
           </TabItem>
           <TabItem Header="Links" ToolTip.Tip="Check targets and repair broken links">
-            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="0,12,0,0" RowSpacing="8">
-            <StackPanel Spacing="3">
+            <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto,*" Margin="0,12,0,0" RowSpacing="{DynamicResource Tern.Space.8}">
+            <StackPanel Spacing="{DynamicResource Tern.Space.4}">
               <TextBlock Text="Document links" FontWeight="SemiBold" />
-              <WrapPanel ItemSpacing="8">
-                <TextBlock x:Name="LinksCount" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
-                <TextBlock x:Name="LinksSummary" Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" />
+              <WrapPanel ItemSpacing="{DynamicResource Tern.Space.8}">
+                <TextBlock x:Name="LinksCount" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" />
+                <TextBlock x:Name="LinksSummary" Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" />
               </WrapPanel>
             </StackPanel>
             <TextBox x:Name="LinksSearchBox" Grid.Row="1" PlaceholderText="Search label or destination" TextChanged="OnLinksSearchChanged" AutomationProperties.Name="Search document links">
@@ -685,10 +899,10 @@
             <ListBox x:Name="LinkList" Grid.Row="3" SelectionChanged="OnLinkListSelectionChanged" AutomationProperties.Name="Links in document">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:LinkRowView">
-                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="3" ToolTip.Tip="{Binding Destination}">
+                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="{DynamicResource Tern.Space.8}" RowSpacing="{DynamicResource Tern.Space.4}" ToolTip.Tip="{Binding Destination}">
                     <TextBlock Text="{Binding Text}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                    <Border Grid.Column="1" CornerRadius="4" Padding="4,1" Background="{DynamicResource Tern.AccentSoft}">
-                      <TextBlock Text="{Binding Status}" Classes.broken="{Binding IsBroken}" FontSize="{DynamicResource Tern.SmallFontSize}">
+                    <Border Grid.Column="1" CornerRadius="{DynamicResource Tern.Radius.Control}" Padding="4,1" Background="{DynamicResource Tern.AccentSoft}">
+                      <TextBlock Text="{Binding Status}" Classes.broken="{Binding IsBroken}" FontSize="{DynamicResource Tern.FontSize.Caption}">
                         <TextBlock.Styles>
                           <Style Selector="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Tern.Accent}" /></Style>
                           <Style Selector="TextBlock.broken"><Setter Property="Foreground" Value="{DynamicResource Tern.Danger}" /></Style>
@@ -696,85 +910,108 @@
                       </TextBlock>
                     </Border>
                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Destination}" Classes="muted"
-                               FontSize="{DynamicResource Tern.SmallFontSize}" TextTrimming="CharacterEllipsis" />
+                               FontSize="{DynamicResource Tern.FontSize.Caption}" TextTrimming="CharacterEllipsis" />
                   </Grid>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <StackPanel Grid.Row="4" Spacing="6">
+            <StackPanel Grid.Row="4" Spacing="{DynamicResource Tern.Space.4}">
                 <TextBox x:Name="LinkDetails" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" IsVisible="False" AutomationProperties.Name="Selected link details" />
                 <Button x:Name="RepairLinkButton" Content="Repair selected link…" IsEnabled="False" Click="OnRepairLinkClick" AutomationProperties.Name="Repair selected broken link" />
-              <Button x:Name="RelatedNotesButton" Content="Suggest related notes…" Click="OnRelatedNotesClick" IsVisible="False" />
+              <Button x:Name="RelatedNotesButton" Content="Suggest related documents…" Click="OnRelatedNotesClick" IsVisible="False" />
+              <WrapPanel ItemSpacing="{DynamicResource Tern.Space.4}">
+                <Button Content="Unlinked mentions" Tag="Mentions" Click="OnKnowledgeNavClick" ToolTip.Tip="Find title or alias text without an incoming link" />
+                <Button Content="Local graph" Tag="Graph" Click="OnKnowledgeNavClick" ToolTip.Tip="Show one-hop incoming and outgoing neighbours" />
+              </WrapPanel>
             </StackPanel>
+            <StackPanel Grid.Row="5" Spacing="{DynamicResource Tern.Space.4}">
+              <TextBlock x:Name="InspectorBacklinksTitle" Text="Linked from (0)" FontWeight="SemiBold" />
+              <TextBlock x:Name="InspectorBacklinksEmpty" Text="No incoming workspace links to this file." Classes="muted" TextWrapping="Wrap" />
+            </StackPanel>
+            <ListBox x:Name="InspectorBacklinks" Grid.Row="6" SelectionChanged="OnInspectorBacklinkSelected" AutomationProperties.Name="Linked from">
+              <ListBox.ItemTemplate><DataTemplate x:DataType="vm:SideRow">
+                <StackPanel ToolTip.Tip="{Binding Path}">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap" />
+                </StackPanel>
+              </DataTemplate></ListBox.ItemTemplate>
+            </ListBox>
             </Grid>
           </TabItem>
           <TabItem Header="Details" ToolTip.Tip="Document statistics and tags">
-            <ScrollViewer><StackPanel Margin="0,12,0,0" Spacing="18">
-            <Border Classes="card" Padding="14"><StackPanel Spacing="14">
+            <ScrollViewer><StackPanel Margin="0,12,0,0" Spacing="{DynamicResource Tern.Space.16}">
+            <Border Classes="card" Padding="14"><StackPanel Spacing="{DynamicResource Tern.Space.12}">
             <TextBlock Classes="caps" Text="DOCUMENT INFO" />
-            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="12">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="{DynamicResource Tern.Space.12}">
               <TextBlock Text="Words" Classes="muted" />
               <TextBlock x:Name="InfoWords" Grid.Column="1" />
               <TextBlock Grid.Row="1" Text="Reading time" Classes="muted" />
               <TextBlock x:Name="InfoRead" Grid.Row="1" Grid.Column="1" />
               <TextBlock Grid.Row="2" Text="Modified" Classes="muted" />
               <TextBlock x:Name="InfoModified" Grid.Row="2" Grid.Column="1" />
+              <TextBlock Grid.Row="3" Text="Words written this session (net)" Classes="muted" TextWrapping="Wrap" />
+              <TextBlock x:Name="InfoSessionWords" Grid.Row="3" Grid.Column="1" />
+              <TextBlock Grid.Row="4" Text="Word target" Classes="muted" />
+              <TextBlock x:Name="InfoWordTarget" Grid.Row="4" Grid.Column="1" />
             </Grid>
             </StackPanel></Border>
-            <Border Classes="card" Padding="14"><StackPanel Spacing="12">
+            <Border Classes="card" Padding="14"><StackPanel Spacing="{DynamicResource Tern.Space.12}">
             <TextBlock Classes="caps" Text="TAGS" />
             <TextBlock x:Name="TagsEmpty" Text="No tags found. Add supported tag metadata to organize your document." TextWrapping="Wrap" Classes="muted" />
-            <Button x:Name="EditTagsButton" Content="Add / edit tags and metadata…" Click="OnEditTagsClick" />
+            <Button x:Name="EditTagsButton" Content="Edit tags…" Click="OnEditTagsClick" />
             <ItemsControl x:Name="TagList" AutomationProperties.Name="Tags">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="x:String">
-                  <Border Background="{DynamicResource Tern.AccentSoft}" CornerRadius="10" Padding="9,2" Margin="0,0,6,6">
-                    <TextBlock Text="{Binding}" Foreground="{DynamicResource Tern.Accent}" FontSize="{DynamicResource Tern.SmallFontSize}" />
-                  </Border>
+                  <Button Classes="flat" Click="OnTagSearchClick" Background="{DynamicResource Tern.AccentSoft}" CornerRadius="{DynamicResource Tern.Radius.Card}" Padding="9,2" Margin="0,0,6,6" ToolTip.Tip="Search this tag in the workspace">
+                    <TextBlock Text="{Binding}" Foreground="{DynamicResource Tern.Accent}" FontSize="{DynamicResource Tern.FontSize.Caption}" />
+                  </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Button Content="Learn about tags" Classes="flat" HorizontalAlignment="Left" Tag="inspector.tags" Click="OnFeatureHelpClick" />
+            <Button Content="Learn about tags" Classes="flat" HorizontalAlignment="Left" views:Help.Feature="inspector.tags" ToolTip.Tip="Help: Tags" Click="OnFeatureHelpClick" />
             </StackPanel></Border>
             </StackPanel></ScrollViewer>
           </TabItem>
           <TabItem Header="History" ToolTip.Tip="Review saved versions safely">
             <ScrollViewer>
-              <StackPanel Margin="0,12,0,0" Spacing="10">
+              <StackPanel Margin="0,12,0,0" Spacing="{DynamicResource Tern.Space.8}">
                 <TextBlock Text="Saved versions" FontWeight="SemiBold" />
                 <TextBlock Text="Compare an earlier save with the draft you have open." TextWrapping="Wrap" Classes="muted" />
                 <Border Classes="card" Padding="12">
-                  <StackPanel Spacing="7">
+                  <StackPanel Spacing="{DynamicResource Tern.Space.8}">
                     <TextBlock Text="How to use History" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <TextBlock Text="1. Edit and save your file in Tern.&#10;2. Open History and choose a version to compare.&#10;3. Choose Open as copy to work in a separate unsaved tab." TextWrapping="Wrap" />
                   </StackPanel>
                 </Border>
                 <TextBlock x:Name="HistoryStartHint" Text="Save this draft to a file to start its history." TextWrapping="Wrap" Classes="muted" />
                 <Button x:Name="HistoryOpenButton" Content="Open version history" Classes="accent" Tag="file.history" Click="OnMenuCommandClick" AutomationProperties.Name="Document version history" />
-                <Button Content="How version history works" Classes="flat" Tag="file.history" Click="OnFeatureHelpClick" HorizontalAlignment="Left" />
+                <Button Content="How version history works" Classes="flat" views:Help.Feature="file.history" ToolTip.Tip="Help: Version history" Click="OnFeatureHelpClick" HorizontalAlignment="Left" />
               </StackPanel>
             </ScrollViewer>
           </TabItem>
           </TabControl>
-        <TextBlock x:Name="InspectorEmpty" Grid.Row="1" Text="Your document, at a glance.&#10;&#10;Open a file to navigate its outline, check links, inspect tags and review saved versions." Classes="muted" FontSize="{DynamicResource Tern.SmallFontSize}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12" />
+        <TextBlock x:Name="InspectorEmpty" Grid.Row="1" Text="Your document, at a glance.&#10;&#10;Open a file to navigate its outline, check links, inspect tags and review saved versions." Classes="muted" FontSize="{DynamicResource Tern.FontSize.Caption}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12" />
         </Grid>
       </Border>
-
-      <Grid x:Name="OverlayLayer" Grid.ColumnSpan="5" IsVisible="False" Background="#66000000"
-            KeyboardNavigation.TabNavigation="Cycle" PointerPressed="OnOverlayPressed" />
     </Grid>
 
     <!-- Status bar -->
     <Border x:Name="StatusBar" Grid.Row="3" Background="{DynamicResource Tern.Panel}" BorderBrush="{DynamicResource Tern.Border}" BorderThickness="0,1,0,0" MinHeight="36">
       <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="12,3">
         <TextBlock x:Name="StatusPath" VerticalAlignment="Center" Classes="muted" Margin="0,0,12,0" TextTrimming="CharacterEllipsis" AutomationProperties.Name="File path" />
-        <WrapPanel x:Name="StatusFields" Grid.Column="1" ItemSpacing="12" LineSpacing="6" VerticalAlignment="Center">
+        <WrapPanel x:Name="StatusFields" Grid.Column="1" ItemSpacing="{DynamicResource Tern.Space.12}" LineSpacing="{DynamicResource Tern.Space.4}" VerticalAlignment="Center">
+          <ToggleButton x:Name="OfflineToggle" Content="Offline" Classes="seg" Padding="4,0" MinHeight="32" Click="OnOfflineToggle" ToolTip.Tip="Block remote images, URL imports, AI, MCP and Copilot" AutomationProperties.Name="Offline mode" />
           <Button x:Name="ActivityButton" Content="Activity" Classes="flat" Click="OnActivityClick" AutomationProperties.Name="Session activity and notifications" />
-          <TextBlock x:Name="StatusMessage" VerticalAlignment="Center" Classes="muted" MaxWidth="260" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-          <TextBlock x:Name="StatusPosition" VerticalAlignment="Center" Classes="muted" AutomationProperties.Name="Cursor position" />
+          <Button x:Name="StatusMessageButton" Classes="flat" Padding="4,0" VerticalAlignment="Center" VerticalContentAlignment="Center" Click="OnActivityClick" AutomationProperties.Name="Status message. Open activity" ToolTip.Tip="Open activity">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock x:Name="StatusGlyph" VerticalAlignment="Center" FontWeight="Bold" IsVisible="False" />
+              <TextBlock x:Name="StatusMessage" VerticalAlignment="Center" Classes="muted" MaxWidth="260" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+          </Button>
+          <TextBlock x:Name="StatusPosition" VerticalAlignment="Center" Classes="muted" AutomationProperties.Name="Cursor position" AutomationProperties.LiveSetting="Polite" />
           <TextBlock x:Name="StatusWords" VerticalAlignment="Center" Classes="muted" />
           <Button x:Name="StatusEncoding" Classes="flat" Padding="4,0" VerticalAlignment="Center" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Click="OnEncodingClick" AutomationProperties.Name="Change encoding" />
           <Button x:Name="StatusLineEnding" Classes="flat" Padding="4,0" VerticalAlignment="Center" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Click="OnLineEndingClick" AutomationProperties.Name="Line endings" />
@@ -786,5 +1023,11 @@
       </Grid>
     </Border>
     <views:GuidanceStrip x:Name="ContextGuidance" Grid.Row="4" Margin="12,0,12,6" />
+
+    <Canvas x:Name="ChromeMotionLayer" Grid.Row="0" Grid.RowSpan="5" IsHitTestVisible="False" ClipToBounds="True" />
+
+    <!-- Overlay layer spans every row so the scrim covers the title bar, menus, toolbars and status bar (SB-03). -->
+    <Grid x:Name="OverlayLayer" Grid.Row="0" Grid.RowSpan="5" IsVisible="False" Background="{DynamicResource Tern.Scrim}"
+          KeyboardNavigation.TabNavigation="Cycle" PointerPressed="OnOverlayPressed" />
   </Grid>
 </Window>

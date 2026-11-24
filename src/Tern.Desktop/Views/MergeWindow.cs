@@ -32,13 +32,13 @@ public sealed class MergeWindow : Window
     private readonly TextBox _mine = Pane("My version");
     private readonly TextBox _disk = Pane("Version on disk");
     private readonly TextBox _result = new() { AcceptsReturn = true, FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"), MinHeight = 160 };
-    private readonly StackPanel _choices = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+    private readonly StackPanel _choices = new() { Orientation = Orientation.Horizontal, [!StackPanel.SpacingProperty] = GuideParts.Space(4).ToBinding() };
     private string _generated = string.Empty;
     private readonly Button _accept = new() { Content = "Accept merged text", IsDefault = true, Classes = { "accent" } };
     private readonly TextBlock _summary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBox _differences = Pane("Selected conflict line changes");
 
-    public MergeWindow(string name, MergeResult merge)
+    public MergeWindow(string name, MergeResult merge, bool savesOnAccept = false)
     {
         _merge = merge;
         _conflicts = [.. merge.Regions.OfType<ConflictRegion>()];
@@ -47,7 +47,7 @@ public sealed class MergeWindow : Window
             _picks[conflict] = Pick.Unreviewed;
         }
 
-        DialogParts.Setup(this, $"Merge changes – {name}", 1000, 700);
+        DialogParts.Setup(this, $"Merge changes — {name}", 1000, 700, DialogGuidance.Merge);
         MinWidth = 700;
         MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -72,7 +72,7 @@ public sealed class MergeWindow : Window
         AutomationProperties.SetName(cancel, "Cancel merge");
         cancel.Click += (_, _) => Close((string?)null);
 
-        var panes = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), ColumnSpacing = 8, MinHeight = 180 };
+        var panes = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding(), MinHeight = 180 };
         panes.Children.Add(LabeledPane("Original saved text", _base));
         var minePane = LabeledPane("Your current edits", _mine);
         var diskPane = LabeledPane("Changed file on disk", _disk);
@@ -97,7 +97,7 @@ public sealed class MergeWindow : Window
             UpdateReview();
         };
 
-        var right = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto,2*"), RowSpacing = 8 };
+        var right = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto,2*"), [!Grid.RowSpacingProperty] = GuideParts.Space(8).ToBinding() };
         // Child minima alone do not constrain star-row allocation. Reserve the
         // comparison and editable-result rows so their controls cannot overflow
         // into the summary or choice buttons when the window fits its content.
@@ -113,20 +113,20 @@ public sealed class MergeWindow : Window
         Grid.SetRow(right.Children[3], 3);
         Grid.SetRow(_result, 4);
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8, Children = { cancel, _accept } };
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 12 };
+        var buttons = GuideParts.Actions(_accept, cancel);
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(12).ToBinding() };
         _list.MaxHeight = 200;
         _differences.MaxHeight = 180;
         _differences[!TextBox.BackgroundProperty] = this.GetResourceObservable("Tern.WarningBackground").ToBinding();
-        var conflicts = new StackPanel { Spacing = 8, MaxWidth = 170, IsVisible = _conflicts.Count > 0, Children =
+        var conflicts = new StackPanel { [!StackPanel.SpacingProperty] = GuideParts.Space(8).ToBinding(), MaxWidth = 170, IsVisible = _conflicts.Count > 0, Children =
         { new WrapPanel { Children = { previous, next } }, _list, manual,
           new Expander { Header = "Line changes (+/−)", Content = _differences },
-          new TextBlock { Text = "Accept returns the merged text to the editor. Review and Save separately.", TextWrapping = TextWrapping.Wrap } } };
+          new TextBlock { Text = savesOnAccept ? "Accept applies the merged text and saves it to the file." : "Accept puts the merged text in the editor and leaves it unsaved. Review it, then Save.", TextWrapping = TextWrapping.Wrap } } };
         body.Children.Add(new ScrollViewer { Content = conflicts, IsVisible = _conflicts.Count > 0 });
         body.Children.Add(right);
         Grid.SetColumn(right, 1);
 
-        var root = new Grid { Margin = new Thickness(16), RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 12 };
+        var root = new Grid { Margin = new Thickness(16), RowDefinitions = new RowDefinitions("*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(12).ToBinding() };
         root.Children.Add(body);
         root.Children.Add(buttons);
         Grid.SetRow(buttons, 1);
@@ -142,7 +142,7 @@ public sealed class MergeWindow : Window
 
     private static Grid LabeledPane(string label, Control source)
     {
-        var pane = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), RowSpacing = 6 };
+        var pane = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), [!Grid.RowSpacingProperty] = GuideParts.Space(4).ToBinding() };
         pane.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold });
         pane.Children.Add(source); Grid.SetRow(source, 1);
         return pane;
@@ -212,7 +212,7 @@ public sealed class MergeWindow : Window
     private void Rebuild() => _result.Text = _generated = _merge.Render(c => _picks[c] switch
     {
         Pick.Disk => c.Disk,
-        Pick.Both => c.Mine + c.Disk,
+        Pick.Both => c.Both(_merge.NewLine),
         Pick.Base => c.Base,
         _ => c.Mine,
     });

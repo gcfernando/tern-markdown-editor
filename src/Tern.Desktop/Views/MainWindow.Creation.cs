@@ -22,26 +22,39 @@ public partial class MainWindow
             return OutsideCreationError(parent);
         }
         await new CreateItemWindow(kind, initialParent, initialOwner is null, Validate, locations,
-            async request =>
+            async (request, physicalCreationCompleted) =>
             {
                 if (_windowClosed) return "The main window closed. Nothing was created.";
                 if (Validate(request.Parent) is { } problem) return problem;
-                return await PerformCreationAsync(kind, request, Owner(request.Parent));
+                return await PerformCreationAsync(kind, request, Owner(request.Parent), physicalCreationCompleted);
             }).ShowDialog<CreatedItemRequest?>(this);
     }
 
-    private async Task<string?> PerformCreationAsync(CreateItemKind kind, CreatedItemRequest request, WorkspaceSession? owner)
+    private async void OnImportWorkspaceFilesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: Tern.Desktop.ViewModels.TreeRow row }) return;
+        var owner = _shell.OpenWorkspaces.FirstOrDefault(workspace => WorkspacePaths.PathsEqual(workspace.Root, row.FullPath));
+        if (owner is null) { _shell.SetStatus("The destination was closed. Reopen it before importing.", StatusSeverity.Warning); return; }
+        await _shell.ImportFilesToWorkspaceAsync(owner);
+        if (!_windowClosed) { RefreshWorkspace(); await ShowNavAsync("Files"); }
+    }
+
+    private void OnLearnWorkspacesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        HelpWindow.ShowFor(this, () => CreateHelpWindow(Tern.App.Commands.CommandIds.CreateWorkspace), Tern.App.Commands.CommandIds.CreateWorkspace);
+
+    private async Task<string?> PerformCreationAsync(CreateItemKind kind, CreatedItemRequest request, WorkspaceSession? owner, Action physicalCreationCompleted)
     {
         if (owner is not null && !_shell.OpenWorkspaces.Contains(owner)) return "The destination was closed. Choose another location.";
         using var operation = _shell.BeginStatusOperation("Creating " + kind, request.Parent);
         if (kind == CreateItemKind.Workspace)
         {
-            if (!await CreateWorkspaceAtAsync(request.Parent, request.Name)) { operation.Fail(_shell.StatusMessage); return _shell.StatusMessage; }
+            if (!await CreateWorkspaceAtAsync(request.Parent, request.Name, physicalCreationCompleted)) { operation.Fail(_shell.StatusMessage); return _shell.StatusMessage; }
             return null;
         }
         var operations = owner?.FileOperations ?? new WorkspaceFileOperations(request.Parent);
+        var format = _shell.Settings.NewFileFormat;
         var result = await Task.Run(() => kind == CreateItemKind.Folder
-            ? operations.CreateFolder(request.Parent, request.Name) : operations.CreateFile(request.Parent, request.Name));
+            ? operations.CreateFolder(request.Parent, request.Name) : operations.CreateFile(request.Parent, request.Name, format: format));
         if (!result.Succeeded)
         {
             var error = result.Message ?? "The location is unavailable. Your name and destination are kept for retry.";
@@ -49,6 +62,7 @@ public partial class MainWindow
             return error;
         }
         if (owner is null) _outsideCreationParent = request.Parent;
+        physicalCreationCompleted();
         // The requested physical creation is now complete. A later display failure must not invite another creation.
         try
         {
@@ -56,14 +70,25 @@ public partial class MainWindow
             if (kind == CreateItemKind.File)
             {
                 _shell.Recent.AddFile(result.Path!);
-                await _shell.OpenFileAsync(result.Path!);
+                await _shell.OpenFileAsync(result.Path!, createdFile: result.CreatedFile);
             }
             foreach (var root in _shell.OpenWorkspaces.Where(w => w.IsInside(result.Path!)).ToArray()) await root.RescanTreeAsync();
             if (!_windowClosed) { RefreshWorkspace(); await ShowNavAsync("Files"); }
-            _shell.StatusMessage = "Created " + result.Path;
+            _shell.SetStatus("Created " + result.Path, Tern.App.Shell.StatusSeverity.Success);
+            if (!_windowClosed && kind == CreateItemKind.File && !OwnedWindows.Any()
+                && _shell.ActiveTab?.FilePath is { } activePath && WorkspacePaths.PathsEqual(activePath, result.Path!))
+            {
+                if (_shell.ViewMode == Tern.App.Settings.ViewMode.Reading) await RunCommandAsync(Tern.App.Commands.CommandIds.ViewSource);
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (!_windowClosed && !OwnedWindows.Any() && _shell.ActiveTab?.FilePath is { } path
+                        && WorkspacePaths.PathsEqual(path, result.Path!))
+                        Editor.TextArea.Focus();
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        { _shell.StatusMessage = "Created " + result.Path + ". Refresh/open was unavailable: " + ex.Message; }
+        { _shell.StatusMessage = "Created " + result.Path + ". Refresh/open was unavailable: " + _shell.PlainProblem(ex); }
         return null;
     }
 }

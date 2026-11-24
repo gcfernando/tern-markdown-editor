@@ -1,0 +1,6 @@
+<Project>
+  <!-- Test output goes to a temporary folder instead of the repository. Benchmarks are run by hand and keep their reports. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'Tern.Benchmarks'">
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\TestOutput.cs" Link="Shared\TestOutput.cs" />
+  </ItemGroup>
+</Project>

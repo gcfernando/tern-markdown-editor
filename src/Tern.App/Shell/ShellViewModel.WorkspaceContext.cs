@@ -8,9 +8,10 @@ public sealed partial class ShellViewModel
     private string? WorkspaceActivePath(WorkspaceSession workspace) => ActiveTab?.FilePath is { } active
         && ReferenceEquals(WorkspaceForPath(active), workspace) ? active : workspace.LastActiveDocumentPath;
 
-    private async Task<bool> SaveWorkspaceContextAsync(WorkspaceSession workspace, string? activePath)
+    /// <summary>Writes the per-user context under local app data. Returns a failure description, or null on success; never touches the workspace folder.</summary>
+    private async Task<string?> SaveWorkspaceContextAsync(WorkspaceSession workspace, string? activePath)
     {
-        if (!workspace.IsNamedWorkspace) return true;
+        if (!workspace.IsNamedWorkspace) return null;
         var documents = Tabs.Where(tab => tab.FilePath is { } path && ReferenceEquals(WorkspaceForPath(path), workspace))
             .GroupBy(tab => tab.FilePath!, WorkspacePaths.Comparer).Select(group => group.First()).Take(SessionStore.MaxTabs).ToArray();
         var tabs = documents.Select(tab =>
@@ -24,14 +25,12 @@ public sealed partial class ShellViewModel
         var context = new WorkspaceWorkingContext(tabs, active, workspace.PreferredViewMode.ToString());
         try
         {
-            await Task.Run(() => WorkspaceDefinition.SaveWorkingContext(workspace.Root, workspace.Name, context)).ConfigureAwait(true);
-            return true;
+            await Task.Run(() => _contextStore.Save(workspace.Root, context)).ConfigureAwait(true);
+            return null;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException or NotSupportedException)
         {
-            StatusMessage = "Could not save workspace context for " + workspace.Name + ". No documents were closed: " + ex.Message;
-            _dialogs.ShowMessage("Workspace could not close", StatusMessage);
-            return false;
+            return "Could not save workspace context for " + workspace.Name + ": " + PlainProblem(ex);
         }
     }
 
@@ -57,7 +56,7 @@ public sealed partial class ShellViewModel
         }
         var active = ResolveWorkspaceDocument(workspace, context.ActiveTab);
         var selected = restored.FirstOrDefault(tab => tab.FilePath is { } path && active is not null && SamePath(path, active)) ?? restored.FirstOrDefault();
-        if (selected is not null) ActiveTab = selected;
+        if (selected is not null) SelectTab(selected, TabActivationReason.Programmatic);
         if (Enum.TryParse<ViewMode>(context.ViewMode, out var mode) && Enum.IsDefined(mode))
         {
             workspace.PreferredViewMode = mode;

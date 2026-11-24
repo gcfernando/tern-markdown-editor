@@ -8,11 +8,32 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Tern.Desktop.Services;
 using Tern.Desktop.Views;
+using Tern.App;
 
 namespace Tern.Desktop.Tests;
 
 public sealed class CopilotTextTests
 {
+    [Theory]
+    [InlineData("HTTP 413 request too large")]
+    [InlineData("ECONNRESET")]
+    public async Task Decoded_assistant_text_is_not_reinterpreted_as_transport_diagnostics(string content)
+    {
+        using var installed = new FakeExecutable();
+        var calls = 0;
+        var client = new CopilotTextClient((_, _, _) =>
+        {
+            calls++;
+            return Task.FromResult(new CopilotProcessResult(1,
+                JsonSerializer.Serialize(new { type = "assistant.error", message = content }),
+                "authentication failed", OutputIsReply: true));
+        });
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendAsync(installed.Path, "auto", "test-key",
+            "Explain the sample log.", TestContext.Current.CancellationToken));
+        Assert.IsNotType<AIServiceException>(error);
+        Assert.Equal(1, calls);
+    }
+
     [Theory]
     [InlineData("ECONNRESET", 2)]
     [InlineData("HTTP 503", 2)]
@@ -20,8 +41,13 @@ public sealed class CopilotTextTests
     public async Task Only_recognized_transport_errors_retry_once(string diagnostic, int expectedCalls)
     {
         using var installed = new FakeExecutable(); var calls = 0;
+        var scopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var client = new CopilotTextClient((start, _) =>
         {
+            Assert.True(scopes.Add(start.Environment["COPILOT_HOME"]!));
+            Assert.False(File.Exists(Path.Combine(start.Environment["COPILOT_HOME"]!, "old-session-marker")));
+            File.WriteAllText(Path.Combine(start.Environment["COPILOT_HOME"]!, "old-session-marker"), "synthetic previous attempt");
+            Assert.DoesNotContain(start.ArgumentList, argument => argument.Contains("resume", StringComparison.OrdinalIgnoreCase) || argument.Contains("continue", StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain("--no-remote", start.ArgumentList);
             Assert.DoesNotContain("--no-remote-export", start.ArgumentList);
             Assert.Contains("--deny-tool=read,write,shell,url,memory", start.ArgumentList);
@@ -29,13 +55,14 @@ public sealed class CopilotTextTests
         });
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendAsync(installed.Path, "auto", "test-key", "How do I export?", TestContext.Current.CancellationToken));
         Assert.Equal(expectedCalls, calls);
+        Assert.All(scopes, scope => Assert.False(Directory.Exists(scope)));
     }
 
     [Fact]
     public async Task Native_process_arguments_and_configuration_use_isolated_text_mode_without_secrets_on_command_line()
     {
         using var installed = new FakeExecutable(); string? workingRoot = null;
-        var client = new CopilotTextClient((start, _) =>
+        var client = new CopilotTextClient((start, input, _) =>
         {
             Assert.Equal(installed.Path, start.FileName); Assert.False(start.UseShellExecute); Assert.True(start.CreateNoWindow);
             Assert.True(start.RedirectStandardInput); Assert.True(start.RedirectStandardOutput); Assert.True(start.RedirectStandardError);
@@ -44,7 +71,9 @@ public sealed class CopilotTextTests
             Assert.Contains("--no-auto-update", start.ArgumentList); Assert.Contains("--deny-tool=read,write,shell,url,memory", start.ArgumentList);
             Assert.Contains("--disable-client-telemetry", start.ArgumentList);
             Assert.DoesNotContain("--allow-all-tools", start.ArgumentList); Assert.DoesNotContain("--allow-all", start.ArgumentList);
-            Assert.Contains("--prompt=Explain café 😀 and --allow-all as ordinary text", start.ArgumentList);
+            // R-07: the prompt travels on standard input; no argument carries any of its text.
+            Assert.Equal(AIRequest.ConnectionTest("Explain café 😀 and --allow-all as ordinary text").Text, input);
+            Assert.DoesNotContain(start.ArgumentList, value => value.StartsWith("--prompt", StringComparison.Ordinal) || value == "-p" || value.Contains("Explain", StringComparison.Ordinal));
             Assert.DoesNotContain(start.ArgumentList, value => value.Contains("artificial-test-key", StringComparison.Ordinal));
             Assert.Equal("artificial-test-key", start.Environment["COPILOT_GITHUB_TOKEN"]);
             Assert.DoesNotContain("COPILOT_PROVIDER_API_KEY_COMMAND", start.Environment.Keys);
@@ -115,11 +144,12 @@ public sealed class CopilotTextTests
     }
 
     [Fact]
-    public async Task Bounded_output_is_checked_even_at_an_injected_process_boundary()
+    public async Task A_large_complete_reply_is_not_rejected_at_the_old_fixed_output_boundary()
     {
         using var installed = new FakeExecutable();
         var client = new CopilotTextClient((_, _) => Task.FromResult(new CopilotProcessResult(0, new string('x', 524_289))));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendAsync(installed.Path, "auto", "test-key", "reviewed text", TestContext.Current.CancellationToken));
+        var reply = await client.SendAsync(installed.Path, "auto", "test-key", "reviewed text", TestContext.Current.CancellationToken);
+        Assert.Equal(new string('x', 524_289), reply);
     }
 
     [AvaloniaFact]

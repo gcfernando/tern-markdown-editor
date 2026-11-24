@@ -11,15 +11,15 @@ public sealed class ResetWindow : Window
 {
     public ResetWindow(ShellViewModel shell)
     {
-        DialogParts.Setup(this, "Reset Tern", 760, 680);
+        DialogParts.Setup(this, "Reset Tern", 760, 680, DialogGuidance.Reset);
         MinWidth = 480;
         MinHeight = 420;
         var recent = true; var preferences = false; var session = false; var caches = false; var remote = false;
-        var status = GuideParts.Caption("");
+        var status = MessageTones.Follow(GuideParts.Caption(""));
         AutomationProperties.SetName(status, "Reset selection status");
         var reset = new Button { Content = "Reset selected" };
         AutomationProperties.SetName(reset, "Reset selected application data");
-        reset.Classes.Add("accent");
+        reset.Classes.Add("danger");
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         cancel.Click += (_, _) => Close();
         void Update()
@@ -49,7 +49,7 @@ public sealed class ResetWindow : Window
             }
         };
         var choices = GuideParts.Vertical(
-            Choice("Recent history (including pinned references)", "Forget recent file and folder references. Workspace contents and open tabs are independent; physical documents stay on disk.", true, v => recent = v),
+            Choice("Recent history (including pinned references)", "Forget recent files, workspaces, URLs and the Reopen Closed Tab list, including pinned references. Workspace contents and open tabs are independent; physical documents stay on disk.", true, v => recent = v),
             Choice("Preferences and keyboard shortcuts", "Restore application defaults and default command bindings. Document text, attachments and saved files are preserved.", false, v => preferences = v),
             Choice("Session restore list", "Forget the saved list used to reopen document tabs and workspace roots. Open drafts and recovery copies remain available.", false, v => session = v),
             Choice("Search indexes (close all workspaces first)", "Remove rebuildable search-index data after closing all workspaces and browsed folders. Source files are preserved; reopening each root builds its index again.", false, v => caches = v),
@@ -61,7 +61,7 @@ public sealed class ResetWindow : Window
         {
             Content = body,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
-        }, GuideParts.Actions(cancel, reset));
+        }, GuideParts.Actions(reset, cancel));
         void OnPrerequisiteChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             if (e.PropertyName is nameof(ShellViewModel.IsBusy) or nameof(ShellViewModel.IsIndexing) or nameof(ShellViewModel.HasActiveStatusOperations)) Update();

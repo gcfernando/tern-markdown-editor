@@ -50,7 +50,10 @@ public sealed record ResolvedLink(
 /// <summary>A reference to a document from another document.</summary>
 public sealed record Backlink(string SourcePath, int Line, string Context, LinkKind Kind, ResolvedLink Link);
 
-public sealed record GraphDocument(string Path, string Title, IReadOnlyList<HeadingInfo> Headings, IReadOnlyList<string> Aliases);
+public sealed record GraphDocument(string Path, string Title, IReadOnlyList<HeadingInfo> Headings, IReadOnlyList<string> Aliases)
+{
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
 
 public sealed record GraphHeading(string Path, HeadingInfo Heading);
 
@@ -75,6 +78,7 @@ public sealed class LinkGraph
     private const int MaxContextLength = 240;
 
     private readonly Lock _gate = new();
+    private long _revision;
     private readonly LinkGraphOptions _options;
     private readonly Func<string, bool> _pathExists;
     private readonly HashSet<string> _documentExtensions;
@@ -92,6 +96,7 @@ public sealed class LinkGraph
     }
 
     public string Root { get; }
+    public long Revision { get { lock (_gate) return _revision; } }
 
     public int DocumentCount
     {
@@ -109,10 +114,11 @@ public sealed class LinkGraph
     {
         var entries = new System.Collections.Concurrent.ConcurrentBag<Entry>();
         var done = 0;
+        var containment = new PhysicalContainment(Root);
         var options = new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };
         await Parallel.ForEachAsync(paths, options, async (path, ct) =>
         {
-            if (!WorkspacePaths.IsPhysicallyContained(Root, path)) return;
+            if (!containment.Contains(path)) return;
             var text = await provider.ReadTextAsync(path, ct).ConfigureAwait(false);
             if (text is not null)
             {
@@ -131,6 +137,7 @@ public sealed class LinkGraph
             }
 
             RebuildAll();
+            _revision++;
         }
     }
 
@@ -157,6 +164,7 @@ public sealed class LinkGraph
                 RemoveIncoming(entry.Path);
                 ResolveEntry(entry);
             }
+            _revision++;
         }
     }
 
@@ -178,6 +186,7 @@ public sealed class LinkGraph
             }
 
             RebuildAll();
+            _revision++;
         }
     }
 
@@ -205,6 +214,7 @@ public sealed class LinkGraph
             }
 
             RebuildAll();
+            _revision++;
         }
     }
 
@@ -231,7 +241,7 @@ public sealed class LinkGraph
     {
         lock (_gate)
         {
-            return _docs.TryGetValue(WorkspacePaths.Normalize(path), out var e) ? new GraphDocument(e.Path, e.Title, e.Headings, e.Aliases) : null;
+            return _docs.TryGetValue(WorkspacePaths.Normalize(path), out var e) ? new GraphDocument(e.Path, e.Title, e.Headings, e.Aliases) { Tags = e.Tags } : null;
         }
     }
 
@@ -329,7 +339,7 @@ public sealed class LinkGraph
         var links = analysis.Links.Select(l => (Link: l, Context: ContextFor(text, analysis.Lines, l))).ToList();
         var explicitAnchors = analysis.ExplicitAnchors.Keys.ToHashSet(StringComparer.Ordinal);
         var signature = string.Join('\u0001', [title, .. front.Aliases, .. analysis.Headings.Select(h => h.Anchor + "\u0002" + h.Text), .. explicitAnchors.Order(StringComparer.Ordinal)]);
-        return new Entry(path, stem, title, front.Aliases, analysis.Headings, explicitAnchors, links, [], signature);
+        return new Entry(path, stem, title, front.Aliases, front.Tags, analysis.Headings, explicitAnchors, links, [], signature);
     }
 
     private static string ContextFor(string text, LineIndex lines, LinkInfo link)
@@ -348,11 +358,11 @@ public sealed class LinkGraph
         _incoming.Clear();
         foreach (var entry in _docs.Values)
         {
-            Index(_byStem, entry.Stem, entry.Path);
-            Index(_byTitle, entry.Title, entry.Path);
+            IndexNext(_byStem, entry.Stem, entry.Path);
+            IndexNext(_byTitle, entry.Title, entry.Path);
             foreach (var alias in entry.Aliases)
             {
-                Index(_byTitle, alias, entry.Path);
+                IndexNext(_byTitle, alias, entry.Path);
             }
         }
 
@@ -362,17 +372,12 @@ public sealed class LinkGraph
         }
     }
 
-    private static void Index(Dictionary<string, List<string>> index, string key, string path)
+    // During a rebuild each document's keys are added together, so a duplicate can only be the last item.
+    // Thousands of notes sharing a name (README, index) stay linear.
+    private static void IndexNext(Dictionary<string, List<string>> index, string key, string path)
     {
-        if (!index.TryGetValue(key, out var list))
-        {
-            index[key] = list = [];
-        }
-
-        if (!list.Contains(path, WorkspacePaths.Comparer))
-        {
-            list.Add(path);
-        }
+        if (!index.TryGetValue(key, out var list)) index[key] = list = [];
+        if (list.Count == 0 || !WorkspacePaths.PathsEqual(list[^1], path)) list.Add(path);
     }
 
     private void RemoveIncoming(string sourcePath)
@@ -613,6 +618,7 @@ public sealed class LinkGraph
         string Stem,
         string Title,
         IReadOnlyList<string> Aliases,
+        IReadOnlyList<string> Tags,
         IReadOnlyList<HeadingInfo> Headings,
         IReadOnlySet<string> ExplicitAnchors,
         List<(LinkInfo Link, string Context)> Links,

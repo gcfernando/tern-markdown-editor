@@ -32,7 +32,7 @@ public class AIGuidedWindowTests
         var presets = Find<ComboBox>(window, "AI service preset");
         await Settle();
         Assert.Equal("OpenAI API", Assert.IsType<string>(presets.SelectedItem));
-        Click(Find<Button>(window, "AI setup next")); await Settle();
+        Click(Find<Button>(window, "Next step")); await Settle();
         window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Advanced: service address and protocol")).IsExpanded = true;
         await Settle();
         Assert.Equal("https://api.openai.com/v1/chat/completions", Find<TextBox>(window, "Full AI endpoint").Text);
@@ -60,9 +60,9 @@ public class AIGuidedWindowTests
         var window = new AIConnectionsWindow(directory, vault, confirmDiscard: _ => Task.FromResult(true));
         window.Show(fixture.Window);
         await Settle();
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         Assert.StartsWith("Step 2", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         Assert.StartsWith("Step 2", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
         Assert.Contains("model", Find<TextBlock>(window, "AI model error").Text, StringComparison.Ordinal);
         Find<TextBox>(window, "Model name").Text = "test-model";
@@ -71,7 +71,7 @@ public class AIGuidedWindowTests
         Find<TextBox>(window, "API key (saved only when you choose Save connection)").Text = "test-only-secret";
         await Settle();
         Assert.Equal(0, vault.Writes);
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         Click(Button(window, "Save connection"));
         Assert.Equal(1, vault.Writes);
         var metadata = await File.ReadAllTextAsync(Path.Combine(directory, "ai-connections.json"));
@@ -81,7 +81,7 @@ public class AIGuidedWindowTests
         Assert.Contains("test-model", Find<TextBlock>(window, "Reviewed AI destination").Text, StringComparison.Ordinal);
         Assert.DoesNotContain("test-only-secret", Find<TextBlock>(window, "Reviewed AI destination").Text, StringComparison.Ordinal);
         Assert.False(Button(window, "Send request").IsEnabled);
-        Click(Find<Button>(window, "AI setup back"));
+        Click(Find<Button>(window, "Previous step"));
         Assert.Equal("test-model", Find<TextBox>(window, "Model name").Text);
         window.Close();
     }
@@ -94,15 +94,15 @@ public class AIGuidedWindowTests
         var window = new AIConnectionsWindow(DirectoryFor(fixture), new MemoryVault(), connectionClient: new AIConnectionClient(handler), confirmDiscard: _ => Task.FromResult(true));
         window.Show(fixture.Window);
         await Settle();
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         Find<TextBox>(window, "Model name").Text = "test-model";
         Find<TextBox>(window, "API key (saved only when you choose Save connection)").Text = "test-only-key";
         await Settle();
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true;
         await Settle();
         Find<TextBox>(window, "Exact message to send").Text = "Reviewed text";
-        var consent = Find<CheckBox>(window, "Send exactly the message above to the endpoint above");
+        var consent = Find<CheckBox>(window, AIConnectionsWindow.TestConsentText);
         consent.IsChecked = true;
         Find<TextBox>(window, "Exact message to send").Text = "Unreviewed replacement";
         Click(Button(window, "Send request"));
@@ -126,11 +126,11 @@ public class AIGuidedWindowTests
         var services = Find<ComboBox>(window, "AI service preset");
         services.SelectedIndex = services.Items.OfType<string>().ToList().IndexOf("GitHub Copilot");
         await Settle();
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         Assert.Same(window, Assert.Single(launches));
         services.SelectedIndex = services.Items.OfType<string>().ToList().IndexOf("MCP server");
         await Settle();
-        Click(Find<Button>(window, "AI setup next"));
+        Click(Find<Button>(window, "Next step"));
         await Settle();
         var mcp = Assert.Single(window.OwnedWindows.OfType<MCPConnectionsWindow>());
         Assert.False(mcp.CanMaximize);

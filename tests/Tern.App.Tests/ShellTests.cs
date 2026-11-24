@@ -17,6 +17,9 @@ internal sealed class ScriptedDialogs : IShellDialogs
     public ConflictChoice ConflictChoice { get; set; } = ConflictChoice.Cancel;
 
     public MissingFileChoice MissingChoice { get; set; } = MissingFileChoice.KeepEditing;
+    public RecreateFolderChoice RecreateChoice { get; set; } = RecreateFolderChoice.Cancel;
+    public int MissingPrompts { get; private set; }
+    public List<string> RecreatePrompts { get; } = [];
 
     public string? MergeResult { get; set; }
 
@@ -24,6 +27,15 @@ internal sealed class ScriptedDialogs : IShellDialogs
 
     public bool Overwrite { get; set; }
     public bool ReadOnlyCopy { get; set; }
+    public OutsideAttachmentChoice OutsideAttachmentChoice { get; set; } = OutsideAttachmentChoice.Cancel;
+    public List<IReadOnlyList<string>> OutsideAttachmentPrompts { get; } = [];
+    public Action? OnOutsideAttachmentPrompt { get; set; }
+    public Task<OutsideAttachmentChoice> AskOutsideAttachmentsAsync(IReadOnlyList<string> references)
+    {
+        OutsideAttachmentPrompts.Add(references.ToArray());
+        OnOutsideAttachmentPrompt?.Invoke();
+        return Task.FromResult(OutsideAttachmentChoice);
+    }
     public string? SuggestedName { get; private set; }
     public Func<Task<bool>>? OverwriteResponse { get; set; }
 
@@ -34,7 +46,18 @@ internal sealed class ScriptedDialogs : IShellDialogs
     public List<Uri> ExternalAsked { get; } = [];
 
     public int SavePrompts { get; private set; }
+    public Func<string, Task<SaveChoice>>? SaveResponse { get; set; }
     public Queue<SaveChoice> SaveResponses { get; } = new();
+    public Queue<MetadataFailureChoice> MetadataResponses { get; } = new();
+    public List<string> MetadataPrompts { get; } = [];
+    public Action? OnMetadataPrompt { get; set; }
+
+    public Task<MetadataFailureChoice> AskMetadataSaveFailureAsync(string details, bool exiting)
+    {
+        MetadataPrompts.Add(details);
+        OnMetadataPrompt?.Invoke();
+        return Task.FromResult(MetadataResponses.Count > 0 ? MetadataResponses.Dequeue() : MetadataFailureChoice.Cancel);
+    }
     public DuplicateOpenChoice DuplicateChoice { get; set; } = DuplicateOpenChoice.Cancel;
     public int DuplicatePrompts { get; private set; }
     public bool DeleteChoice { get; set; }
@@ -55,19 +78,40 @@ internal sealed class ScriptedDialogs : IShellDialogs
         return Task.FromResult(DuplicateChoice);
     }
 
+    public bool DeleteFolderChoice { get; set; }
+    public int LastFolderFileCount { get; private set; }
+    public Task<bool> ConfirmDeleteFolderAsync(string path, int fileCount, int openDocumentCount, int unsavedTabCount)
+    { LastFolderFileCount = fileCount; return Task.FromResult(DeleteFolderChoice); }
+
     public Task<SaveChoice> AskSaveChangesAsync(string documentName)
     {
         SavePrompts++;
-        return Task.FromResult(SaveResponses.Count > 0 ? SaveResponses.Dequeue() : SaveChoice);
+        return SaveResponse?.Invoke(documentName) ?? Task.FromResult(SaveResponses.Count > 0 ? SaveResponses.Dequeue() : SaveChoice);
     }
 
-    public Task<ConflictChoice> AskConflictAsync(DocumentTab tab) => Task.FromResult(ConflictChoice);
+    public int ConflictPrompts { get; private set; }
+    public int MergeWindows { get; private set; }
+    public bool? LastMergeSavesOnAccept { get; private set; }
 
-    public Task<MissingFileChoice> AskFileMissingAsync(DocumentTab tab) => Task.FromResult(MissingChoice);
+    public Task<ConflictChoice> AskConflictAsync(DocumentTab tab) { ConflictPrompts++; return Task.FromResult(ConflictChoice); }
 
-    public Task<string?> ResolveMergeAsync(DocumentTab tab, MergeResult merge) => Task.FromResult(MergeResult);
+    public Task<MissingFileChoice> AskFileMissingAsync(DocumentTab tab) { MissingPrompts++; return Task.FromResult(MissingChoice); }
 
-    public Task<IReadOnlyList<string>> PickFilesToOpenAsync() => Task.FromResult<IReadOnlyList<string>>([]);
+    public Task<RecreateFolderChoice> AskRecreateFolderAsync(string folder, string? movedTo)
+    { RecreatePrompts.Add(folder + "|" + movedTo); return Task.FromResult(RecreateChoice); }
+
+    public Task<string?> ResolveMergeAsync(DocumentTab tab, MergeResult merge) => ResolveMergeAsync(tab, merge, true);
+
+    public Task<string?> ResolveMergeAsync(DocumentTab tab, MergeResult merge, bool savesOnAccept)
+    { MergeWindows++; LastMergeSavesOnAccept = savesOnAccept; return Task.FromResult(MergeResult); }
+
+    public bool ConfirmReload { get; set; }
+    public int ReloadConfirms { get; private set; }
+
+    public Task<bool> ConfirmReloadDiscardingEditsAsync(DocumentTab tab) { ReloadConfirms++; return Task.FromResult(ConfirmReload); }
+
+    public IReadOnlyList<string> OpenPaths { get; set; } = [];
+    public Task<IReadOnlyList<string>> PickFilesToOpenAsync() => Task.FromResult(OpenPaths);
 
     public Task<string?> PickFolderAsync() => Task.FromResult<string?>(null);
 
@@ -284,6 +328,20 @@ public class ShellTabTests
     }
 }
 
+public class ConflictMessagesTests
+{
+    [Fact]
+    public void Wording_differs_for_clean_and_dirty_tabs_and_explains_unmergeable_files()
+    {
+        var dirty = ConflictMessages.Describe("a.md", isDirty: true, canMerge: true);
+        var clean = ConflictMessages.Describe("a.md", isDirty: false, canMerge: true);
+        Assert.Contains("unsaved edits", dirty);
+        Assert.Contains("no unsaved edits", clean);
+        Assert.DoesNotContain("another encoding", dirty);
+        Assert.Contains("another encoding", ConflictMessages.Describe("a.md", true, canMerge: false));
+    }
+}
+
 public class ShellConflictTests
 {
     private static async Task<(ShellFixture f, DocumentTab tab, string path)> Dirty()
@@ -358,6 +416,46 @@ public class ShellConflictTests
     }
 
     [Fact]
+    public async Task Save_conflict_merge_is_refused_when_disk_was_rewritten_in_another_encoding()
+    {
+        var (f, tab, path) = await Dirty();
+        using var _ = f;
+        var cp1252 = System.Text.Encoding.GetEncoding(1252, System.Text.EncoderFallback.ExceptionFallback, System.Text.DecoderFallback.ExceptionFallback);
+        var diskBytes = cp1252.GetBytes("caf\u00e9 r\u00e9sum\u00e9\n");
+        await File.WriteAllBytesAsync(path, diskBytes);
+        var mineBefore = tab.CurrentText;
+        f.Dialogs.ConflictChoice = ConflictChoice.Merge;
+        f.Dialogs.MergeResult = "should never be used\n";
+
+        Assert.False(await f.Shell.SaveTabAsync(tab));
+
+        Assert.Equal(diskBytes, await File.ReadAllBytesAsync(path));
+        Assert.Equal(mineBefore, tab.CurrentText);
+        Assert.True(tab.IsDirty);
+        Assert.True(tab.Conflict!.DiskNotLossless);
+        Assert.DoesNotContain("\uFFFD", tab.CurrentText, StringComparison.Ordinal);
+        var banner = Assert.IsType<BannerState>(f.Shell.Banner);
+        Assert.Equal(StatusSeverity.Warning, banner.Severity);
+        Assert.Contains("another encoding", banner.Text, StringComparison.Ordinal);
+        Assert.Equal(["Reopen with encoding…", "Save my copy as…"], banner.Actions.Select(a => a.Label));
+    }
+
+    [Fact]
+    public async Task Apply_merged_text_is_refused_when_disk_turns_non_lossless_after_the_merge_was_built()
+    {
+        var (f, tab, path) = await Dirty();
+        using var _ = f;
+        await File.WriteAllTextAsync(path, "a\nb\nc\nd\n");
+        var build = await tab.TryBuildMergeAsync();
+        Assert.NotNull(build.Merge);
+        var diskBytes = System.Text.Encoding.GetEncoding(1252).GetBytes("caf\u00e9\n");
+        await File.WriteAllBytesAsync(path, diskBytes);
+        Assert.False(await tab.ApplyMergedTextAsync(build.Merge!.MergedText));
+        Assert.Equal(diskBytes, await File.ReadAllBytesAsync(path));
+        Assert.True(tab.IsDirty);
+    }
+
+    [Fact]
     public async Task Save_conflict_save_copy_leaves_original_alone()
     {
         var (f, tab, path) = await Dirty();
@@ -371,7 +469,7 @@ public class ShellConflictTests
     }
 
     [Fact]
-    public async Task External_change_check_reloads_clean_and_prompts_for_dirty_active_tab()
+    public async Task External_change_check_reloads_clean_and_flags_dirty_tab_without_prompting()
     {
         using var f = new ShellFixture();
         var clean = (await f.Shell.OpenFileAsync(await f.WriteAsync("clean.md", "one\n")))!;
@@ -385,7 +483,147 @@ public class ShellConflictTests
         await f.Shell.CheckForExternalChangesAsync();
 
         Assert.Equal("two\n", clean.CurrentText);
-        Assert.Equal("b\n", dirty.CurrentText);
+        Assert.Equal("ma\n", dirty.CurrentText);
+        Assert.True(dirty.IsDirty);
+        Assert.True(dirty.IsChangedOnDisk);
+        Assert.Equal(DocumentState.ChangedOnDisk, f.Shell.ActiveDocumentState);
+        Assert.Equal(0, f.Dialogs.ConflictPrompts);
+    }
+
+    [Fact]
+    public async Task Inactive_tab_changed_on_disk_is_flagged_and_user_activation_never_prompts()
+    {
+        using var f = new ShellFixture();
+        var path = await f.WriteAsync("a.md", "a\n");
+        var a = (await f.Shell.OpenFileAsync(path))!;
+        a.ApplyEdits([TextEdit.Insert(0, "m")]);
+        var b = (await f.Shell.OpenFileAsync(await f.WriteAsync("b.md", "b\n")))!;
+        await File.WriteAllTextAsync(path, "outside\n");
+        await f.Shell.CheckForExternalChangesAsync(a);
+        Assert.True(a.IsChangedOnDisk);
+        Assert.Same(b, f.Shell.ActiveTab);
+
+        f.Shell.SelectTab(a, TabActivationReason.User);
+        await f.Shell.CheckForExternalChangesAsync(a);
+
+        Assert.Equal(0, f.Dialogs.ConflictPrompts);
+        Assert.True(a.IsDirty);
+        Assert.Equal("outside\n", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Repeated_external_writes_never_open_a_modal_and_report_one_transition()
+    {
+        using var f = new ShellFixture();
+        var path = await f.WriteAsync("a.md", "a\n");
+        var tab = (await f.Shell.OpenFileAsync(path))!;
+        tab.ApplyEdits([TextEdit.Insert(0, "m")]);
+        var statuses = new List<string>();
+        f.Shell.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ShellViewModel.StatusMessage)) statuses.Add(f.Shell.StatusMessage); };
+        for (var i = 0; i < 10; i++)
+        {
+            await File.WriteAllTextAsync(path, "outside " + i + "\n");
+            await f.Shell.CheckForExternalChangesAsync(tab);
+        }
+
+        Assert.Equal(0, f.Dialogs.ConflictPrompts);
+        Assert.Equal(0, f.Dialogs.MergeWindows);
+        Assert.Single(statuses, s => s.Contains("changed on disk"));
+        Assert.True(tab.IsChangedOnDisk);
+    }
+
+    [Fact]
+    public async Task Programmatic_activation_while_closing_prompts_once_per_tab_and_never_for_conflicts()
+    {
+        using var f = new ShellFixture();
+        var pa = await f.WriteAsync("a.md", "a\n");
+        var pb = await f.WriteAsync("b.md", "b\n");
+        var a = (await f.Shell.OpenFileAsync(pa))!;
+        var b = (await f.Shell.OpenFileAsync(pb))!;
+        a.ApplyEdits([TextEdit.Insert(0, "m")]);
+        b.ApplyEdits([TextEdit.Insert(0, "m")]);
+        await File.WriteAllTextAsync(pa, "outside\n");
+        f.Dialogs.SaveChoice = SaveChoice.Discard;
+
+        Assert.True(await f.Shell.CloseAllAsync());
+
+        Assert.Equal(2, f.Dialogs.SavePrompts);
+        Assert.Equal(0, f.Dialogs.ConflictPrompts);
+    }
+
+    [Fact]
+    public async Task Compare_with_disk_leaves_buffer_unsaved_but_save_triggered_merge_writes()
+    {
+        var (f, tab, path) = await Dirty();
+        using var _ = f;
+        await File.WriteAllTextAsync(path, "a\nb\nc\nd\n");
+        f.Dialogs.MergeResult = "mine\na\nb\nc\nd\n";
+
+        Assert.True(await f.Shell.CompareWithDiskAsync(tab));
+
+        Assert.Equal(false, f.Dialogs.LastMergeSavesOnAccept);
+        Assert.Equal("a\nb\nc\nd\n", await File.ReadAllTextAsync(path));
+        Assert.Equal("mine\na\nb\nc\nd\n", tab.CurrentText);
+        Assert.True(tab.IsDirty);
+
+        f.Dialogs.ConflictChoice = ConflictChoice.Merge;
+        await File.WriteAllTextAsync(path, "a\nb\nc\nd\ne\n");
+        f.Dialogs.MergeResult = "mine\na\nb\nc\nd\ne\n";
+        Assert.True(await f.Shell.SaveTabAsync(tab));
+        Assert.Equal(true, f.Dialogs.LastMergeSavesOnAccept);
+        Assert.Equal("mine\na\nb\nc\nd\ne\n", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Reload_from_disk_confirms_before_discarding_edits()
+    {
+        var (f, tab, path) = await Dirty();
+        using var _ = f;
+        await File.WriteAllTextAsync(path, "disk\n");
+        f.Dialogs.ConfirmReload = false;
+        Assert.False(await f.Shell.ReloadFromDiskAsync(tab));
+        Assert.True(tab.IsDirty);
+        f.Dialogs.ConfirmReload = true;
+        Assert.True(await f.Shell.ReloadFromDiskAsync(tab));
+        Assert.Equal("disk\n", tab.CurrentText);
+        Assert.Equal(2, f.Dialogs.ReloadConfirms);
+    }
+
+    [Fact]
+    public async Task Line_ending_only_disk_change_is_not_a_conflict_and_merge_keeps_editor_endings()
+    {
+        using var f = new ShellFixture();
+        var path = await f.WriteAsync("a.md", "a\r\nb\r\n");
+        var tab = (await f.Shell.OpenFileAsync(path))!;
+        tab.ApplyEdits([TextEdit.Insert(0, "mine\r\n")]);
+        await File.WriteAllTextAsync(path, "a\nb\nc\n");
+        await f.Shell.CheckForExternalChangesAsync(tab);
+        var build = await tab.TryBuildMergeAsync();
+        Assert.NotNull(build.Merge);
+        Assert.Equal(0, build.Merge!.ConflictCount);
+        Assert.Equal("mine\r\na\r\nb\r\nc\r\n", build.Merge.MergedText);
+    }
+
+    [Fact]
+    public async Task Check_for_one_tab_does_not_touch_other_tabs_and_does_not_race_a_save()
+    {
+        using var f = new ShellFixture();
+        var pa = await f.WriteAsync("a.md", "a\n");
+        var pb = await f.WriteAsync("b.md", "b\n");
+        var a = (await f.Shell.OpenFileAsync(pa))!;
+        var b = (await f.Shell.OpenFileAsync(pb))!;
+        await File.WriteAllTextAsync(pb, "b2\n");
+        await f.Shell.CheckForExternalChangesAsync(a);
+        Assert.Equal("b\n", b.CurrentText);
+
+        a.ApplyEdits([TextEdit.Insert(0, "m")]);
+        Task? racing = null;
+        f.Shell.BeforeSaveWrite = () => { f.Shell.BeforeSaveWrite = null; racing = f.Shell.CheckForExternalChangesAsync(a); return Task.CompletedTask; };
+        Assert.True(await f.Shell.SaveTabAsync(a));
+        await racing!;
+        Assert.Equal(0, f.Dialogs.ConflictPrompts);
+        Assert.False(a.IsChangedOnDisk);
+        Assert.Equal("ma\n", await File.ReadAllTextAsync(pa));
     }
 
     [Fact]
@@ -727,3 +965,4 @@ public class CommandRegistryTests
         await Task.CompletedTask;
     }
 }
+

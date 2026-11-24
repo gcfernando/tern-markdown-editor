@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Automation.Provider;
+using Avalonia.Controls;
+using Avalonia.Threading;
 using AvaloniaEdit;
 
 namespace Tern.Desktop.Editing;
@@ -15,6 +17,7 @@ namespace Tern.Desktop.Editing;
 public sealed class AccessibleMarkdownEditor : TextEditor
 {
     private MarkdownEditorAutomationPeer? _automationPeer;
+    private DispatcherTimer? _valueNotification;
 
     protected override Type StyleKeyOverride => typeof(TextEditor);
 
@@ -24,7 +27,24 @@ public sealed class AccessibleMarkdownEditor : TextEditor
     protected override void OnTextChanged(EventArgs e)
     {
         base.OnTextChanged(e);
-        _automationPeer?.NotifyTextChanged();
+        if (_automationPeer is null || TopLevel.GetTopLevel(this) is null) return;
+        if (_valueNotification is null)
+        {
+            _valueNotification = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _valueNotification.Tick += (_, _) =>
+            {
+                _valueNotification.Stop();
+                _automationPeer?.NotifyTextChanged();
+            };
+        }
+        _valueNotification.Stop();
+        _valueNotification.Start();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _valueNotification?.Stop();
+        base.OnDetachedFromVisualTree(e);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

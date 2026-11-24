@@ -27,7 +27,7 @@ public sealed class Release104Tests
         var registry = CommandRegistry.CreateDefault();
         Assert.True(GuideQuestionPrompt.CanAnswer(registry, question));
         Assert.Contains(expected, GuideQuestionPrompt.OfflineAnswer(registry, question), StringComparison.OrdinalIgnoreCase);
-        Assert.EndsWith(question, GuideQuestionPrompt.Build(registry, question, true));
+        Assert.EndsWith(question, GuideQuestionPrompt.Build(registry, question, true, AIConnectionRules.DefaultSendCharacters));
         Assert.NotEmpty(GuideQuestionPrompt.Relevant(registry, question));
     }
 

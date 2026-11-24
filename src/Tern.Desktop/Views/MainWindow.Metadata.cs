@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Tern.App.Commands;
@@ -22,8 +23,8 @@ public partial class MainWindow
         // revision. Never use those ranges to edit the current front matter.
         var analysis = await Task.Run(() => Tern.Markdown.MarkdownAnalyzer.Analyze(snapshot, profile));
         if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || tab.IsReadOnly || _windowClosed)
-        { _shell.StatusMessage = "The note changed. Reopen Edit note metadata to refresh it."; return; }
-        var dialog = new Window(); DialogParts.Setup(dialog, "Edit note metadata", 600, 340, guidance: false);
+        { _shell.StatusMessage = "The document changed. Reopen Edit tags to refresh it."; return; }
+        var dialog = new Window(); DialogParts.Setup(dialog, "Edit tags", 600, 340, DialogGuidance.Metadata, guidance: false);
         dialog.CanResize = false;
         var input = new TextBox { Text = string.Join(", ", FrontMatterReader.Read(analysis.FrontMatter?.Yaml).Tags) };
         var message = GuideParts.Caption("");
@@ -44,7 +45,7 @@ public partial class MainWindow
         apply.Click += (_, _) =>
         {
             if (!ReferenceEquals(tab, _shown) || !tab.Session.IsCurrent(revision) || tab.IsReadOnly)
-            { message.Text = "The note changed. Close and reopen Edit note metadata to refresh it."; message.IsVisible = true; apply.IsEnabled = false; return; }
+            { message.Text = "The document changed. Close and reopen Edit tags to refresh it."; message.IsVisible = true; apply.IsEnabled = false; return; }
             if (TagEdits.Create(tab.CurrentText, analysis, input.Text ?? "", tab.Session.Format.NewLineText) is { } edit)
             { tab.ApplyEdits([edit]); dialog.Close(); }
         };
@@ -52,16 +53,16 @@ public partial class MainWindow
         clear.Click += (_, _) => { input.Text = ""; input.Focus(); };
         preview.IsVisible = false;
         input.TextChanged += (_, _) => { message.Text = apply.IsEnabled ? "" : "This metadata is complex. Edit it in Source to preserve it."; message.IsVisible = !apply.IsEnabled; };
-        var field = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, Children = { input, clear } };
+        var field = new Grid { ColumnDefinitions = new("*,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding(), Children = { input, clear } };
         Grid.SetColumn(clear, 1);
         var fields = GuideParts.Vertical(GuideParts.Caption("Separate tags with commas, for example work, planning."), field,
             GuideParts.Body("Apply tags edits this note. Save (Ctrl+S) writes it to disk."), message);
-        dialog.Content = GuideParts.Frame(GuideParts.Title("Tags"), new ScrollViewer { Content = fields, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }, GuideParts.Actions(source, cancel, apply));
+        dialog.Content = GuideParts.Frame(GuideParts.Title("Edit tags"), new ScrollViewer { Content = fields, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }, GuideParts.Actions(apply, cancel, source));
         Update(); message.Text = apply.IsEnabled ? "" : "This metadata is complex. Edit it in Source to preserve it."; message.IsVisible = !apply.IsEnabled;
         await dialog.ShowDialog(this);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
-        { _shell.StatusMessage = "Could not edit note metadata: " + ex.Message; }
+        { _shell.StatusMessage = "Could not edit note metadata: " + _shell.PlainProblem(ex); }
         finally { _editingMetadata = false; }
     }
 }

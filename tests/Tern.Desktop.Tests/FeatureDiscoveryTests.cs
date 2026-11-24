@@ -49,6 +49,10 @@ public class FeatureDiscoveryTests
         Assert.Contains("Settings", Find<TextBlock>(guide, "Tutorial step").Text, StringComparison.Ordinal);
         guide.Close();
         window.Close();
+        var discard = Assert.Single(window.OwnedWindows.OfType<PromptWindow>());
+        Click(Button(discard, "Discard changes"));
+        await Settle();
+        Assert.False(window.IsVisible);
     }
 
     [AvaloniaFact]
@@ -132,7 +136,8 @@ public class FeatureDiscoveryTests
 
         async Task Verify(Button button, string featureId)
         {
-            Assert.Equal(featureId, button.Tag);
+            Assert.Equal(featureId, Tern.Desktop.Views.Help.GetFeature(button));
+            Assert.Null(button.Tag);
             var feature = FeatureCatalog.Search(fixture.Shell.Registry, null).Single(f => f.Id == featureId);
             Click(button);
             await Settle();

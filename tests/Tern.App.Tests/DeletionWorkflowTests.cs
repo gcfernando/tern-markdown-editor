@@ -8,6 +8,43 @@ namespace Tern.App.Tests;
 /// <summary>Real temporary files with a fake recycle boundary that moves, rather than permanently deletes, bytes.</summary>
 public sealed class DeletionWorkflowTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Pending_delete_confirmation_does_not_block_another_file_open_or_save(bool confirm)
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("confirmed.md", "keep until confirmed");
+        await fixture.Shell.OpenFileAsync(path);
+        var otherPath = await fixture.WriteAsync("other.md", "other");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Dialogs.DeleteResponse = (_, _) => { entered.TrySetResult(); return answer.Task; };
+        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"));
+        var deletion = fixture.Shell.DeleteFileAsync(path, recycle);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(fixture.Shell.IsBusy);
+            var waiting = Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Recycling Library file");
+            Assert.Equal(ActivityState.WaitingForUser, waiting.State);
+            Assert.False(waiting.IsIndeterminate);
+            Assert.False(waiting.CanCancel);
+            var other = (await fixture.Shell.OpenFileAsync(otherPath).WaitAsync(TimeSpan.FromSeconds(1)))!;
+            other.ApplyEdits([TextEdit.Insert(0, "saved ")]);
+            Assert.True(await fixture.Shell.SaveTabAsync(other).WaitAsync(TimeSpan.FromSeconds(1)));
+            Assert.Equal("saved other", await File.ReadAllTextAsync(otherPath));
+            Assert.True(File.Exists(path));
+            Assert.Equal(0, recycle.Calls);
+        }
+        finally { answer.TrySetResult(confirm); }
+        Assert.Equal(confirm, await deletion);
+        Assert.Equal(confirm ? 1 : 0, recycle.Calls);
+        Assert.Equal(confirm ? ActivityState.Completed : ActivityState.Canceled,
+            Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Recycling Library file").State);
+        Assert.Equal("saved other", await File.ReadAllTextAsync(otherPath));
+    }
+
     [Fact]
     public async Task Cancel_keeps_file_edits_references_and_history_without_calling_recycle()
     {
@@ -31,15 +68,18 @@ public sealed class DeletionWorkflowTests
         Assert.Single(await fixture.Shell.HistoryStore.ReadAsync(path));
     }
 
-    [Fact]
-    public async Task Recycle_failure_keeps_all_application_state_and_original_bytes()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Recycle_failure_keeps_all_application_state_and_original_bytes(bool denied)
     {
         using var fixture = new ShellFixture();
         var path = await fixture.WriteAsync("keep.md", "Disk bytes\r\n");
         var tab = (await fixture.Shell.OpenFileAsync(path))!;
         await fixture.Shell.HistoryStore.CaptureAsync(path, "Saved history");
         fixture.Dialogs.DeleteChoice = true;
-        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle")) { Failure = new IOException("Fake recycle unavailable") };
+        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"))
+        { Failure = denied ? new UnauthorizedAccessException("Fake recycle unavailable") : new IOException("Fake recycle unavailable") };
 
         Assert.False(await fixture.Shell.DeleteFileAsync(path, recycle));
 
@@ -49,15 +89,22 @@ public sealed class DeletionWorkflowTests
         Assert.Single(fixture.Shell.Recent.Files);
         Assert.Single(await fixture.Shell.HistoryStore.ReadAsync(path));
         Assert.Contains("not recycled", fixture.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(StatusSeverity.Error, fixture.Shell.StatusSeverity);
+        var activity = Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Recycling Library file");
+        Assert.Equal(ActivityState.Failed, activity.State);
+        Assert.Contains("Fake recycle unavailable", activity.Details);
+        Assert.NotNull(activity.Finished);
     }
 
     [Theory]
     [InlineData("https://example.com/remote.md")]
     [InlineData("folder")]
+    [InlineData("missing")]
+    [InlineData("")]
     public async Task Online_addresses_and_directories_are_rejected_before_confirmation(string input)
     {
         using var fixture = new ShellFixture();
-        var path = input == "folder" ? fixture.Docs : input;
+        var path = input switch { "folder" => fixture.Docs, "missing" => Path.Combine(fixture.Docs, "missing.md"), _ => input };
         var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"));
         fixture.Dialogs.DeleteChoice = true;
 
@@ -66,6 +113,67 @@ public sealed class DeletionWorkflowTests
         Assert.Equal(0, fixture.Dialogs.DeletePrompts);
         Assert.Equal(0, recycle.Calls);
         Assert.True(Directory.Exists(fixture.Docs));
+        Assert.Equal(StatusSeverity.Error, fixture.Shell.StatusSeverity);
+        Assert.Equal(ActivityState.Failed, Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Recycling Library file").State);
+    }
+
+    [Fact]
+    public async Task Exclusive_file_access_failure_is_reported_before_confirmation_without_changing_references()
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("locked.md", "Keep bytes");
+        var tab = await fixture.Shell.OpenFileAsync(path);
+        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"));
+        using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.False(await fixture.Shell.DeleteFileAsync(path, recycle));
+            Assert.Equal(0, fixture.Dialogs.DeletePrompts);
+            Assert.Equal(0, recycle.Calls);
+            Assert.Equal(StatusSeverity.Error, fixture.Shell.StatusSeverity);
+            Assert.Same(tab, Assert.Single(fixture.Shell.Tabs));
+            Assert.Contains(fixture.Shell.Recent.Files, entry => entry.Path == path);
+        }
+        Assert.Equal("Keep bytes", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Recycle_boundary_error_after_source_is_gone_reports_uncertainty_without_claiming_original_remains()
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("recycled.md", "Recycled bytes");
+        var tab = await fixture.Shell.OpenFileAsync(path);
+        fixture.Dialogs.DeleteChoice = true;
+        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"))
+        { AfterMove = () => throw new IOException("Synthetic shell completion failure") };
+        Assert.False(await fixture.Shell.DeleteFileAsync(path, recycle));
+        Assert.False(File.Exists(path));
+        Assert.Equal("Recycled bytes", await File.ReadAllTextAsync(recycle.MovedPath!));
+        Assert.Same(tab, Assert.Single(fixture.Shell.Tabs));
+        Assert.Contains(fixture.Shell.Recent.Files, entry => entry.Path == path);
+        Assert.Contains("no longer present", fixture.Shell.StatusMessage);
+        Assert.Contains("verify the Recycle Bin", fixture.Shell.StatusMessage);
+        Assert.DoesNotContain("not recycled", fixture.Shell.StatusMessage);
+        Assert.Equal(StatusSeverity.Error, fixture.Shell.StatusSeverity);
+    }
+
+    [Fact]
+    public async Task Windows_cancellation_is_not_reported_as_failure_or_success()
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("cancel.md", "Keep bytes");
+        var tab = await fixture.Shell.OpenFileAsync(path);
+        fixture.Dialogs.DeleteChoice = true;
+        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"))
+        { Failure = new OperationCanceledException("Synthetic Windows cancellation") };
+        Assert.False(await fixture.Shell.DeleteFileAsync(path, recycle));
+        Assert.Equal("Keep bytes", await File.ReadAllTextAsync(path));
+        Assert.Same(tab, Assert.Single(fixture.Shell.Tabs));
+        Assert.Contains(fixture.Shell.Recent.Files, entry => entry.Path == path);
+        var activity = Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Recycling Library file");
+        Assert.Equal(ActivityState.Canceled, activity.State);
+        Assert.Equal(StatusSeverity.Warning, fixture.Shell.StatusSeverity);
+        Assert.Contains("Windows recycling stopped", fixture.Shell.StatusMessage);
+        Assert.DoesNotContain("not recycled", fixture.Shell.StatusMessage);
     }
 
     [Theory]
@@ -90,6 +198,8 @@ public sealed class DeletionWorkflowTests
         Assert.Same(tab, Assert.Single(fixture.Shell.Tabs));
         Assert.Equal(editBuffer ? "New edits Original\r\n" : "Original\r\n", tab.CurrentText);
         Assert.Equal(editBuffer ? "Original\r\n" : "New disk version\r\n", await File.ReadAllTextAsync(path));
+        Assert.Equal(StatusSeverity.Error, fixture.Shell.StatusSeverity);
+        Assert.Equal(ActivityState.Failed, Assert.Single(fixture.Shell.Activities.Items, item => item.Kind == "Recycling Library file").State);
     }
 
     [Fact]
@@ -125,10 +235,45 @@ public sealed class DeletionWorkflowTests
         Assert.Contains(fixture.Shell.Recent.Files, entry => entry.Path == otherPath);
         Assert.Empty(await fixture.Shell.HistoryStore.ReadAsync(path));
         Assert.Single(await fixture.Shell.HistoryStore.ReadAsync(otherPath));
-        Assert.DoesNotContain(fixture.Shell.RecoveryStore.Scan().Entries, entry => entry.Record.OriginalPath == path);
+        Assert.Contains(fixture.Shell.RecoveryStore.Scan().Entries, entry => entry.Record.OriginalPath == path);
         var session = new SessionStore(fixture.Shell.Paths.StateDirectory).Load();
         Assert.DoesNotContain(session.Tabs, entry => entry.Path == path);
         Assert.DoesNotContain(session.FileViews.Keys, key => key == path);
+    }
+
+    [Fact]
+    public async Task History_of_a_recycled_file_is_kept_and_returns_when_the_file_is_restored_with_the_same_content()
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("restore.md", "Saved text\n");
+        await fixture.Shell.OpenFileAsync(path);
+        await fixture.Shell.HistoryStore.CaptureAsync(path, "First\n");
+        await fixture.Shell.HistoryStore.CaptureAsync(path, "Saved text\n");
+        fixture.Dialogs.DeleteChoice = true;
+        var recycle = new FakeRecycle(fixture.Root.File("fake-recycle"));
+
+        Assert.True(await fixture.Shell.DeleteFileAsync(path, recycle));
+        Assert.Empty(await fixture.Shell.HistoryStore.ReadAsync(path));
+        Assert.True(fixture.Shell.HistoryStore.HasTrashedHistory(path));
+
+        File.Move(recycle.MovedPath!, path);
+        var versions = await fixture.Shell.HistoryStore.ReadAsync(path);
+        Assert.Equal(["Saved text\n", "First\n"], versions.Select(v => v.Text));
+        Assert.False(fixture.Shell.HistoryStore.HasTrashedHistory(path));
+    }
+
+    [Fact]
+    public async Task Unsaved_edits_confirmed_for_discard_stay_in_recovery_after_the_recycle()
+    {
+        using var fixture = new ShellFixture();
+        var path = await fixture.WriteAsync("unsaved.md", "Disk\n");
+        var tab = (await fixture.Shell.OpenFileAsync(path))!;
+        tab.ApplyEdits([TextEdit.Insert(0, "Precious ")]);
+        fixture.Dialogs.DeleteChoice = true;
+
+        Assert.True(await fixture.Shell.DeleteFileAsync(path, new FakeRecycle(fixture.Root.File("fake-recycle"))));
+
+        Assert.Contains(fixture.Shell.RecoveryStore.Scan().Entries, entry => entry.Record.Text == "Precious Disk\n");
     }
 
     [Fact]
@@ -201,6 +346,7 @@ public sealed class DeletionWorkflowTests
 
         Assert.False(File.Exists(path));
         Assert.Contains("recovery", fixture.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(StatusSeverity.Warning, fixture.Shell.StatusSeverity);
     }
 
     [Fact]
@@ -219,6 +365,7 @@ public sealed class DeletionWorkflowTests
 
         Assert.False(File.Exists(path));
         Assert.Contains("session", fixture.Shell.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(StatusSeverity.Warning, fixture.Shell.StatusSeverity);
     }
 
     [Fact]

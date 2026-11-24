@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Tern.App.Commands;
@@ -110,6 +111,37 @@ public class WindowTests
         Assert.StartsWith("# One", f.Shell.ActiveTab.CurrentText, StringComparison.Ordinal);
         editor.Document.UndoStack.Redo();
         Assert.StartsWith("X# One", f.Shell.ActiveTab.CurrentText, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public async Task Throwing_command_reports_an_error_banner_and_keeps_the_app_usable()
+    {
+        using var f = new DesktopFixture();
+        var tab = await f.Shell.OpenFileAsync(await f.WriteAsync("a.md", "# One\n"));
+        f.Window.CommandExecutorOverride = _ => throw new InvalidOperationException("boom");
+
+        await f.Window.RunCommandAsync(CommandIds.ViewSource);
+
+        Assert.Equal(StatusSeverity.Error, f.Shell.Banner?.Severity);
+        Assert.Contains("Your text is safe", f.Shell.Banner!.Text);
+        Assert.Contains(f.Shell.Tabs, t => ReferenceEquals(t, tab));
+        f.Window.CommandExecutorOverride = _ => throw new OperationCanceledException();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => f.Window.RunCommandAsync(CommandIds.ViewSource));
+    }
+
+    [AvaloniaFact]
+    public void Global_error_boundary_handles_ui_exceptions_but_ignores_cancellation()
+    {
+        using var f = new DesktopFixture();
+        using var boundary = new Tern.Desktop.Services.GlobalErrorBoundary(f.Shell);
+
+        boundary.HandleUiException(new OperationCanceledException(), out var cancelledHandled);
+        Assert.True(cancelledHandled);
+        Assert.Null(f.Shell.Banner);
+
+        boundary.HandleUiException(new InvalidOperationException("ui"), out var handled);
+        Assert.True(handled);
+        Assert.Equal(StatusSeverity.Error, f.Shell.Banner?.Severity);
     }
 
     [AvaloniaFact]
@@ -301,16 +333,20 @@ public class WindowTests
         window.Show();
 
         Assert.True(await window.TryAssignAsync(CommandIds.ViewReading, "Ctrl+Alt+F9"));
-        Assert.Equal("Ctrl+Alt+F9", f.Shell.Registry.GetGesture(CommandIds.ViewReading));
+        Assert.Equal("Ctrl+Alt+F9", window.WorkingRegistry.GetGesture(CommandIds.ViewReading));
+        Assert.NotEqual("Ctrl+Alt+F9", f.Shell.Registry.GetGesture(CommandIds.ViewReading));
 
         var cancelled = window.TryAssignAsync(CommandIds.ViewSource, "Ctrl+Alt+F9");
         await AnswerPrompt(window, 1);
         Assert.False(await cancelled);
-        Assert.Equal("Ctrl+Alt+F9", f.Shell.Registry.GetGesture(CommandIds.ViewReading));
+        Assert.Equal("Ctrl+Alt+F9", window.WorkingRegistry.GetGesture(CommandIds.ViewReading));
 
         var moved = window.TryAssignAsync(CommandIds.ViewSource, "Ctrl+Alt+F9");
         await AnswerPrompt(window, 0);
         Assert.True(await moved);
+        Assert.Equal("Ctrl+Alt+F9", window.WorkingRegistry.GetGesture(CommandIds.ViewSource));
+        window.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Apply"))
+            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert.Equal("Ctrl+Alt+F9", f.Shell.Registry.GetGesture(CommandIds.ViewSource));
         window.Close();
     }
@@ -503,9 +539,11 @@ public class WindowTests
     {
         using var f = new DesktopFixture();
         var file = Assert.IsType<Avalonia.Controls.MenuItem>(f.Window.ApplicationMenu.Items[0]);
-        var ids = file.Items.OfType<Avalonia.Controls.MenuItem>().Select(item => item.Tag).ToList();
+        var ids = CommandSurfaceTests.Entries(file).Select(item => item.Tag).ToList();
         foreach (var id in new[] { CommandIds.NewFile, CommandIds.NewWorkspaceFile, CommandIds.NewFolder, CommandIds.OpenFile, CommandIds.OpenFolder, CommandIds.Save, CommandIds.SaveAs, CommandIds.SaveAll, CommandIds.Print })
             Assert.Contains(id, ids);
+        foreach (var id in new[] { CommandIds.NewFile, CommandIds.OpenFile, CommandIds.Save, CommandIds.SaveAs, CommandIds.SaveAll, CommandIds.Print })
+            Assert.Contains(file.Items.OfType<Avalonia.Controls.MenuItem>(), item => Equals(item.Tag, id));
         Assert.Equal("Ctrl+P", f.Shell.Registry.GetGesture(CommandIds.Print));
         Assert.Equal("Ctrl+K", f.Shell.Registry.GetGesture(CommandIds.QuickOpen));
     }
@@ -547,15 +585,16 @@ public class WindowTests
         original.ApplyEdits([new Tern.Domain.Text.TextEdit(0, 0, "Second save\n")]);
         Assert.True(await f.Shell.SaveTabAsync(original));
         var versions = await f.Shell.HistoryStore.ReadAsync(path);
-        Assert.Equal(2, versions.Count);
+        Assert.Equal(3, versions.Count); // B-06: includes the original on-disk version kept at the first save
         var showing = f.Window.RunCommandAsync(CommandIds.ShowHistory);
         await Settle();
         var history = Assert.Single(f.Window.OwnedWindows.OfType<HistoryWindow>());
         var list = Assert.Single(history.GetVisualDescendants().OfType<ListBox>());
         list.SelectedIndex = 1;
-        var historical = Assert.Single(history.GetVisualDescendants().OfType<TextBox>(),
-            box => AutomationProperties.GetName(box) == "Saved version");
-        Assert.Equal(versions[1].Text, historical.Text);
+        var diff = Assert.Single(history.GetVisualDescendants().OfType<DiffView>());
+        Assert.Equal(versions[1].Text, diff.LeftSource);
+        Assert.Equal(original.CurrentText, diff.RightSource);
+        Assert.Single(history.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Next change"));
         var openCopy = Assert.Single(history.GetVisualDescendants().OfType<Button>(), button => Equals(button.Content, "Open as copy"));
         openCopy.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         await showing;
@@ -564,6 +603,42 @@ public class WindowTests
         Assert.True(f.Shell.ActiveTab.IsDirty);
         Assert.Equal(versions[1].Text, f.Shell.ActiveTab.CurrentText);
         Assert.Equal(versions[0].Text, await File.ReadAllTextAsync(path));
+        Assert.Equal("Version opened as unsaved copy; original unchanged",
+            Assert.Single(f.Shell.Activities.Items, item => item.Kind == "Reviewing version history").Phase);
+    }
+
+    [AvaloniaFact]
+    public async Task History_replace_puts_the_version_into_the_open_document_as_one_undo_step_and_recovered_drafts_have_history()
+    {
+        using var f = new DesktopFixture();
+        var path = await f.WriteAsync("replace.md", "# One\n");
+        var tab = (await f.Shell.OpenFileAsync(path))!;
+        tab.ApplyEdits([new Tern.Domain.Text.TextEdit(0, 0, "Two\n")]);
+        Assert.True(await f.Shell.SaveTabAsync(tab));
+        var oldest = (await f.Shell.HistoryStore.ReadAsync(path)).Last().Text;
+        var edited = tab.CurrentText;
+
+        var showing = f.Window.RunCommandAsync(CommandIds.ShowHistory);
+        await Settle();
+        var history = Assert.Single(f.Window.OwnedWindows.OfType<HistoryWindow>());
+        var list = Assert.Single(history.GetVisualDescendants().OfType<ListBox>());
+        list.SelectedIndex = list.ItemCount - 1;
+        var replace = Assert.Single(history.GetVisualDescendants().OfType<Button>(), b => Equals(b.Content, "Replace current document"));
+        replace.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        await showing;
+        Assert.Same(tab, f.Shell.ActiveTab);
+        Assert.Equal(oldest, tab.CurrentText);
+        Assert.True(tab.IsDirty);
+        Assert.Equal(edited, await File.ReadAllTextAsync(path));
+        Assert.Equal("Version applied to buffer; not saved; Undo available",
+            Assert.Single(f.Shell.Activities.Items, item => item.Kind == "Reviewing version history").Phase);
+        f.Window.EditorControl.Document.UndoStack.Undo();
+        Assert.Equal(edited, tab.CurrentText);
+
+        var recovered = await f.Shell.RestoreRecoveryAsync(new Tern.Recovery.RecoveryRecord(
+            Guid.NewGuid(), path, "replace.md", 1, DateTime.UtcNow, null, Tern.Domain.Text.TextFileFormat.NewFileDefault, "draft"));
+        Assert.True(Tern.App.Commands.DocumentCommandPolicy.CanExecute(CommandIds.ShowHistory, f.Shell.GetCommandContext()));
+        Assert.Equal(Path.GetDirectoryName(path), f.Shell.SaveFolder(recovered));
     }
 
     [AvaloniaFact]
@@ -574,12 +649,14 @@ public class WindowTests
         var showing = f.Window.RunCommandAsync(CommandIds.ShowHistory);
         await Settle();
         var history = Assert.Single(f.Window.OwnedWindows.OfType<HistoryWindow>());
-        Assert.Contains(history.GetVisualDescendants().OfType<TextBlock>(), block => block.Text == "No saved versions yet");
-        Assert.Contains(history.GetVisualDescendants().OfType<TextBlock>(), block => block.Text?.Contains("Edit and save this file in Tern") == true);
+        Assert.Contains(history.GetVisualDescendants().OfType<TextBlock>(), block => block.Text == "No earlier versions yet");
+        Assert.Contains(history.GetVisualDescendants().OfType<TextBlock>(), block => block.Text?.Contains("Save this file in Tern") == true);
         Assert.Empty(history.GetVisualDescendants().OfType<TextBox>());
         Assert.Empty(history.GetVisualDescendants().OfType<ListBox>());
         history.Close();
         await showing;
+        Assert.Equal(Tern.App.Shell.ActivityState.Canceled,
+            Assert.Single(f.Shell.Activities.Items, item => item.Kind == "Reviewing version history").State);
     }
 
     [AvaloniaFact]

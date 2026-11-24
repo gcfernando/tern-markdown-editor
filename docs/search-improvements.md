@@ -12,9 +12,9 @@ Press **Ctrl+F**, type your search, and Tern selects a result near your current 
 - **Ctrl+H / Replace:** show replacement controls. Replace all is one undoable edit and does not save the file. Changed documents/options, closed Find, incomplete results and timed-out matching prevent inappropriate bulk replacements.
 - The counter shows **3 of 28**, **Wrapped**, explicit no-results/regex errors, or **+ (limited)** when the match limit is reached.
 
-![Midnight Split search with all matches and a result list](images/search/midnight-split.png)
+![Tern v1.0.5 Midnight Split search with all matches and a result list](images/search/midnight-split.png)
 
-![Paper Reading search with a distinct active match](images/search/paper-reading.png)
+![Tern v1.0.5 Paper Reading search with a distinct active match](images/search/paper-reading.png)
 
 ## Navigation and engine changes
 

@@ -44,7 +44,7 @@ public sealed class AIConnectionReadabilityTests
             Assert.StartsWith("Step 1", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
             Assert.Contains(Text(window), t => t.Contains("OpenAI API", StringComparison.Ordinal));
             Capture(window, $"ai-service-{light}-{width}"); CheckFooter(window);
-            Click(Find<Button>(window, "AI setup next")); Pump(window);
+            Click(Find<Button>(window, "Next step")); Pump(window);
             Assert.StartsWith("Step 2", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
             Assert.True(Find<TextBox>(window, "Model name").IsEffectivelyVisible);
             Assert.Equal(14 * scale, Find<TextBox>(window, "Model name").FontSize);
@@ -60,13 +60,13 @@ public sealed class AIConnectionReadabilityTests
             Capture(window, $"ai-key-visible-{light}-{width}"); CheckFooter(window);
             advanced.IsExpanded = true; Pump(window); CheckFooter(window);
             AssertReachable(window, Find<TextBox>(window, "Full AI endpoint"));
-            Click(Find<Button>(window, "AI setup next")); Pump(window); CheckFooter(window);
+            Click(Find<Button>(window, "Next step")); Pump(window); CheckFooter(window);
             Assert.StartsWith("Step 3", Find<TextBlock>(window, "AI setup step").Text, StringComparison.Ordinal);
             window.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Try your own message (optional)")).IsExpanded = true; Pump(window);
             Assert.True(Find<TextBox>(window, "Exact message to send").IsEffectivelyVisible);
             Capture(window, $"ai-review-{light}-{width}");
             Assert.Contains("test-model", Find<TextBlock>(window, "Reviewed AI destination").Text, StringComparison.Ordinal);
-            Click(Find<Button>(window, "AI setup back")); Pump(window);
+            Click(Find<Button>(window, "Previous step")); Pump(window);
             Assert.Equal("test-model", Find<TextBox>(window, "Model name").Text);
             Assert.Equal(0, handler.Calls);
         }
@@ -131,7 +131,7 @@ public sealed class AIConnectionReadabilityTests
     private static void Capture(Window window, string name)
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory); while (root is not null && !File.Exists(Path.Combine(root.FullName, "Tern.slnx"))) root = root.Parent;
-        Assert.NotNull(root); var output = Path.Combine(root.FullName, "artifacts", "screenshots", "ai-readability"); Directory.CreateDirectory(output);
+        Assert.NotNull(root); var output = Tern.Tests.Shared.TestOutput.Folder("screenshots", "ai-readability"); Directory.CreateDirectory(output);
         using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame); frame.Save(Path.Combine(output, name + ".png"), new PngBitmapEncoderOptions());
     }
     private sealed class MemoryVault : IAICredentialStore

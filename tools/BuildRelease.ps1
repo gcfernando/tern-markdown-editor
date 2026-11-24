@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$BuildRoot = 'artifacts/release-build',
-    [string]$OutputDirectory = 'artifacts/release',
+    [string]$BuildRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\tern-build-output\release-build')),
+    [string]$OutputDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\tern-build-output\release')),
     [string]$SigningCertificateThumbprint,
     [uri]$TimestampServer,
     [string]$SignToolPath = 'signtool.exe',
@@ -20,6 +20,7 @@ try {
         throw 'Preserve existing release outputs. Choose fresh build and output directories.'
     }
     if ($RequireSigned -and -not $SigningCertificateThumbprint) { throw 'Signing credentials are required to sign the freshly built MSI and standalone EXE.' }
+    & (Join-Path $PSScriptRoot 'UpdateDocumentationScreenshots.ps1')
     $publish = Join-Path $build 'publish'
     # Separate from scripts/publish.ps1: a fresh release directory cannot contain stale files.
     dotnet publish src/Tern.Desktop/Tern.Desktop.csproj -c Release -r win-x64 --self-contained true --no-restore -p:RestoreLockedMode=true -p:UseSharedCompilation=false --output $publish -m:1
@@ -34,6 +35,7 @@ try {
     python @packageArguments
     if ($LASTEXITCODE -ne 0) { throw 'Release ZIP integrity verification failed.' }
     & (Join-Path $PSScriptRoot 'TestRelease.ps1') -Archive (Join-Path $output 'Tern-win-x64.zip') -Checksum (Join-Path $output 'SHA256SUMS.txt') -EvidenceDirectory (Join-Path $build 'smoke')
+    & (Join-Path $PSScriptRoot 'TestNativeEditing.ps1') -Executable (Join-Path $publish 'Tern.exe') -EvidenceDirectory (Join-Path $build 'native-editing')
     if (-not $WixDirectory) { $WixDirectory = & (Join-Path $PSScriptRoot 'GetWix.ps1') }
     $payload = Join-Path (Split-Path $output -Parent) ((Split-Path $output -Leaf) + '-payload')
     $content = Join-Path $build 'bundled-content.zip'
@@ -64,5 +66,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Restricted MSI wizard selection checks failed.' }
     & (Join-Path $PSScriptRoot 'TestMsiPayload.ps1') -Msi (Join-Path $output "Tern-$version.msi") -Payload $payload -EvidenceDirectory (Join-Path $build 'msi-extraction') -WixDirectory $WixDirectory -BrandingDirectory (Join-Path $build 'installer-branding')
     & (Join-Path $PSScriptRoot 'TestRelease.ps1') -Archive (Join-Path $output 'Tern-win-x64.zip') -Checksum (Join-Path $output 'SHA256SUMS.txt') -EvidenceDirectory (Join-Path $build 'standalone-smoke') -Executable (Join-Path $output 'Tern.exe')
+    & (Join-Path $PSScriptRoot 'TestNativeEditing.ps1') -Executable (Join-Path $output 'Tern.exe') -EvidenceDirectory (Join-Path $build 'standalone-native-editing')
     Write-Output "Verified release candidate: $(Join-Path $output 'Tern-win-x64.zip')"
 } finally { Pop-Location }

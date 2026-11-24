@@ -21,7 +21,7 @@ public sealed class CreateItemWindow : Window
 {
     private readonly TextBox _parent;
     private readonly TextBox _name;
-    private readonly TextBlock _error = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false };
+    private readonly TextBlock _error = MessageTones.Follow(new() { TextWrapping = TextWrapping.Wrap, IsVisible = false });
     private readonly TextBlock _preview = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Button _create = new() { Content = "Create", IsDefault = true };
     private readonly CreateItemKind _kind;
@@ -34,14 +34,14 @@ public sealed class CreateItemWindow : Window
 
     public CreateItemWindow(CreateItemKind kind, string initialParent, bool outside,
         Func<string, string?>? validateParent = null, IReadOnlyList<CreationDestination>? destinations = null,
-        Func<CreatedItemRequest, Task<string?>>? submit = null)
+        Func<CreatedItemRequest, Action, Task<string?>>? submit = null)
     {
         _kind = kind;
         _customDestination = outside;
         _destinations = destinations ?? [];
         _validateParent = validateParent;
         var noun = kind switch { CreateItemKind.File => "file", CreateItemKind.Folder => "folder", _ => "workspace" };
-        DialogParts.Setup(this, "New " + noun, 620, 500);
+        DialogParts.Setup(this, "New " + noun, 620, 500, DialogGuidance.Create);
         Closed += (_, _) => _closed = true;
         Closing += (_, e) => { if (_submitting) e.Cancel = true; };
         _parent = new TextBox { Text = initialParent, IsReadOnly = !outside };
@@ -63,9 +63,9 @@ public sealed class CreateItemWindow : Window
                 if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path) _parent.Text = path;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-            { ShowError("Could not choose a folder: " + ex.Message); }
+            { ShowError("Could not choose a folder: " + Tern.App.Shell.UserProblem.Plain(ex)); }
         };
-        var location = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        var location = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), [!Grid.ColumnSpacingProperty] = GuideParts.Space(8).ToBinding() };
         location.Children.Add(_parent); location.Children.Add(browse); Grid.SetColumn(browse, 1);
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         AutomationProperties.SetName(cancel, "Cancel creation");
@@ -83,8 +83,14 @@ public sealed class CreateItemWindow : Window
                 if (_destination is not null) _destination.IsEnabled = false;
                 _create.Content = "Creating…";
                 string? failure;
-                try { failure = await submit(request); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException) { failure = ex.Message; }
+                void PhysicalCreationCompleted()
+                {
+                    if (_closed) return;
+                    _submitting = false;
+                    Close(request);
+                }
+                try { failure = await submit(request, PhysicalCreationCompleted); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException) { failure = Tern.App.Shell.UserProblem.Plain(ex); }
                 finally { _submitting = false; }
                 if (_closed) return;
                 _create.Content = "Create";
@@ -119,9 +125,9 @@ public sealed class CreateItemWindow : Window
         if (kind == CreateItemKind.Workspace)
             fields.Children.Add(new TextBlock { Text = "Creates a new directory with workspace metadata. Existing directories are kept unchanged.", TextWrapping = TextWrapping.Wrap });
         var scroll = new ScrollViewer { Content = fields, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        var actions = GuideParts.Actions(cancel, _create);
+        var actions = GuideParts.Actions(_create, cancel);
         var footer = GuideParts.Vertical(_error, actions);
-        var frame = new Grid { Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 16, Children = { scroll, footer } };
+        var frame = new Grid { Margin = new Thickness(20), RowDefinitions = new RowDefinitions("*,Auto"), [!Grid.RowSpacingProperty] = GuideParts.Space(16).ToBinding(), Children = { scroll, footer } };
         Grid.SetRow(footer, 1); Content = frame;
         frame.SizeChanged += (_, _) => MinHeight = Math.Min(MaxHeight, footer.DesiredSize.Height + 120);
         _parent.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) Refresh(); };
@@ -151,7 +157,7 @@ public sealed class CreateItemWindow : Window
             return new(parent, name);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException)
-        { error = "Cannot use this location: " + ex.Message; return null; }
+        { error = "Cannot use this location: " + Tern.App.Shell.UserProblem.Plain(ex); return null; }
     }
 
     private void Refresh()

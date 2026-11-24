@@ -8,13 +8,12 @@ namespace Tern.PreviewView;
 /// <summary>Draws find results without changing selectable text, links, or syntax-coloured runs.</summary>
 internal sealed class SearchHighlightLayer(PreviewView owner) : Control
 {
-    private static readonly IBrush Fill = new SolidColorBrush(Color.Parse("#55FFB300"));
-    private static readonly IBrush OtherFill = new SolidColorBrush(Color.Parse("#40FFD54F"));
-    private static readonly Pen Outline = new(new SolidColorBrush(Color.Parse("#E48B00")), 2);
-
     public override void Render(DrawingContext context)
     {
         if (owner.SearchMatches.Count == 0) return;
+        var fill = PreviewTheme.Resolve(this, PreviewKeys.FindMatch);
+        var otherFill = PreviewTheme.Resolve(this, PreviewKeys.FindMatchOther);
+        var outline = new Pen(PreviewTheme.Resolve(this, PreviewKeys.FindMatchOutline), 2);
         foreach (var text in owner.GetVisualDescendants().OfType<RichTextBlock>())
         {
             if (!text.IsEffectivelyVisible || text.TranslatePoint(default, this) is not { } origin) continue;
@@ -26,11 +25,11 @@ internal sealed class SearchHighlightLayer(PreviewView owner) : Control
             {
                 foreach (var range in text.SearchRanges())
                     foreach (var rect in text.TextLayout.HitTestTextRange(range.Start, range.Length))
-                        context.DrawRectangle(OtherFill, null,
+                        context.DrawRectangle(otherFill, null,
                             rect.Translate(new Vector(origin.X + text.Padding.Left, origin.Y + text.Padding.Top)), 2, 2);
                 foreach (var range in text.SearchRanges(activeOnly: true))
                     foreach (var rect in text.TextLayout.HitTestTextRange(range.Start, range.Length))
-                        context.DrawRectangle(Fill, Outline,
+                        context.DrawRectangle(fill, outline,
                             rect.Translate(new Vector(origin.X + text.Padding.Left, origin.Y + text.Padding.Top)), 2, 2);
             }
         }

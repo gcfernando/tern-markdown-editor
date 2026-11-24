@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Tern.App;
 using Tern.Desktop.Services;
 using Tern.Desktop.Views;
 
@@ -22,9 +23,9 @@ public sealed class UnifiedWorkspaceConnectionTests
         store.Save(profile, "first-token");
         var probes = 0;
         var generations = 0;
-        var service = new AIWorkspaceService(folder.Path, vault, createCopilotClient: () => new CopilotTextClient((start, _) =>
+        var service = new AIWorkspaceService(folder.Path, vault, createCopilotClient: () => new CopilotTextClient((start, input, _) =>
         {
-            if (start.ArgumentList.Contains("--prompt=" + AIConnectionClient.ValidationMessage)) probes++;
+            if (input == Tern.App.AIRequest.ConnectionTest(AIConnectionClient.ValidationMessage).Text) probes++;
             else generations++;
             return Task.FromResult(new CopilotProcessResult(0, "OK"));
         }));
@@ -67,17 +68,18 @@ public sealed class UnifiedWorkspaceConnectionTests
         using var folder = new Folder(); var vault = new Vault(); var profile = Profile(folder, "copilot");
         File.WriteAllText(profile.Destination, "synthetic"); new IntegrationProfileStore(folder.Path, vault).Save(profile, "private-token");
         var prompts = new List<string>();
-        var workspace = new AIWorkspaceService(folder.Path, vault, createCopilotClient: () => new CopilotTextClient((start, _) =>
+        var workspace = new AIWorkspaceService(folder.Path, vault, createCopilotClient: () => new CopilotTextClient((start, input, _) =>
         {
             Assert.Equal("private-token", start.Environment["COPILOT_GITHUB_TOKEN"]);
-            prompts.Add(start.ArgumentList.Single(a => a.StartsWith("--prompt=", StringComparison.Ordinal)));
+            Assert.DoesNotContain(start.ArgumentList, a => a.StartsWith("--prompt", StringComparison.Ordinal));
+            prompts.Add(input);
             return Task.FromResult(new CopilotProcessResult(0, prompts.Count == 1 ? "OK" : "# Updated"));
         }));
         workspace.Reload();
-        var request = AIWorkspaceService.WritingMessage("Improve it", "# Original");
+        var request = AIWorkspaceService.WritingRequest("Improve it", "# Original");
         Assert.Null(workspace.WritingValidationError(profile.Id, request));
         Assert.Equal("# Updated", await workspace.SendWritingAsync(profile.Id, request, () => true, TestContext.Current.CancellationToken));
-        Assert.Equal(["--prompt=" + AIConnectionClient.ValidationMessage, "--prompt=" + request], prompts);
+        Assert.Equal([AIRequest.ConnectionTest(AIConnectionClient.ValidationMessage).Text, request.Text], prompts);
     }
 
     [Fact]

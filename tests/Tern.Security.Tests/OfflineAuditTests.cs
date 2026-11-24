@@ -260,12 +260,16 @@ public class OfflineAuditTests
             "https://api.openai.com/v1/models",
             "https://api.anthropic.com/v1/messages",
             "https://api.anthropic.com/v1/models",
+            // DeepSeek preset; requests still need an explicit validation or reviewed send.
+            "https://api.deepseek.com/chat/completions",
+            "https://api.deepseek.com/models",
             "http://localhost:11434/api/chat",
             "http://localhost:11434/api/tags",
             // Provider documentation opens only after its explicit link is clicked.
             "https://developers.openai.com/api/docs/quickstart",
             "https://platform.claude.com/docs/en/api/overview",
             "https://docs.ollama.com/quickstart",
+            "https://api-docs.deepseek.com/",
             "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli",
             "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http",
             "https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create",

@@ -17,6 +17,7 @@ public sealed class MCPConnectionClient : IDisposable
     public const string SupportedProtocol = "2025-11-25";
     public const int MaximumResponseBytes = 1_048_576;
     public const int MaximumArgumentCharacters = 32_768;
+    public Func<bool>? NetworkAllowed { get; set; }
     private readonly HttpClient _http;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private Uri? _endpoint;
@@ -28,7 +29,7 @@ public sealed class MCPConnectionClient : IDisposable
     private readonly HashSet<string> _knownTools = new(StringComparer.Ordinal);
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
 
-    public MCPConnectionClient() : this(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = false, Credentials = null }) { }
+    public MCPConnectionClient() : this(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, UseProxy = true, Credentials = null }) { }
     internal MCPConnectionClient(HttpMessageHandler handler) => _http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
 
     public async Task<MCPServerInfo> InitializeAsync(Uri endpoint, string key, CancellationToken cancellationToken = default)
@@ -41,7 +42,7 @@ public sealed class MCPConnectionClient : IDisposable
             _endpoint = endpoint; _key = key; _session = null; _initialized = false; _knownTools.Clear();
             using var deadline = Deadline(cancellationToken);
             var result = await RequestAsync("initialize", new
-            { protocolVersion = SupportedProtocol, capabilities = new { }, clientInfo = new { name = "Tern", version = "1.0.5" } }, deadline.Token, initializing: true).ConfigureAwait(false);
+            { protocolVersion = SupportedProtocol, capabilities = new { }, clientInfo = new { name = "Tern", version = "1.0.6" } }, deadline.Token, initializing: true).ConfigureAwait(false);
             if (String(result, "protocolVersion", 32) != SupportedProtocol)
                 throw new InvalidOperationException("This server did not negotiate MCP 2025-11-25. Use a server with that compatibility mode; the newer 2026 protocol is not supported in this build.");
             if (!result.TryGetProperty("serverInfo", out var info) || info.ValueKind != JsonValueKind.Object)
@@ -194,6 +195,7 @@ public sealed class MCPConnectionClient : IDisposable
 
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        if (NetworkAllowed?.Invoke() == false) throw new InvalidOperationException("Offline mode blocks MCP. Turn Offline off to connect.");
         var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {

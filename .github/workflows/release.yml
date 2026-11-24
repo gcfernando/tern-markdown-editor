@@ -45,7 +45,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Repeatable test suite failed.' }
       - name: Publish fresh self-contained package and smoke the extracted application
         shell: pwsh
-        run: ./tools/BuildRelease.ps1
+        run: ./tools/BuildRelease.ps1 -BuildRoot artifacts/release-build -OutputDirectory artifacts/release
       - name: Retain test and extracted-application evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

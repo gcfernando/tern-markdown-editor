@@ -280,7 +280,7 @@ internal static partial class SafeSvgImage
         {
             if (value == "none") return null;
             if (value == "currentColor") value = currentColor;
-            if (!value.StartsWith("url(", StringComparison.Ordinal)) return new SolidColorBrush(Color.Parse(value), opacity);
+            if (!value.StartsWith("url(", StringComparison.Ordinal)) return new SolidColorBrush(PreviewTheme.ParseDocumentColor(value), opacity);
             var id = LocalReference(value);
             if (!_gradients.TryGetValue(id, out var definition)) throw Invalid();
             if (Attr(definition, "gradientUnits") is { } units && units != "objectBoundingBox" || Attr(definition, "gradientTransform") is not null) throw Invalid();
@@ -293,7 +293,7 @@ internal static partial class SafeSvgImage
             foreach (var stop in definition.Elements())
             {
                 if (stop.Name.LocalName != "stop") throw Invalid();
-                var color = Color.Parse(Attr(stop, "stop-color") ?? "#000");
+                var color = PreviewTheme.ParseDocumentColor(Attr(stop, "stop-color") ?? "#000");
                 var alpha = Unit(Attr(stop, "stop-opacity"), 1);
                 color = Color.FromArgb((byte)Math.Round(color.A * alpha), color.R, color.G, color.B);
                 brush.GradientStops.Add(new GradientStop(color, Fraction(Attr(stop, "offset"), 0)));

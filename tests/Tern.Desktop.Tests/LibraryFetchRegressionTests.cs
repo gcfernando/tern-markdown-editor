@@ -10,11 +10,45 @@ using Avalonia.VisualTree;
 using Tern.Desktop.Services;
 using Tern.Desktop.ViewModels;
 using Tern.Desktop.Views;
+using Tern.App.Shell;
 
 namespace Tern.Desktop.Tests;
 
 public sealed class LibraryFetchRegressionTests
 {
+    [AvaloniaFact]
+    public async Task Failed_recent_url_retains_explicit_recovery_actions_and_retry_opens_without_a_dialog()
+    {
+        using var f = new DesktopFixture();
+        var handler = new PendingHandler();
+        f.Window.OnlineLoaderFactory = () => new MarkdownUrlLoader(handler,
+            (_, _) => Task.FromResult(new[] { IPAddress.Loopback }));
+        f.Shell.Recent.AddUrl("http://localhost:8000/retry.md");
+        await f.Window.ShowNavAsync("Recent"); Pump(f);
+        var list = f.Window.FindControl<ListBox>("SideList")!;
+        list.SelectedItem = Assert.Single(list.Items.OfType<SideRow>(), row => row.IsOnline);
+        handler.Response.SetResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        for (var attempt = 0; attempt < 100 && f.Shell.Banner is null; attempt++)
+        { await Task.Delay(10, TestContext.Current.CancellationToken); Pump(f); }
+        Assert.Equal(StatusSeverity.Error, f.Shell.Banner!.Severity);
+        Assert.Empty(f.Shell.Tabs);
+        var failed = Assert.Single(f.Shell.Activities.Items, item => item.Phase.StartsWith("Online file could not be opened:"));
+        Assert.Equal(["Retry", "Open from URL"], failed.Actions.Select(action => action.Label));
+        var recovery = new PendingHandler();
+        f.Window.OnlineLoaderFactory = () => new MarkdownUrlLoader(recovery,
+            (_, _) => Task.FromResult(new[] { IPAddress.Loopback }));
+        failed.Actions[0].Invoke(); Pump(f);
+        Assert.Equal(1, recovery.Calls);
+        recovery.Response.SetResult(new HttpResponseMessage(HttpStatusCode.OK)
+        { Content = new StringContent("# Recovered", Encoding.UTF8, "text/markdown") });
+        for (var attempt = 0; attempt < 100 && f.Shell.Tabs.Count == 0; attempt++)
+        { await Task.Delay(10, TestContext.Current.CancellationToken); Pump(f); }
+        Assert.Equal("# Recovered", Assert.Single(f.Shell.Tabs).CurrentText);
+        Assert.Null(f.Shell.Banner);
+        Assert.Empty(f.Window.OwnedWindows);
+        Assert.Contains(f.Shell.Activities.Items, item => item.Id == failed.Id && item.State == ActivityState.Failed);
+    }
+
     [AvaloniaTheory]
     [InlineData("http://192.168.1.1/notes.md")]
     [InlineData("http://server.local/notes.md")]
@@ -73,7 +107,7 @@ public sealed class LibraryFetchRegressionTests
         f.Shell.Recent.AddUrl("http://localhost:8000/notes.md");
         await f.Window.ShowNavAsync("Recent"); Pump(f);
         var button = Assert.Single(f.Window.GetVisualDescendants().OfType<Button>(),
-            control => control.IsEffectivelyVisible && AutomationProperties.GetName(control) == "Download online file");
+            control => control.IsEffectivelyVisible && AutomationProperties.GetName(control) == "Save portable copy");
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f);
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(f);
         Assert.Equal(1, handler.Calls);

@@ -112,16 +112,35 @@ public sealed class IssueLifecycleTests
         Assert.Equal(string.Empty, await File.ReadAllTextAsync(path));
     }
 
-    [Fact]
-    public async Task Clear_history_removes_pins_persists_and_preserves_documents()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Clear_history_preserves_pins_unless_explicitly_included_and_preserves_documents(bool includePinned)
     {
         using var fixture = new ShellFixture();
         var path = await fixture.WriteAsync("saved.md", "safe");
         await fixture.Shell.OpenFileAsync(path);
         fixture.Shell.Recent.SetPinned(RecentKind.File, path, true);
-        fixture.Shell.ClearRecentHistory();
-        Assert.Empty(fixture.Shell.Recent.Files);
-        Assert.Empty(new RecentItemsStore(fixture.Shell.Paths.StateDirectory).Files);
+        fixture.Shell.Recent.AddWorkspace(fixture.Docs);
+        fixture.Shell.Recent.SetPinned(RecentKind.Workspace, fixture.Docs, true);
+        fixture.Shell.Recent.AddUrl("https://example.test/pinned.md");
+        fixture.Shell.Recent.SetPinned(RecentKind.Url, "https://example.test/pinned.md", true);
+        fixture.Shell.Recent.AddUrl("https://example.test/unpinned.md");
+        var closedPath = await fixture.WriteAsync("closed.md", "closed document");
+        var closed = (await fixture.Shell.OpenFileAsync(closedPath))!;
+        await fixture.Shell.CloseTabAsync(closed);
+        fixture.Shell.ClearRecentHistory(includePinned);
+        var loaded = new RecentItemsStore(fixture.Shell.Paths.StateDirectory);
+        foreach (var kind in Enum.GetValues<RecentKind>())
+        {
+            if (includePinned) { Assert.Empty(fixture.Shell.Recent.Get(kind)); Assert.Empty(loaded.Get(kind)); }
+            else
+            {
+                Assert.True(Assert.Single(fixture.Shell.Recent.Get(kind)).Pinned);
+                Assert.True(Assert.Single(loaded.Get(kind)).Pinned);
+            }
+        }
+        Assert.Null(await fixture.Shell.ReopenClosedTabAsync());
         Assert.Single(fixture.Shell.Tabs);
         Assert.Equal("safe", await File.ReadAllTextAsync(path));
     }

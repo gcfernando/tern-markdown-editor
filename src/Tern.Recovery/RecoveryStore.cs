@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Tern.Domain.Text;
+using Tern.Filesystem;
 
 namespace Tern.Recovery;
 
@@ -34,34 +35,70 @@ public sealed record RecoveryScan(IReadOnlyList<RecoveryEntry> Entries, IReadOnl
 /// </summary>
 public sealed class RecoveryStore
 {
-    private static readonly byte[] Magic = "TERNREC1"u8.ToArray();
+    private static readonly byte[] LegacyMagic = "TERNREC1"u8.ToArray();
+    private static readonly byte[] Magic = "TERNREC2"u8.ToArray();
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private const int GenerationsToKeep = 2;
-    private const int MaxCheckpointBytes = 128 * 1024 * 1024;
+    private const long MaxPayloadBytes = DocumentFileService.MaximumEagerLoadBytes * 3;
     private const int MaxHeaderBytes = 1024 * 1024;
+    private const long MaxCheckpointBytes = MaxPayloadBytes + MaxHeaderBytes + 4096;
     private const string Extension = ".tern-recovery";
     private readonly string _directory;
+    private readonly bool _protectCopies;
     private readonly int _ownerPid = Environment.ProcessId;
     private readonly long _ownerStartTicks = SafeProcessStartTicks(Environment.ProcessId);
 
     // Actual persistence boundaries for deterministic fault/crash tests. Null in the application.
     internal Action<string>? CheckpointPhase { get; set; }
 
-    public RecoveryStore(string directory)
+    public RecoveryStore(string directory, bool protectCopies = false)
     {
         _directory = directory;
+        _protectCopies = protectCopies;
         Directory.CreateDirectory(_directory);
     }
 
     public static string DefaultDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tern", "recovery");
 
-    public async Task WriteCheckpointAsync(RecoveryRecord record, CancellationToken cancellationToken = default)
+    public Task WriteCheckpointAsync(RecoveryRecord record, CancellationToken cancellationToken = default) =>
+        WriteCheckpointCoreAsync(record, _ownerPid, _ownerStartTicks, cancellationToken);
+
+    /// <summary>
+    /// After a document or folder is renamed or moved, points checkpoints left by sessions that no longer run at the new path
+    /// so a later recovery still finds the right file. Checkpoints owned by a running session are left to that session. Returns how many were rewritten.
+    /// </summary>
+    public async Task<int> RewriteOriginalPathsAsync(Func<string, string?> map)
     {
+        var rewritten = 0;
+        foreach (var entry in Scan().Entries.Where(e => !e.OwnerIsAlive && e.Record.OriginalPath is not null))
+        {
+            if (map(entry.Record.OriginalPath!) is not { } moved) continue;
+            await WriteCheckpointCoreAsync(entry.Record with { OriginalPath = moved }, 0, 0, default).ConfigureAwait(false);
+            rewritten++;
+        }
+        return rewritten;
+    }
+
+    private async Task WriteCheckpointCoreAsync(RecoveryRecord record, int ownerPid, long ownerStartTicks, CancellationToken cancellationToken)
+    {
+        // The folder may have been removed while the app runs (cleanup tools, sync); recreate it so protection resumes.
+        Directory.CreateDirectory(_directory);
         var generation = NextGeneration(record.SessionId);
         var path = FilePath(record.SessionId, generation);
         var tempPath = path + ".tmp";
 
-        var payload = MemoryMarshal.AsBytes(record.Text.AsSpan()).ToArray();
+        if (record.Text.Length > DocumentFileService.MaximumEagerLoadBytes)
+            throw new IOException("The recovery checkpoint exceeds the 64 Mi-character limit.");
+        byte[] payload;
+        var magic = Magic;
+        try { payload = StrictUtf8.GetBytes(record.Text); }
+        catch (EncoderFallbackException)
+        {
+            // Preserve unpaired UTF-16 surrogates exactly, as older checkpoints did.
+            payload = MemoryMarshal.AsBytes(record.Text.AsSpan()).ToArray();
+            magic = LegacyMagic;
+        }
         var header = new Header
         {
             SessionId = record.SessionId,
@@ -77,23 +114,26 @@ public sealed class RecoveryStore
             DominantLineEnding = record.Format.DominantLineEnding,
             HasMixedLineEndings = record.Format.HasMixedLineEndings,
             EndsWithNewline = record.Format.EndsWithNewline,
-            OwnerPid = _ownerPid,
-            OwnerStartTicks = _ownerStartTicks,
+            OwnerPid = ownerPid,
+            OwnerStartTicks = ownerStartTicks,
             PayloadLength = payload.Length,
             PayloadSha256 = Convert.ToHexString(SHA256.HashData(payload)),
         };
         var headerBytes = JsonSerializer.SerializeToUtf8Bytes(header);
-        if (headerBytes.Length > MaxHeaderBytes || (long)Magic.Length + 4 + headerBytes.Length + payload.Length > MaxCheckpointBytes)
+        if (headerBytes.Length > MaxHeaderBytes || payload.Length > MaxPayloadBytes)
         {
-            throw new IOException("The recovery checkpoint exceeds the 128 MiB limit.");
+            throw new IOException("The recovery checkpoint exceeds its metadata or payload size limit.");
         }
 
+        var checkpoint = new byte[magic.Length + 4 + headerBytes.Length + payload.Length];
+        magic.CopyTo(checkpoint, 0);
+        BitConverter.GetBytes(headerBytes.Length).CopyTo(checkpoint, magic.Length);
+        headerBytes.CopyTo(checkpoint, magic.Length + 4);
+        payload.CopyTo(checkpoint, magic.Length + 4 + headerBytes.Length);
+        if (_protectCopies) checkpoint = UserDataProtection.Protect(checkpoint);
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
         {
-            await stream.WriteAsync(Magic, cancellationToken).ConfigureAwait(false);
-            await stream.WriteAsync(BitConverter.GetBytes(headerBytes.Length), cancellationToken).ConfigureAwait(false);
-            await stream.WriteAsync(headerBytes, cancellationToken).ConfigureAwait(false);
-            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(checkpoint, cancellationToken).ConfigureAwait(false);
             CheckpointPhase?.Invoke("payload-written-before-flush");
             stream.Flush(flushToDisk: true);
         }
@@ -138,16 +178,71 @@ public sealed class RecoveryStore
         return new RecoveryScan([.. entries.OrderByDescending(e => e.Record.SavedAtUtc)], corrupt);
     }
 
-    /// <summary>Removes all checkpoints for a session once its content is safely on disk or deliberately discarded.</summary>
-    public void Retire(Guid sessionId)
+    /// <summary>
+    /// Removes all checkpoints for a session once its content is safely on disk or deliberately discarded.
+    /// Never throws: a missing or unreadable recovery folder returns false so a completed save is not undone by cleanup.
+    /// </summary>
+    public bool Retire(Guid sessionId)
     {
-        foreach (var path in Directory.EnumerateFiles(_directory, $"{sessionId:N}.*{Extension}"))
+        try
         {
-            TryDelete(path);
+            if (!Directory.Exists(_directory)) return true;
+            foreach (var path in Directory.EnumerateFiles(_directory, $"{sessionId:N}.*{Extension}"))
+            {
+                TryDelete(path);
+                if (File.Exists(path)) return false;
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
-    public void DeleteFile(string path) => TryDelete(path);
+
+    public string DirectoryPath => _directory;
+
+    /// <summary>Where unreadable checkpoints are kept after they have been reported once. <see cref="Scan"/> never looks here.</summary>
+    public string DamagedDirectory => Path.Combine(_directory, "damaged");
+
+    /// <summary>Deletes only unreadable checkpoint files that live directly in the recovery folder; returns how many were removed.</summary>
+    public int DeleteDamaged(IEnumerable<string> paths)
+    {
+        var removed = 0;
+        foreach (var path in paths.Where(IsCheckpointFile))
+        {
+            TryDelete(path);
+            if (!File.Exists(path)) removed++;
+        }
+        return removed;
+    }
+
+    /// <summary>Moves unreadable checkpoints to <c>damaged\</c> so they are reported once, never again, and never lost. Returns how many moved.</summary>
+    public int Quarantine(IEnumerable<string> paths)
+    {
+        var moved = 0;
+        foreach (var path in paths.Where(IsCheckpointFile))
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(DamagedDirectory);
+                var target = Path.Combine(DamagedDirectory, Path.GetFileName(path));
+                for (var n = 1; File.Exists(target); n++)
+                    target = Path.Combine(DamagedDirectory, $"{Path.GetFileNameWithoutExtension(path)}.{n}{Extension}");
+                File.Move(path, target);
+                moved++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        return moved;
+    }
+
+    private bool IsCheckpointFile(string path) =>
+        File.Exists(path) && path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.GetFullPath(_directory).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
 
     private bool TryRead(string path, out RecoveryEntry? entry, out string reason)
     {
@@ -162,7 +257,9 @@ public sealed class RecoveryStore
             }
             var bytes = new byte[stream.Length];
             stream.ReadExactly(bytes);
-            if (bytes.Length < Magic.Length + 4 || !bytes.AsSpan(0, Magic.Length).SequenceEqual(Magic))
+            bytes = UserDataProtection.Unprotect(bytes);
+            var legacy = bytes.Length >= LegacyMagic.Length && bytes.AsSpan(0, LegacyMagic.Length).SequenceEqual(LegacyMagic);
+            if (bytes.Length < Magic.Length + 4 || (!legacy && !bytes.AsSpan(0, Magic.Length).SequenceEqual(Magic)))
             {
                 reason = "Unrecognised file header.";
                 return false;
@@ -200,7 +297,8 @@ public sealed class RecoveryStore
             }
 
             var payloadStart = headerStart + headerLength;
-            if (header.PayloadLength < 0 || header.PayloadLength != bytes.Length - payloadStart || header.PayloadLength % 2 != 0)
+            if (header.PayloadLength < 0 || header.PayloadLength > MaxPayloadBytes
+                || header.PayloadLength != bytes.Length - payloadStart || (legacy && header.PayloadLength % 2 != 0))
             {
                 reason = "Truncated payload.";
                 return false;
@@ -213,14 +311,19 @@ public sealed class RecoveryStore
                 return false;
             }
 
-            var text = new string(MemoryMarshal.Cast<byte, char>(payload));
+            var text = legacy ? new string(MemoryMarshal.Cast<byte, char>(payload)) : StrictUtf8.GetString(payload);
+            if (text.Length > DocumentFileService.MaximumEagerLoadBytes)
+            {
+                reason = "The checkpoint text exceeds the size limit.";
+                return false;
+            }
             var format = new TextFileFormat(header.Encoding, header.HasBom, header.DominantLineEnding, header.HasMixedLineEndings, header.EndsWithNewline);
             var record = new RecoveryRecord(header.SessionId, header.OriginalPath, header.DisplayName, header.Revision, header.SavedAtUtc, header.BaselineSha256, format, text, header.IsExternalDraft, header.SourceUrl);
             entry = new RecoveryEntry(record, IsOwnerAlive(header.OwnerPid, header.OwnerStartTicks));
             reason = string.Empty;
             return true;
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or DecoderFallbackException)
         {
             reason = ex.Message;
             return false;

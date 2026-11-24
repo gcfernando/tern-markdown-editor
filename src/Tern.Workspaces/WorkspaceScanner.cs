@@ -26,6 +26,17 @@ public sealed class WorkspaceScanner
     public Task<WorkspaceSnapshot> ScanAsync(string root, IProgress<int>? progress = null, CancellationToken cancellationToken = default) =>
         Task.Run(() => Scan(root, null, progress, cancellationToken), cancellationToken);
 
+    /// <summary>Refreshes files in existing directories; null means a full scan is required to establish current topology or admission.</summary>
+    public Task<WorkspaceSnapshot?> TryRefreshFilesAsync(WorkspaceSnapshot snapshot, WorkspaceChangeSet changes,
+        CancellationToken cancellationToken = default) => Task.Run(() =>
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (changes.RescanRequired || changes.Changes.Any(change => change.IsDirectory
+            || change.Kind is not (WorkspaceChangeKind.Changed or WorkspaceChangeKind.Created))) return null;
+        var run = new ScanRun(new WorkspaceFilter(snapshot.Root, _options), _options, null, null, cancellationToken);
+        return run.TryRefreshFiles(snapshot, changes);
+    }, cancellationToken);
+
     /// <summary>Streams documents as they are discovered, so large workspaces can start indexing immediately.</summary>
     public async IAsyncEnumerable<WorkspaceFile> EnumerateFilesAsync(
         string root,
@@ -78,6 +89,7 @@ public sealed class WorkspaceScanner
         private readonly List<ScanWarning> _warnings = [];
         private readonly List<(DirectoryInfo Link, FileTreeNode Node, int Depth)> _deferredLinks = [];
         private readonly HashSet<string> _visited = new(WorkspacePaths.Comparer);
+        private bool _walkingFromRoot;
 
         public ScanRun(WorkspaceFilter filter, WorkspaceScanOptions options, Action<WorkspaceFile>? onFile, IProgress<int>? progress, CancellationToken ct)
         {
@@ -90,9 +102,13 @@ public sealed class WorkspaceScanner
 
         public WorkspaceSnapshot Execute()
         {
+            if (_filter.IgnoreFileIsOnlineOnly)
+                _warnings.Add(new ScanWarning(ScanWarningKind.OnlineOnly, Path.Combine(_filter.Root, WorkspaceScanOptions.IgnoreFileName),
+                    "The online-only .ternignore was not downloaded. Make it available locally and rescan to apply its rules."));
             var root = new DirectoryInfo(_filter.Root);
             var rootNode = new FileTreeNode(root.Name, _filter.Root, string.Empty, true, 0, root.LastWriteTimeUtc, false);
             _visited.Add(_filter.Root);
+            _walkingFromRoot = true;
             ScanDirectory(root, rootNode, 0, viaLink: false);
 
             // Links are resolved last so that a target which is already part of the walk is never listed twice.
@@ -105,10 +121,83 @@ public sealed class WorkspaceScanner
             return new WorkspaceSnapshot(_filter.Root, rootNode, _files, _warnings);
         }
 
+        public WorkspaceSnapshot? TryRefreshFiles(WorkspaceSnapshot snapshot, WorkspaceChangeSet changes)
+        {
+            var files = snapshot.Files.ToDictionary(file => file.FullPath, WorkspacePaths.Comparer);
+            var tree = snapshot.Tree;
+            foreach (var change in changes.Changes)
+            {
+                _ct.ThrowIfCancellationRequested();
+                var path = WorkspacePaths.Normalize(change.Path);
+                if (!_filter.IsRelevantChange(path) || snapshot.Warnings.Any(warning =>
+                    WorkspacePaths.PathsEqual(warning.Path, path))) return null;
+                var directory = Path.GetDirectoryName(path);
+                var parent = directory is null ? null : FindDirectory(tree, directory);
+                if (parent is null) return null;
+                var info = new FileInfo(path);
+                if (!info.Exists || (info.Attributes & FileAttributes.Directory) != 0) return null;
+                var previous = files.GetValueOrDefault(path);
+                var temporary = new FileTreeNode(parent.Name, parent.FullPath, parent.RelativePath,
+                    true, parent.Length, parent.LastWriteUtc, parent.IsLink);
+                var count = _files.Count;
+                HandleFile(info, temporary, WorkspacePaths.GetRelative(_filter.Root, path),
+                    previous?.ViaLink == true || HasLinkedAncestor(tree, directory!));
+                if (_files.Count != count + 1) return null;
+                var added = _files[^1];
+                if (previous is not null && (previous.IsOnlineOnly != added.IsOnlineOnly || previous.ViaLink != added.ViaLink)) return null;
+                files[added.FullPath] = added;
+                if (previous is null) tree = WithFile(tree, parent.FullPath, temporary.Children[0]);
+            }
+            return new WorkspaceSnapshot(snapshot.Root, tree, files.Values.ToArray(), snapshot.Warnings);
+        }
+
+        private static FileTreeNode? FindDirectory(FileTreeNode node, string path)
+        {
+            if (WorkspacePaths.PathsEqual(node.FullPath, path)) return node;
+            foreach (var child in node.Children.Where(child => child.IsDirectory && WorkspacePaths.IsSameOrUnder(child.FullPath, path)))
+                if (FindDirectory(child, path) is { } found) return found;
+            return null;
+        }
+
+        private static bool HasLinkedAncestor(FileTreeNode node, string directory)
+        {
+            if (node.IsLink) return true;
+            return node.Children.Any(child => child.IsDirectory && WorkspacePaths.IsSameOrUnder(child.FullPath, directory)
+                && HasLinkedAncestor(child, directory));
+        }
+
+        private static FileTreeNode WithFile(FileTreeNode node, string directory, FileTreeNode file)
+        {
+            var atParent = WorkspacePaths.PathsEqual(node.FullPath, directory);
+            var copy = new FileTreeNode(node.Name, node.FullPath, node.RelativePath, node.IsDirectory,
+                node.Length, node.LastWriteUtc, node.IsLink)
+            { IsOnlineOnly = node.IsOnlineOnly, IsWorkspaceRoot = node.IsWorkspaceRoot };
+            foreach (var child in node.Children)
+            {
+                if (atParent && WorkspacePaths.PathsEqual(child.FullPath, file.FullPath)) continue;
+                copy.Add(!atParent && child.IsDirectory && WorkspacePaths.IsSameOrUnder(child.FullPath, directory)
+                    ? WithFile(child, directory, file) : child);
+            }
+            if (atParent) copy.Add(file);
+            copy.FileCount = copy.Children.Sum(child => child.IsDirectory ? child.FileCount : 1);
+            copy.Sort();
+            return copy;
+        }
+
         private void ScanDirectory(DirectoryInfo directory, FileTreeNode node, int depth, bool viaLink)
         {
             _ct.ThrowIfCancellationRequested();
-            try { node.IsWorkspaceRoot = WorkspaceDefinition.Load(directory.FullName) is not null; }
+            try
+            {
+                var descriptor = Path.Combine(directory.FullName, WorkspaceDefinition.FileName);
+                if (File.Exists(descriptor) && Tern.Filesystem.CloudFiles.IsOnlineOnly(descriptor))
+                {
+                    node.IsWorkspaceRoot = true;
+                    _warnings.Add(new ScanWarning(ScanWarningKind.OnlineOnly, descriptor,
+                        "The online-only workspace definition was not downloaded. Make it available locally to read its saved name."));
+                }
+                else node.IsWorkspaceRoot = WorkspaceDefinition.Load(directory.FullName) is not null;
+            }
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
             {
                 _warnings.Add(new ScanWarning(ScanWarningKind.InvalidWorkspaceDefinition, directory.FullName, "Workspace identity could not be read: " + ex.Message));
@@ -196,19 +285,24 @@ public sealed class WorkspaceScanner
             }
 
             var fullPath = Path.Combine(parent.FullPath, file.Name);
-            if (!WorkspacePaths.IsPhysicallyContained(_filter.Root, fullPath))
+            // A walk from the root never enters a link unmarked, so only linked entries need the per-component check.
+            var ordinary = _walkingFromRoot && !viaLink && (file.Attributes & FileAttributes.ReparsePoint) == 0;
+            if (!ordinary && !WorkspacePaths.IsPhysicallyContained(_filter.Root, fullPath))
             {
                 _warnings.Add(new ScanWarning(ScanWarningKind.SkippedLink, fullPath, "File link leaves the workspace or cannot be safely resolved."));
                 return;
             }
-            if (_options.MaxFileSizeBytes is { } cap && length > cap)
+            var onlineOnly = Tern.Filesystem.CloudFiles.IsOnlineOnly(file.Attributes);
+            if (!onlineOnly && _options.MaxFileSizeBytes is { } cap && length > cap)
             {
                 _warnings.Add(new ScanWarning(ScanWarningKind.FileTooLarge, fullPath, $"File is {length:N0} bytes; the limit is {cap:N0}."));
                 return;
             }
 
-            var record = new WorkspaceFile(fullPath, relative, length, written, viaLink || file.LinkTarget is not null);
-            parent.Add(new FileTreeNode(file.Name, fullPath, relative, false, length, written, record.ViaLink));
+            var record = new WorkspaceFile(fullPath, relative, length, written,
+                viaLink || (file.Attributes & FileAttributes.ReparsePoint) != 0 && file.LinkTarget is not null,
+                onlineOnly);
+            parent.Add(new FileTreeNode(file.Name, fullPath, relative, false, length, written, record.ViaLink) { IsOnlineOnly = record.IsOnlineOnly });
             _files.Add(record);
             _onFile?.Invoke(record);
             if (_files.Count % 250 == 0)

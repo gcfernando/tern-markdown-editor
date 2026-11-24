@@ -23,6 +23,30 @@ internal sealed class SearchTextProjection
             return;
         }
 
+        // Code panels expand tabs for four-column display without changing their source.
+        // Keep Find anchored to original UTF-16 positions, including text after a tab.
+        var expanded = CodeDisplay.ExpandTabs(raw);
+        contentStart = expanded.IndexOf(displayed, StringComparison.Ordinal);
+        if (contentStart >= 0)
+        {
+            var position = 0; var column = 0;
+            for (var i = 0; i < raw.Length; i++)
+            {
+                _from[i] = Math.Clamp(position - contentStart, 0, displayed.Length);
+                var ch = raw[i];
+                if (ch == '\t') { var count = CodeDisplay.TabColumns - column % CodeDisplay.TabColumns; position += count; column += count; }
+                else
+                {
+                    position++;
+                    if (ch is '\r' or '\n') column = 0;
+                    else if (!char.IsLowSurrogate(ch) || i == 0 || !char.IsHighSurrogate(raw[i - 1])) column++;
+                }
+                _to[i + 1] = Math.Clamp(position - contentStart, 0, displayed.Length);
+            }
+            _from[raw.Length] = _to[raw.Length];
+            return;
+        }
+
         var decoded = new System.Text.StringBuilder();
         for (var i = 0; i < raw.Length;)
         {

@@ -54,9 +54,6 @@ internal sealed class SystemFontResolver : IFontResolver
                 ?? _files[Key(SansFamily, false, false)];
     }
 
-    /// <summary>The display name of the sans font that was found, for diagnostics.</summary>
-    public string SansFileName => Path.GetFileName(_files[Key(SansFamily, false, false)]);
-
     /// <summary>Installs the resolver (once per process) and returns it.</summary>
     public static SystemFontResolver Install()
     {

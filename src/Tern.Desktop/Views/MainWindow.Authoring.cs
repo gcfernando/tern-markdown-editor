@@ -33,6 +33,7 @@ public partial class MainWindow
             var item = FormatMenu(title, id); more.Items.Add(item); _formatOverflow.Add(item);
         }
         AuthoringMore.Flyout = more;
+        ConfigureTableEditing();
         AuthoringToolbar.SizeChanged += (_, _) => RefreshAuthoringState();
         PreviewHost.SizeChanged += (_, _) => RefreshAuthoringState();
         _formatControls.AddRange(AuthoringExtras.Children.OfType<Control>());
@@ -54,13 +55,15 @@ public partial class MainWindow
         if (AuthoringToolbar is null) return;
         var width = AuthoringToolbar.Bounds.Width;
         ReadingNavActions.IsVisible = PreviewHost.Bounds.Width >= 500 * _shell.Settings.UiScale;
-        ReadingPaneLabel.IsVisible = PreviewHost.Bounds.Width >= 700 * _shell.Settings.UiScale;
-        AuthoringExtras.IsVisible = width >= 700 * _shell.Settings.UiScale;
+        ReadingFlyoutNav.IsVisible = !ReadingNavActions.IsVisible;
+        ReadingPaneLabel.IsVisible = !_shortScreen && PreviewHost.Bounds.Width >= 700 * _shell.Settings.UiScale;
+        AuthoringExtras.IsVisible = !_shortScreen && width >= 700 * _shell.Settings.UiScale;
         HeadingAction.IsVisible = width >= 360 * _shell.Settings.UiScale;
+        var context = CurrentCommandContext();
         foreach (var control in _formatControls)
         {
             if (control.Tag is not string id) continue;
-            control.IsEnabled = CanRunCommand(id);
+            control.IsEnabled = CanRunCommand(id, context);
             ToolTip.SetTip(control, CommandHint(id));
             if (control is MenuItem item) item.InputGesture = DesktopGesture(_shell.Registry.GetGesture(id));
         }
@@ -78,6 +81,7 @@ public partial class MainWindow
         AuthoringBold.IsChecked = MarkedSelection("**");
         AuthoringItalic.IsChecked = MarkedSelection("*") && !MarkedSelection("**");
         HeadingAction.Content = "Heading";
+        TableActions.IsVisible = CurrentTable() is not null;
         if (HasValidAuthoringSelection() && !Editor.SelectedText.Contains('\n'))
         {
             var heading = _shown.Analysis?.Headings.FirstOrDefault(h => h.Line == Editor.TextArea.Caret.Line);
@@ -109,7 +113,7 @@ public partial class MainWindow
         if (OutlineCurrent is null) return;
         var line = readingLine ?? (_shell.ViewMode == Tern.App.Settings.ViewMode.Reading ? Preview.TopSourceLine : Editor.TextArea.Caret.Line);
         var section = _shown?.Analysis?.Headings.LastOrDefault(h => h.Line <= line);
-        OutlineCurrent.Text = section is null ? "Beginning of note" : "Current section · " + section.Text;
+        OutlineCurrent.Text = section is null ? "Beginning of document" : "Current section · " + section.Text;
     }
 
     private void OnSyncScrollingClick(object? sender, RoutedEventArgs e)

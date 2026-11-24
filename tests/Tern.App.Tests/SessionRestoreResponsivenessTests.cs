@@ -7,6 +7,60 @@ namespace Tern.App.Tests;
 
 public sealed class SessionRestoreResponsivenessTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(31)]
+    [InlineData(63)]
+    public async Task Large_restore_repositions_the_initial_active_tab_once_and_keeps_early_edits(int activeIndex)
+    {
+        using var fixture = new ShellFixture();
+        var paths = new List<string>();
+        for (var index = 0; index < 64; index++)
+            paths.Add(await fixture.WriteAsync($"restore-{index:D2}.md", $"# Document {index}\n"));
+        Assert.True(new SessionStore(fixture.Shell.Paths.StateDirectory).Save(new SessionSnapshot(null,
+            paths.Select(path => new TabState(path, 0, 0)).ToArray(), paths[activeIndex], null,
+            new Dictionary<string, FileViewState>())
+        { ActiveTabIndex = activeIndex }));
+        fixture.Shell.Dispose();
+        using var restored = new ShellViewModel(fixture.Shell.Paths, new ScriptedDialogs(), new RecordingLauncher());
+        var moves = 0;
+        restored.Tabs.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Move) moves++;
+        };
+        await restored.RestoreSessionAsync(() =>
+        {
+            Assert.Equal(paths[activeIndex], Assert.Single(restored.Tabs).FilePath);
+            restored.ActiveTab!.ApplyEdits([TextEdit.Insert(restored.ActiveTab.CurrentText.Length, "Early unsaved edit")]);
+        });
+        Assert.Equal(paths, restored.Tabs.Select(tab => tab.FilePath));
+        Assert.Equal(paths[activeIndex], restored.ActiveTab!.FilePath);
+        Assert.Equal($"# Document {activeIndex}\nEarly unsaved edit", restored.ActiveTab.CurrentText);
+        Assert.Equal($"# Document {activeIndex}\n", await File.ReadAllTextAsync(paths[activeIndex]));
+        Assert.InRange(moves, 0, activeIndex == 0 ? 0 : 1);
+    }
+
+    [Fact]
+    public async Task Restoring_order_keeps_a_new_user_draft_created_during_the_active_document_callback()
+    {
+        using var fixture = new ShellFixture();
+        var paths = new List<string>();
+        for (var index = 0; index < 3; index++)
+            paths.Add(await fixture.WriteAsync($"restore-{index}.md", $"# Document {index}\n"));
+        Assert.True(new SessionStore(fixture.Shell.Paths.StateDirectory).Save(new SessionSnapshot(null,
+            paths.Select(path => new TabState(path, 0, 0)).ToArray(), paths[1], null,
+            new Dictionary<string, FileViewState>())
+        { ActiveTabIndex = 1 }));
+        fixture.Shell.Dispose();
+        using var restored = new ShellViewModel(fixture.Shell.Paths, new ScriptedDialogs(), new RecordingLauncher());
+        Tern.App.Documents.DocumentTab? draft = null;
+        await restored.RestoreSessionAsync(() => draft = restored.NewDocument("New user draft"));
+        Assert.Equal(paths, restored.Tabs.Take(3).Select(tab => tab.FilePath));
+        Assert.Same(draft, restored.Tabs[3]);
+        Assert.Same(draft, restored.ActiveTab);
+        Assert.Equal("New user draft", draft!.CurrentText);
+    }
+
     [Fact]
     public async Task Workspace_preparation_overlaps_a_paused_background_document_while_active_document_stays_editable()
     {

@@ -86,7 +86,7 @@ public sealed class Oct30ReviewTests
     }
 
     [Fact]
-    public async Task Save_as_refuses_to_copy_a_reference_outside_the_document_folder()
+    public async Task Save_as_requires_a_choice_for_an_outside_reference_and_cancellation_keeps_the_source()
     {
         using var f = new ShellFixture();
         await f.WriteAsync("outside.png", "outside bytes");
@@ -95,7 +95,8 @@ public sealed class Oct30ReviewTests
         f.Dialogs.SavePath = Path.Combine(f.Docs, "copy/note.md");
         Assert.False(await f.Shell.SaveTabAsAsync(tab));
         Assert.Equal(Path.GetFullPath(original), tab.FilePath);
-        Assert.Contains(f.Dialogs.Messages, m => m.Contains("relative reference leaves", StringComparison.Ordinal));
+        Assert.Contains("../outside.png", Assert.Single(f.Dialogs.OutsideAttachmentPrompts));
+        Assert.False(File.Exists(f.Dialogs.SavePath));
     }
 
     [Fact]

@@ -148,7 +148,7 @@ public sealed class BeginnerEditingTests
         var insertion = f.Window.PasteEditorAsync();
         Dispatcher.UIThread.RunJobs(); f.Window.UpdateLayout();
         var savePrompt = Assert.Single(f.Window.OwnedWindows.OfType<PromptWindow>());
-        savePrompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save note")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        savePrompt.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "Save document")).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
         await insertion;
         Assert.Contains("no image was inserted", f.Shell.StatusMessage);
         Assert.Equal("Keep", draft.CurrentText);

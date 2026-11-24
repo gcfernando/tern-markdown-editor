@@ -1,18 +1,31 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Tern.Filesystem;
+using Tern.Domain.Text;
 using Tern.Markdown;
 using Tern.Workspaces;
 
 namespace Tern.App.Documents;
+
+public enum OutsideAttachmentChoice { Cancel, SaveWithoutCopying, RewriteAbsolute }
+
+public sealed class OutsideAttachmentsException(IReadOnlyList<string> references)
+    : IOException("A relative reference leaves the document folder: " + string.Join(", ", references))
+{
+    public IReadOnlyList<string> References { get; } = references;
+}
 
 public sealed partial class DocumentTab
 {
     /// <summary>Resource base for an imported or recovered draft; never its saved-file identity.</summary>
     public string? ResourceDocumentPath { get; set; }
     public IReadOnlyDictionary<string, byte[]> ResourceFiles { get; set; } = new Dictionary<string, byte[]>();
+    public string? LastResourceSaveWarning { get; private set; }
 
-    private async Task<List<string>> CopyResourcesAsync(string destination, string text, CancellationToken token)
+    private sealed record ResourceCopyResult(List<string> Created, string Text, IReadOnlyList<string> Outside);
+
+    private async Task<ResourceCopyResult> CopyResourcesAsync(string destination, string text, CancellationToken token,
+        OutsideAttachmentChoice outsideChoice = OutsideAttachmentChoice.Cancel, IReadOnlySet<string>? approvedOutside = null)
     {
         const long maxFileBytes = 64 * 1024 * 1024;
         const long maxBundleBytes = 256 * 1024 * 1024;
@@ -22,14 +35,16 @@ public sealed partial class DocumentTab
         var sourceRoot = sourceDocument is null ? null : Path.GetDirectoryName(Path.GetFullPath(sourceDocument))!;
         var destinationRoot = Path.GetDirectoryName(Path.GetFullPath(destination))!;
         // An ordinary save must never restore attachments over the user's edited files.
-        if (sourceRoot is not null && WorkspacePaths.PathsEqual(sourceRoot, destinationRoot)) return created;
+        if (sourceRoot is not null && WorkspacePaths.PathsEqual(sourceRoot, destinationRoot)) return new(created, text, []);
 
         var pending = new Queue<string>();
         var seen = new HashSet<string>(WorkspacePaths.Comparer);
         long totalBytes = 0;
+        var outside = new HashSet<string>(WorkspacePaths.Comparer);
 
-        void Collect(string markdown, string relativeDirectory)
+        string Collect(string markdown, string relativeDirectory)
         {
+            var edits = new List<TextEdit>();
             foreach (var link in MarkdownAnalyzer.Analyze(markdown, Profile).Links)
             {
                 var parsed = LinkTarget.Parse(link.Destination, link.Kind == LinkKind.WikiLink);
@@ -45,12 +60,22 @@ public sealed partial class DocumentTab
                 if (!WorkspacePaths.IsSameOrUnder(destinationRoot, Path.Combine(destinationRoot, relative)))
                 {
                     if (source is not null && (File.Exists(source) || Directory.Exists(source)))
-                        throw new IOException("A relative reference leaves the document folder: " + link.Destination + ". Keep this copy in the original folder, or move that attachment inside the document folder first.");
+                    {
+                        outside.Add(relative.Replace('\\', '/'));
+                        if (outsideChoice == OutsideAttachmentChoice.RewriteAbsolute)
+                        {
+                            var replacement = link.Kind == LinkKind.WikiLink
+                                ? source.Replace('\\', '/') + (parsed.Fragment is { Length: > 0 } fragment ? "#" + fragment : "")
+                                : LinkTarget.FormatPath(source, parsed.Fragment);
+                            edits.Add(new TextEdit(link.Range.Start, link.Range.Length, replacement));
+                        }
+                    }
                     continue;
                 }
                 if ((source is not null && File.Exists(source)) || ResourceFiles.ContainsKey(relative.Replace('\\', '/')))
                     pending.Enqueue(relative);
             }
+            return edits.Count == 0 ? markdown : TextEdit.ApplyAll(markdown, edits.Distinct().ToArray());
         }
 
         try
@@ -61,7 +86,7 @@ public sealed partial class DocumentTab
                     throw new IOException("The downloaded resource path is unsafe.");
                 pending.Enqueue(relative);
             }
-            Collect(text, string.Empty);
+            text = Collect(text, string.Empty);
             while (pending.TryDequeue(out var relative))
             {
                 token.ThrowIfCancellationRequested();
@@ -72,7 +97,7 @@ public sealed partial class DocumentTab
                     throw new IOException("The document filename conflicts with a referenced attachment. Choose another filename.");
                 if (!WorkspacePaths.IsSameOrUnder(destinationRoot, target)) throw new IOException("The attachment path leaves the destination folder.");
                 for (FileSystemInfo? entry = new FileInfo(target); entry is not null; entry = entry is DirectoryInfo directory ? directory.Parent : ((FileInfo)entry).Directory)
-                    if (entry.Exists && (entry.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Attachments cannot be saved through a linked directory or file.");
+                    if (entry.Exists && CloudFiles.IsUnsafeReparsePoint(entry)) throw new IOException("Attachments cannot be saved through a linked directory or file.");
 
                 var source = sourceRoot is null ? null : Path.GetFullPath(Path.Combine(sourceRoot, relative));
                 byte[] bytes;
@@ -95,13 +120,17 @@ public sealed partial class DocumentTab
                 else if (!ResourceFiles.TryGetValue(relative.Replace('\\', '/'), out bytes!))
                     throw new IOException("An attachment became unavailable: " + relative);
 
-                totalBytes += bytes.Length;
-                if (bytes.LongLength > maxFileBytes || totalBytes > maxBundleBytes) throw new IOException("The attachment bundle exceeds its size limit (64 MiB per file, 256 MiB total).");
                 if (source is not null && Path.GetExtension(source).ToLowerInvariant() is ".md" or ".markdown" or ".mdown")
                 {
                     var decoded = TextFileCodec.Decode(bytes);
-                    if (decoded.IsLossless) Collect(decoded.Text, Path.GetDirectoryName(relative) ?? string.Empty);
+                    if (decoded.IsLossless)
+                    {
+                        var rewritten = Collect(decoded.Text, Path.GetDirectoryName(relative) ?? string.Empty);
+                        if (rewritten != decoded.Text) bytes = TextFileCodec.Encode(rewritten, decoded.Format);
+                    }
                 }
+                totalBytes += bytes.Length;
+                if (bytes.LongLength > maxFileBytes || totalBytes > maxBundleBytes) throw new IOException("The attachment bundle exceeds its size limit (64 MiB per file, 256 MiB total).");
                 if (File.Exists(target))
                 {
                     await using var existing = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, true);
@@ -114,10 +143,20 @@ public sealed partial class DocumentTab
                 created.Add(target);
                 await output.WriteAsync(bytes, token).ConfigureAwait(true);
             }
-            return created;
+            if (outside.Count > 0 && (outsideChoice == OutsideAttachmentChoice.Cancel
+                || approvedOutside is not null && outside.Any(reference => !approvedOutside.Contains(reference))))
+                throw new OutsideAttachmentsException(outside.Order(WorkspacePaths.Comparer).ToArray());
+            return new(created, text, outside.Order(WorkspacePaths.Comparer).ToArray());
         }
         catch { RemoveCreatedResources(created); throw; }
     }
+
+    private static string? ResourceSaveWarning(ResourceCopyResult resources, OutsideAttachmentChoice choice) =>
+        resources.Outside.Count == 0 ? null
+            : (choice == OutsideAttachmentChoice.SaveWithoutCopying
+                ? "Saved without copying outside attachments; links may break: "
+                : "Outside attachment links use absolute local paths and are not portable: ")
+                + string.Join(", ", resources.Outside);
 
     private static void RemoveCreatedResources(List<string> paths)
     {

@@ -153,7 +153,7 @@ public sealed class AIConnectionValidationTests
             Assert.Equal("2023-06-01", Assert.Single(request.Headers.GetValues("anthropic-version")));
             Assert.Equal("workspace-test", Assert.Single(request.Headers.GetValues("anthropic-workspace-id")));
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
-            Assert.Equal(" exact question \n", body.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+            AIWire.AssertIndependent(body.RootElement, Tern.App.AIRequest.ConnectionTest(" exact question \n"));
             return Json("{\"content\":[{\"type\":\"text\",\"text\":\"Answer\"}]}");
         }));
         Assert.Equal("Answer", await client.SendAsync(new Uri(AIServices.Get("anthropic").Endpoint), "model", "test-key", " exact question \n",
@@ -174,7 +174,7 @@ public sealed class AIConnectionValidationTests
             Assert.Equal(AIServices.Get(service).Endpoint, request.RequestUri!.AbsoluteUri);
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
             Assert.Equal("chosen-model", body.RootElement.GetProperty("model").GetString());
-            Assert.Equal(AIConnectionClient.ValidationMessage, body.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+            AIWire.AssertIndependent(body.RootElement, Tern.App.AIRequest.ConnectionTest(AIConnectionClient.ValidationMessage));
             return Json(response);
         }));
         var check = await client.ValidateAsync(new AIConnectionInputs(service, protocol, AIServices.Get(service).Endpoint, "chosen-model", service == "ollama" ? "" : "test-key"), CancellationToken.None);

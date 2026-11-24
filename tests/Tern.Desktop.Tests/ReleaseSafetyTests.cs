@@ -110,6 +110,29 @@ public sealed class ReleaseSafetyTests
     }
 
     [AvaloniaFact]
+    public async Task Opening_an_alias_reads_fresh_identity_after_external_replacement_without_merging_equal_text()
+    {
+        using var f = new DesktopFixture();
+        var source = await f.WriteAsync("identity-source.md", "old source");
+        var tab = (await f.Shell.OpenFileAsync(source))!;
+        var replacement = await f.WriteAsync("replacement.md", "new source");
+        File.Move(replacement, source, overwrite: true);
+        var alias = Path.Combine(f.Docs, "source-alias.md");
+        if (OperatingSystem.IsWindows()) Assert.True(CreateHardLink(alias, source, 0));
+        else File.CreateSymbolicLink(alias, source);
+
+        Assert.Same(tab, await f.Shell.OpenFileAsync(alias));
+        Assert.Single(f.Shell.Tabs);
+        var independent = await f.WriteAsync("independent.md", "new source");
+        Assert.NotSame(tab, await f.Shell.OpenFileAsync(independent));
+        Assert.Equal(2, f.Shell.Tabs.Count);
+        Assert.Equal(source, await Tern.Filesystem.FileIdentity.FindSameFileAsync(
+            [Path.Combine(f.Docs, "missing.md"), independent, source], alias));
+        Assert.True(Tern.Filesystem.FileIdentity.AreSameFile(source, alias));
+        Assert.False(Tern.Filesystem.FileIdentity.AreSameFile(source, independent));
+    }
+
+    [AvaloniaFact]
     public async Task Export_protects_another_open_source_and_its_hard_link_alias()
     {
         using var f = new DesktopFixture();
@@ -130,6 +153,41 @@ public sealed class ReleaseSafetyTests
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool CreateHardLink(string newPath, string existingPath, nint reserved);
+
+    [AvaloniaFact]
+    public async Task Passive_alias_lookup_preserves_unsaved_buffer_selection_and_fresh_identity()
+    {
+        using var f = new DesktopFixture();
+        var source = await f.WriteAsync("passive-source.md", "Original");
+        var tab = (await f.Shell.OpenFileAsync(source))!;
+        tab.ApplyEdits([Tern.Domain.Text.TextEdit.Insert(0, "Unsaved ")]);
+        var active = f.Shell.NewDocument();
+        var alias = Path.Combine(f.Docs, "passive-alias.md");
+        if (OperatingSystem.IsWindows()) Assert.True(CreateHardLink(alias, source, 0));
+        else File.CreateSymbolicLink(alias, source);
+
+        Assert.Same(tab, await f.Shell.FindOpenSourceAsync(alias));
+        Assert.Same(active, f.Shell.ActiveTab);
+        Assert.Equal("Unsaved Original", tab.CurrentText);
+        Assert.True(tab.IsDirty);
+        Assert.Equal("Original", await File.ReadAllTextAsync(source));
+        File.Delete(alias);
+        await File.WriteAllTextAsync(alias, "Original");
+        Assert.Null(await f.Shell.FindOpenTabAsync(alias));
+        Assert.Same(active, f.Shell.ActiveTab);
+    }
+
+    [AvaloniaFact]
+    public async Task Cancelled_identity_lookup_does_not_return_an_alias_result()
+    {
+        using var f = new DesktopFixture();
+        var source = await f.WriteAsync("cancel-identity.md", "Keep");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Tern.Filesystem.FileIdentity.FindSameFileAsync([source], source, cancellation.Token));
+        Assert.Equal("Keep", await File.ReadAllTextAsync(source));
+    }
 
     private static byte[] ImageBytes()
     {

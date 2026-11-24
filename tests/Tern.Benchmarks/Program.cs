@@ -404,12 +404,6 @@ internal static class Program
 
     private static string FindArtifacts()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Tern.slnx")))
-        {
-            directory = directory.Parent;
-        }
-
-        return Path.Combine(directory?.FullName ?? Environment.CurrentDirectory, "artifacts", "benchmarks");
+        return Path.Combine(Path.GetTempPath(), "tern-benchmarks");
     }
 }

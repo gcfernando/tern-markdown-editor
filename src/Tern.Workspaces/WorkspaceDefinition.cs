@@ -11,6 +11,9 @@ public sealed record WorkspaceDefinition(int Version, string Name)
 {
     public const string FileName = ".tern-workspace.json";
     public const int MaxDefinitionBytes = 256 * 1024;
+    public bool Private { get; init; }
+    /// <summary>Legacy per-machine context. Current versions keep it in <see cref="WorkspaceContextStore"/> and only read this once to migrate it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public WorkspaceWorkingContext? WorkingContext { get; init; }
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
@@ -36,6 +39,20 @@ public sealed record WorkspaceDefinition(int Version, string Name)
         JsonSerializer.Serialize(stream, new WorkspaceDefinition(1, name));
     }
 
+    public static void SetPrivate(string root, bool isPrivate, string? name = null)
+    {
+        var current = Load(root) ?? new WorkspaceDefinition(1, name ?? Path.GetFileName(root));
+        AtomicFile.WriteAllBytes(Path.Combine(root, FileName), JsonSerializer.SerializeToUtf8Bytes(current with { Private = isPrivate }));
+    }
+
+    /// <summary>Removes a migrated legacy working context, preserving the name and every unknown property. No-op when none is stored.</summary>
+    public static void RemoveWorkingContext(string root)
+    {
+        if (Load(root) is not { WorkingContext: not null } current) return;
+        AtomicFile.WriteAllBytes(Path.Combine(root, FileName), JsonSerializer.SerializeToUtf8Bytes(current with { WorkingContext = null }));
+    }
+
+    /// <summary>Writes the legacy in-file context. Retained for compatibility and migration tests; the app no longer calls it.</summary>
     public static void SaveWorkingContext(string root, string name, WorkspaceWorkingContext context)
     {
         var current = Load(root) ?? new WorkspaceDefinition(1, name);

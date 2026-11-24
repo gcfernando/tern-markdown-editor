@@ -2,8 +2,13 @@ using System.Text.Json;
 
 namespace Tern.Desktop.Services;
 
-public sealed record IntegrationProfile(string Id, string Kind, string Name, string Destination, string Model = "auto")
+public sealed record IntegrationProfile(string Id, string Kind, string Name, string Destination, string Model = "auto", int? SendCharacters = null)
 {
+    /// <summary>Characters Tern can send to Copilot at one time. MCP tool servers are not AI models and have no value.</summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(SendCharactersJsonConverter))]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? SendCharacters { get; init; } = Kind == "mcp" ? null : AIConnectionRules.NormalizeSendCharacters(SendCharacters);
+
     public override string ToString() => Name;
 }
 
@@ -19,11 +24,22 @@ public sealed class IntegrationProfileStore(string directory, IAICredentialStore
         lock (Gate)
         {
             if (!File.Exists(FilePath)) return [];
-            using var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-            if (stream.Length > 1_048_576) throw new InvalidOperationException("Saved integration settings exceed the size limit.");
-            var profiles = JsonSerializer.Deserialize<IntegrationProfile[]>(stream) ?? [];
+            byte[] saved;
+            using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete))
+            {
+                if (stream.Length > 1_048_576) throw new InvalidOperationException("Saved integration settings exceed the size limit.");
+                saved = new byte[stream.Length];
+                stream.ReadExactly(saved);
+            }
+            var profiles = JsonSerializer.Deserialize<IntegrationProfile[]>(saved) ?? [];
             foreach (var profile in profiles) Validate(profile);
             if (profiles.Select(p => p.Id).Distinct().Count() != profiles.Length) throw new InvalidOperationException("Duplicate saved integration identities.");
+            if (AIConnectionRules.NeedsSendCharactersUpdate(saved, item => item.TryGetProperty("Kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() != "mcp"))
+            {
+                // The corrected value still applies this session if the file is read-only. Saving is tried again next time.
+                try { Write(profiles); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { System.Diagnostics.Trace.TraceWarning("Connection update was not saved: {0}", ex.Message); }
+            }
             return profiles;
         }
     }
@@ -82,7 +98,8 @@ public sealed class IntegrationProfileStore(string directory, IAICredentialStore
     {
         if (profile is null || !Guid.TryParseExact(profile.Id, "N", out _) || profile.Kind is not ("mcp" or "copilot")
             || string.IsNullOrWhiteSpace(profile.Name) || profile.Name.Length > 100 || string.IsNullOrWhiteSpace(profile.Destination)
-            || profile.Destination.Length > 2048 || string.IsNullOrWhiteSpace(profile.Model) || profile.Model.Length > 100)
+            || profile.Destination.Length > 2048 || string.IsNullOrWhiteSpace(profile.Model) || profile.Model.Length > 100
+            || (profile.Kind == "mcp" ? profile.SendCharacters is not null : !AIConnectionRules.IsValidSendCharacters(profile.SendCharacters)))
             throw new InvalidOperationException("Invalid saved integration settings. The original file has been preserved.");
         if (profile.Kind == "mcp" && (!Uri.TryCreate(profile.Destination, UriKind.Absolute, out var uri) || !AIConnectionClient.IsAllowedEndpoint(uri)))
             throw new InvalidOperationException("Use an HTTPS MCP endpoint or HTTP on localhost, without URL credentials, query or fragment.");

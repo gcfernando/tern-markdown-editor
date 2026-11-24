@@ -19,7 +19,6 @@ public class TextFileCodecTests
         { "nfd vs nfc stay distinct", Encoding.UTF8.GetBytes("\u00e9\u0065\u0301\n") },
         { "utf16 le bom", [.. new byte[] { 0xFF, 0xFE }, .. Encoding.Unicode.GetBytes("hello\r\nworld")] },
         { "utf16 be bom", [.. new byte[] { 0xFE, 0xFF }, .. Encoding.BigEndianUnicode.GetBytes("hello\nworld")] },
-        { "embedded nul", "a\0b\n"u8.ToArray() },
         { "bom char mid-file", Encoding.UTF8.GetBytes("a\uFEFFb\n") },
     };
 
@@ -49,6 +48,24 @@ public class TextFileCodecTests
         var decoded = TextFileCodec.Decode([(byte)'a', 0xFF, 0xFE, (byte)'b']);
 
         Assert.Equal(DecodeFailure.InvalidSequence, decoded.Failure);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Autodetected_nul_text_is_protected_without_guessing_an_encoding(bool utf16)
+    {
+        var bytes = utf16 ? Encoding.Unicode.GetBytes("hello") : "a\0b\n"u8.ToArray();
+        var decoded = TextFileCodec.Decode(bytes);
+        Assert.Equal(DecodeFailure.AmbiguousEncoding, decoded.Failure);
+        Assert.Equal(TextEncodingKind.Utf8, decoded.Format.Encoding);
+        Assert.Equal(bytes, TextFileCodec.Encode(decoded.Text, decoded.Format));
+        if (utf16)
+        {
+            var reopened = TextFileCodec.Decode(bytes, TextEncodingKind.Utf16LittleEndian);
+            Assert.True(reopened.IsLossless);
+            Assert.Equal("hello", reopened.Text);
+        }
     }
 
     [Fact]

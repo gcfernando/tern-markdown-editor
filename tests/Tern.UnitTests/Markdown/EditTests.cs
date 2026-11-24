@@ -127,6 +127,35 @@ public class EditTests
     }
 
     [Fact]
+    public void Quoted_spreadsheet_cells_keep_delimiters_quotes_and_embedded_lines()
+    {
+        Assert.True(MarkdownTable.TryFromDelimited("Name,Detail,Count\r\n\"A, B\",\"He said \"\"Hi\"\"\",3\r\nC,\"line one\r\nline two\",4\r\n", out var table));
+        Assert.Equal(new[] { "A, B", "He said \"Hi\"", "3" }, table!.Rows[0]);
+        Assert.Equal("line one<br>line two", table.Rows[1][1]);
+        Assert.Equal(3, table.Columns);
+    }
+
+    [Theory]
+    [InlineData("one,two\nthree")]
+    [InlineData("one\ttwo")]
+    [InlineData("one,two\n\"unclosed,three")]
+    public void Spreadsheet_offers_require_a_consistent_complete_grid(string text)
+    {
+        Assert.False(MarkdownTable.TryFromDelimited(text, out _));
+    }
+
+    [Fact]
+    public void Table_cell_ranges_skip_escaped_pipes_and_select_real_source_text()
+    {
+        const string text = "before\n\n| A | B |\n| --- | --- |\n| a\\|b | tail |\n";
+        var analysis = MarkdownAnalyzer.Analyze(text, MarkdownProfile.Gfm);
+        var cells = TableEditor.Cells(text, Assert.Single(analysis.Tables));
+        Assert.Equal(new[] { "A", "B", "a\\|b", "tail" }, cells.Select(cell => text[cell.Range.Start..cell.Range.End]));
+        var selected = TableEditor.CellAt(text, analysis.Tables[0], text.IndexOf("tail", StringComparison.Ordinal));
+        Assert.Equal((0, 1), (selected!.Row, selected.Column));
+    }
+
+    [Fact]
     public void Inline_formatting_wraps_unwraps_and_keeps_selection()
     {
         const string text = "make bold here";

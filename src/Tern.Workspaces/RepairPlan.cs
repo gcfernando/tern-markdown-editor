@@ -83,7 +83,8 @@ public static class SafeEditApplier
         string path,
         string expectedText,
         IReadOnlyList<TextEdit> edits,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, string, Task>? beforeWrite = null)
     {
         LoadedFile loaded;
         try
@@ -123,6 +124,14 @@ public static class SafeEditApplier
         if (string.Equals(updated, loaded.Text, StringComparison.Ordinal))
         {
             return (RepairStatus.Skipped, null);
+        }
+
+        // The caller keeps the text that is about to be replaced (for example in saved-text history); if that fails nothing is written.
+        if (beforeWrite is not null)
+        {
+            try { await beforeWrite(path, loaded.Text).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return (RepairStatus.Failed, "A history copy of the file could not be kept first, so it was left unchanged: " + ex.Message); }
         }
 
         var format = LineEndingAnalyzer.Describe(loaded.Format.Encoding, loaded.Format.HasBom, updated)

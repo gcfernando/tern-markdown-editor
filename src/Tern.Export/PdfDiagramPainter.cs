@@ -33,7 +33,6 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
         foreach (var sub in layout.Subgraphs)
         {
             gfx.DrawRoundedRectangle(new XPen(FrameColor, 1) { DashStyle = XDashStyle.Dash }, Rect(sub.Bounds), new XSize(6, 6));
-            Text(gfx, sub.Subgraph.Title, sub.Bounds.X + 8, sub.Bounds.Y + 10, _smallFont, XStringFormats.CenterLeft);
         }
 
         foreach (var edge in layout.Edges)
@@ -43,7 +42,7 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
                 continue;
             }
 
-            var pen = new XPen(EdgeColor, edge.Edge.Style == FlowLineStyle.Thick ? 3 : 1.5);
+            var pen = new XPen(EdgeColor, edge.Edge.Style == FlowLineStyle.Thick ? 3 : 1.5) { LineJoin = XLineJoin.Round };
             if (edge.Edge.Style == FlowLineStyle.Dotted)
             {
                 pen.DashStyle = XDashStyle.Dash;
@@ -71,6 +70,10 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
             Head(gfx, edge.EndArrow, edge.Edge.EndHead, false);
         }
 
+        // Titles follow the edges so a connector passing through a group header cannot strike through its text.
+        foreach (var sub in layout.Subgraphs)
+            BackedText(gfx, sub.Subgraph.Title, sub.Bounds.X + 8, sub.Bounds.Y + 10);
+
         var nodePen = new XPen(NodeStroke, 1.5);
         var fill = new XSolidBrush(NodeFill);
         foreach (var node in layout.Nodes)
@@ -96,15 +99,9 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
         foreach (var frame in layout.Frames)
         {
             gfx.DrawRectangle(framePen, Rect(frame.Bounds));
-            var title = frame.Label.Length == 0 ? frame.Kind : $"{frame.Kind} [{frame.Label}]";
-            Text(gfx, title, frame.Bounds.X + 6, frame.Bounds.Y + 10, _smallFont, XStringFormats.CenterLeft);
             foreach (var divider in frame.Dividers)
             {
                 gfx.DrawLine(lifePen, frame.Bounds.X, divider.Y, frame.Bounds.Right, divider.Y);
-                if (divider.Label.Length > 0)
-                {
-                    Text(gfx, $"[{divider.Label}]", frame.Bounds.X + 6, divider.Y + 10, _smallFont, XStringFormats.CenterLeft);
-                }
             }
         }
 
@@ -120,6 +117,14 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
             }
         }
 
+        // Frame text follows the lifelines so dashed lines cannot run through it.
+        foreach (var frame in layout.Frames)
+        {
+            BackedText(gfx, frame.Label.Length == 0 ? frame.Kind : $"{frame.Kind} [{frame.Label}]", frame.Bounds.X + 6, frame.Bounds.Y + 10);
+            foreach (var divider in frame.Dividers.Where(divider => divider.Label.Length > 0))
+                BackedText(gfx, $"[{divider.Label}]", frame.Bounds.X + 6, divider.Y + 10);
+        }
+
         foreach (var note in layout.Notes)
         {
             gfx.DrawRectangle(framePen, new XSolidBrush(NoteFill), Rect(note.Bounds));
@@ -133,12 +138,14 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
                 continue;
             }
 
-            var pen = new XPen(EdgeColor, 1.5);
+            var pen = new XPen(EdgeColor, 1.5) { LineJoin = XLineJoin.Round };
             if (message.Message.IsDashed)
             {
                 pen.DashStyle = XDashStyle.Dash;
             }
 
+            // Mask lifelines behind the label first; the message line itself stays on top.
+            if (message.LabelBounds is { } labelBacking) gfx.DrawRectangle(new XSolidBrush(White), Rect(labelBacking));
             gfx.DrawLines(pen, XPoints(message.Points));
             Head(gfx, message.HeadMarker, message.Message.Head == SequenceHead.Cross ? FlowArrowHead.Cross : FlowArrowHead.Arrow, message.Message.Head == SequenceHead.Open);
             if (message.LabelBounds is { } label)
@@ -298,6 +305,13 @@ internal sealed class PdfDiagramPainter(PdfTypography typography)
         {
             Text(gfx, lines[i], center.X, center.Y + ((i - ((lines.Length - 1) / 2d)) * TextLineHeight), _font, XStringFormats.Center);
         }
+    }
+
+    private void BackedText(XGraphics gfx, string text, double x, double y)
+    {
+        var width = typography.Width(PdfText.Safe(text), _smallFont);
+        gfx.DrawRectangle(new XSolidBrush(White), new XRect(x - 2, y - 8, width + 4, 16));
+        Text(gfx, text, x, y, _smallFont, XStringFormats.CenterLeft);
     }
 
     private static void Text(XGraphics gfx, string text, double x, double y, XFont font, XStringFormat format) =>
