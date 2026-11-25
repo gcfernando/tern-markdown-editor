@@ -19,13 +19,21 @@ try {
     $metadata = Get-Content -LiteralPath (Join-Path $captures 'screenshots\latest-gui\capture-metadata.json') -Raw | ConvertFrom-Json
     $version = $metadata.Version
     if (-not $version) { throw 'Capture assembly version metadata is missing.' }
+    $pages = [ordered]@{}
     foreach ($page in @('docs\gui-tasks.md', 'docs\search-improvements.md', 'docs\workflows-1.0.5.md')) {
         $text = Get-Content -LiteralPath $page -Raw
+        # Informational versions include the source commit. Refresh captions with the
+        # captures instead of requiring a manual edit for every version or commit.
+        $text = [regex]::Replace($text, '(!\[Tern v)[^\s\]]+( )', [System.Text.RegularExpressions.MatchEvaluator]{
+            param($match)
+            $match.Groups[1].Value + $version + $match.Groups[2].Value
+        })
         foreach ($caption in [regex]::Matches($text, '!\[([^\]]*)\]\(')) {
             if (-not $caption.Groups[1].Value.StartsWith("Tern v$version ")) {
                 throw "Update screenshot version captions in $page for assembly version $version."
             }
         }
+        $pages[$page] = $text
     }
     $images = [ordered]@{
         'latest-gui\01-paper-workspace.png' = 'gui\split-paper.png'
@@ -56,6 +64,10 @@ try {
         if ($file.Length -eq 0 -or $file.LastWriteTimeUtc -lt $started) { throw "Missing or stale screenshot: $source" }
         Copy-Item -LiteralPath $source -Destination $target -Force
         [pscustomobject]@{ Path = $target; Version = $version; Bytes = $file.Length; Sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    # Do not relabel existing screenshots if a new capture is missing or stale.
+    foreach ($page in $pages.GetEnumerator()) {
+        [IO.File]::WriteAllText((Join-Path $repository $page.Key), $page.Value, [Text.UTF8Encoding]::new($false))
     }
     [pscustomobject]@{ Version = $version; CapturedAtUtc = $metadata.CapturedAtUtc; Evidence = $metadata.Evidence; Images = @($evidence) } |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $ResultsDirectory 'documentation-screenshots.json') -Encoding utf8
