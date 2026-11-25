@@ -68,7 +68,7 @@ dotnet test Tern.slnx -c Release --no-build --no-restore -m:1
 dotnet run --project src/Tern.Desktop -c Release --no-build
 ```
 
-Dependencies and lockfiles are pinned. The current build suppresses compiler warnings and does not treat them as errors; a zero-warning build is not an unsuppressed-warning check. Eight test projects cover application, filesystem, rendering, workspace, headless UI and security behavior; benchmarks are separate. The unfiltered test command includes external-corpus and interactive Windows checks that need additional inputs. The reproducible gate has six explicit filter clauses excluding nine cases; native Windows recycle/restore has also passed separately. It does not establish full native acceptance. See [development](docs/development.md) and the [validation record](docs/BEGINNER_REVIEW_VALIDATION.md).
+Dependencies and lockfiles are pinned. The current build suppresses compiler warnings and does not treat them as errors; a zero-warning build is not an unsuppressed-warning check. Eight test projects cover application, filesystem, rendering, workspace, headless UI and security behavior; benchmarks are separate. The unfiltered test command includes external-corpus and interactive Windows checks that need additional inputs. The reproducible gate has six explicit filter clauses excluding eight cases; native Windows recycle/restore has also passed separately. It does not establish full native acceptance. See [development](docs/development.md) and the [validation record](docs/BEGINNER_REVIEW_VALIDATION.md).
 
 ## Automated releases
 

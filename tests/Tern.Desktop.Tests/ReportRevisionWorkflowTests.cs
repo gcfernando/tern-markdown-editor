@@ -91,7 +91,10 @@ public sealed partial class AIWritingWorkflowTests
             {
                 revisions++;
                 using var wire = JsonDocument.Parse(body);
-                Assert.DoesNotContain(wire.RootElement.GetProperty("messages").EnumerateArray(), item => item.GetProperty("role").GetString() == "assistant");
+                var messages = wire.RootElement.GetProperty("messages").EnumerateArray().ToArray();
+                Assert.Equal(new[] { "system", "user" }, messages.Select(item => item.GetProperty("role").GetString()));
+                // The system prompt describes the fresh-task policy; only current task data belongs in the user message.
+                Assert.DoesNotContain("EARLIER CONVERSATION", messages[1].GetProperty("content").GetString()!, StringComparison.OrdinalIgnoreCase);
                 revisionStarted.TrySetResult(text);
                 return await revisionReply.Task;
             }
@@ -150,7 +153,6 @@ public sealed partial class AIWritingWorkflowTests
         {
             var request = await revisionStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.Contains(editedTitle, request); Assert.Contains(issue, request); Assert.Contains(fact, request);
-            Assert.DoesNotContain("EARLIER CONVERSATION", request, StringComparison.OrdinalIgnoreCase);
             Assert.False(Find<TextBox>(panel, "Report title").IsEnabled);
             if (outcome == 0)
             {

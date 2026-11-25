@@ -19,15 +19,20 @@ That is broad source coverage plus targeted detailed review, **not** a claim tha
 
 ## Automated gate and external cases
 
-On 2026-11-21, the user approved removing the eight cases tied to unavailable original corpus/sample files and then explicitly confirmed removing the one skipped external-payload remote-image acceptance case. These nine removed cases are not passing acceptance evidence. Generalized rendering/image coverage and the synthetic scrollbar case remain. The reproducible workflow reads `tools/automated-test-filter.txt`; its single clause excludes only the interactive Windows Shell case:
+The current checkout contains acceptance tests that need inputs unavailable on clean hosted runners. The reproducible workflow reads six explicit clauses from `tools/automated-test-filter.txt`, excluding eight cases:
 
 | Excluded group | Cases | Required environment/input |
 | --- | --- | --- |
 | `Tern.Desktop.Tests.NativeRecycleRestoreTests` | 1 | Interactive Windows Shell/recycle-bin restore |
+| `Tern.Desktop.Tests.RenderingCorpusModeTests` | 1 | Original corpus and generated rendering inventory |
+| `Tern.Desktop.Tests.Question35SampleTests` | 3 | Supplied workbook or original question 35 fixture |
+| `Tern.PreviewView.Tests.CorpusValidationTests` | 1 | Original corpus or generated rendering inventory |
+| `CorpusLocalAssetTests.Every_corpus_image_records_actual_native_load_or_explicit_policy_block` | 1 | Original corpus images and generated rendering inventory |
+| `CorpusLocalAssetTests.Explicit_remote_acceptance_payloads_render_offline_in_native_controls` | 1 | Previously accepted remote-image payloads and probe results |
 
-The synthetic scrollbar case remains in the gate without an external-file parameter. The external-payload remote-asset skip was removed with explicit approval; general remote-image tests remain. Exclusion or removal is not a pass, and the filtered gate is not the full unfiltered suite.
+These tests remain available in an unfiltered run when their prerequisites are supplied. General rendering/image coverage and the synthetic scrollbar case remain in CI. Exclusion is not a pass, and the filtered gate is not the full unfiltered suite. The package manifest records the same class and method exclusions as the filter.
 
-The native Windows recycle/restore case passed on 2026-11-21 using only its GUID-named synthetic file, including in the complete unfiltered run before the eight original-input cases were removed. The missing original corpus/sample inputs remain unverified, but their eight tests are no longer part of the agreed automated suite. A previous offline disposable Windows Sandbox also passed actual MSI installation, installed-payload hashes, native edit/save/forward/restart for installed/portable/standalone forms, and uninstall while preserving unrelated synthetic Markdown registrations. These results do not establish current-package acceptance or unexecuted DPI, physical input, screen-reader, clipboard or printer acceptance.
+The native Windows recycle/restore case passed on 2026-11-21 using only its GUID-named synthetic file, including in the complete unfiltered run before the eight original-input cases were removed. The missing original corpus/sample inputs remain unverified. A previous offline disposable Windows Sandbox also passed actual MSI installation, installed-payload hashes, native edit/save/forward/restart for installed/portable/standalone forms, and uninstall while preserving unrelated synthetic Markdown registrations. These results do not establish current-package acceptance or unexecuted DPI, physical input, screen-reader, clipboard or printer acceptance.
 
 This page does not assert that a pending run succeeded. Use the [workflow run](https://github.com/gcfernando/tern-markdown-editor/actions/workflows/release.yml), its TRX/evidence artifacts and package manifest for the exact source commit, test totals, exclusions and smoke results. Record genuine failures and fixes rather than changing a valid assertion solely to obtain a green result.
 

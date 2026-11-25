@@ -145,9 +145,25 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(manifest["sourceCommit"], "a" * 40)
         self.assertEqual(
             manifest["acceptance"]["manualTestClasses"],
-            ["Tern.Desktop.Tests.NativeRecycleRestoreTests"],
+            [
+                "Tern.Desktop.Tests.NativeRecycleRestoreTests",
+                "Tern.Desktop.Tests.RenderingCorpusModeTests",
+                "Tern.Desktop.Tests.Question35SampleTests",
+                "Tern.PreviewView.Tests.CorpusValidationTests",
+            ],
         )
-        self.assertEqual(manifest["acceptance"]["manualTestMethods"], [])
+        self.assertEqual(
+            manifest["acceptance"]["manualTestMethods"],
+            [
+                "Tern.PreviewView.Tests.CorpusLocalAssetTests.Every_corpus_image_records_actual_native_load_or_explicit_policy_block",
+                "Tern.PreviewView.Tests.CorpusLocalAssetTests.Explicit_remote_acceptance_payloads_render_offline_in_native_controls",
+            ],
+        )
+        excluded = manifest["acceptance"]["manualTestClasses"] + manifest["acceptance"]["manualTestMethods"]
+        self.assertEqual(
+            manifest["acceptance"]["testFilter"],
+            "&".join(f"FullyQualifiedName!~{name}" for name in excluded),
+        )
         with zipfile.ZipFile(archive) as bundle:
             text = bundle.read("README.md").decode()
             self.assertIn("(docs/guide.md)", text)

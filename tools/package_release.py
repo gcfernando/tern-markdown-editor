@@ -325,17 +325,23 @@ def package(publish: Path, output: Path, commit: str, require_signed: bool = Fal
         "signing": "Verified Authenticode signatures" if signatures else "Unsigned preview candidate",
         "signatures": signatures,
         "acceptance": {
-            "requiredAutomatedScope": "Eight test projects excluding one interactive Windows Shell acceptance case",
+            "requiredAutomatedScope": "Eight test projects excluding eight cases requiring external inputs or an interactive Windows Shell",
             "manualTestClasses": [
                 "Tern.Desktop.Tests.NativeRecycleRestoreTests",
+                "Tern.Desktop.Tests.RenderingCorpusModeTests",
+                "Tern.Desktop.Tests.Question35SampleTests",
+                "Tern.PreviewView.Tests.CorpusValidationTests",
             ],
-            "manualTestMethods": [],
+            "manualTestMethods": [
+                "Tern.PreviewView.Tests.CorpusLocalAssetTests.Every_corpus_image_records_actual_native_load_or_explicit_policy_block",
+                "Tern.PreviewView.Tests.CorpusLocalAssetTests.Explicit_remote_acceptance_payloads_render_offline_in_native_controls",
+            ],
             "testFilter": (
                 Path(__file__).resolve().parent / "automated-test-filter.txt"
             )
             .read_text(encoding="utf-8")
             .strip(),
-            "reason": "Interactive Windows Shell restore is unavailable on clean hosted runners. Nine external-input acceptance cases were removed at the user's request; those inputs are not certified.",
+            "reason": "Original corpus/sample files, rendering inventories, accepted remote-image payloads and interactive Windows Shell restore are unavailable on clean hosted runners. These cases remain available for explicit acceptance and are not certified by the automated gate.",
             "remainingManualGates": [
                 "printing",
                 "accessibility",

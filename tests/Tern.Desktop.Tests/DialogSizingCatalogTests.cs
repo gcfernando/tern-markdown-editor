@@ -261,6 +261,8 @@ public sealed class DialogSizingCatalogTests
         return
         [
             new("about", () => new AboutWindow(), "Close about"),
+            new("add-destination", () => new AddDestinationWindow("Meeting notes", fixture.Docs, isWorkspace: true),
+                "Use selected location", "Outside all workspaces", "Cancel destination choice"),
             new("ai-connections", () => new AIConnectionsWindow(Path.Combine(fixture.AppData, "catalog-ai"), new EmptyCredentials()), "Next step", "Close"),
             new("knowledge-assistant", fixture.Window.CreateKnowledgeAssistantWindow, "Find my notes", "How it works"),
             new("copilot", () => new CopilotConnectionWindow(), "Continue", "Close"),

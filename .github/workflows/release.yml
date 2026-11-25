@@ -36,7 +36,7 @@ jobs:
       - name: Build complete solution
         run: dotnet build Tern.slnx -c Release --no-restore -m:1 -p:UseSharedCompilation=false
       - name: Eight test projects with explicit external acceptance exclusions
-        # Eight cases need untracked original corpora/samples or an interactive Explorer recycle bin.
+        # Eight cases need untracked corpora/samples, accepted image payloads or an interactive Explorer recycle bin.
         # The synthetic scrollbar case stays in CI; external cases remain unchanged for manual acceptance.
         shell: pwsh
         run: |
